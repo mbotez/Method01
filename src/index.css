@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", serif;
+  
+  --color-venus-accent: #FF5A1F; /* Punchier Orange */
+  --color-venus-pink: #FFFFFF;   /* Pure White Background */
+  --color-venus-white: #FFFFFF;
+  --color-venus-dark: #000000;   /* Black for bold writing */
+}
+
+@layer base {
+  body {
+    @apply bg-venus-pink text-venus-dark selection:bg-venus-accent/30;
+  }
+}
+
+.glowing-text {
+  @apply text-transparent bg-clip-text bg-gradient-to-r from-venus-accent to-orange-400;
+}
+
+.clean-card {
+  @apply bg-white rounded-3xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white;
+}
+
+.btn-primary {
+  @apply bg-black text-white px-10 py-4 rounded-xl font-black uppercase tracking-widest transition-all hover:bg-venus-accent active:scale-95 shadow-xl;
+}
