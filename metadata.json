@@ -1,8 +1,6 @@
 {
   "name": "Method 01",
   "description": "Scientific, personalized skincare ritual analysis and tracking.",
-  "requestFramePermissions": [
-    "camera"
-  ],
+  "requestFramePermissions": [],
   "majorCapabilities": []
 }

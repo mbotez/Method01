@@ -1421,12 +1421,12 @@ export default function App() {
       )}
 
       {/* Bottom Nav Hint */}
-      {appState === AppState.DASHBOARD && (
+      {(appState === AppState.DASHBOARD || appState === AppState.RANK) && (
         <div className="fixed bottom-0 left-0 right-0 p-6 flex justify-center bg-gradient-to-t from-white to-transparent">
           <div className="clean-card py-3 px-8 flex gap-8 items-center bg-white border-2 border-black/5 shadow-2xl">
-            <Sun className="w-6 h-6 text-black cursor-pointer" />
+            <Sun className={`w-6 h-6 text-black cursor-pointer ${appState === AppState.DASHBOARD ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.DASHBOARD)} />
             <div className="w-px h-4 bg-black/10" />
-            <ShoppingBag className="w-6 h-6 opacity-30 hover:opacity-100 cursor-pointer text-black" />
+            <ShoppingBag className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.RANK ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.RANK)} />
             <div className="w-px h-4 bg-black/10" />
             <History className="w-6 h-6 opacity-30 hover:opacity-100 cursor-pointer text-black" />
           </div>
