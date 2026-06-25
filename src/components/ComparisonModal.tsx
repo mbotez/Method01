@@ -33,9 +33,10 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ isOpen, onClos
   const fetchProducts = async () => {
     const { data } = await supabase
       .from('upp')
-      .select('id, product_name, personal_score, impression')
+      .select('id, product_name, personal_score, impression, type')
       .eq('user_id', userId)
       .eq('category', 'Used')
+      .eq('type', newProduct.type)
       .eq('impression', newProduct.impression) // Ensure newProduct exists
       .neq('id', newProduct.id) // Exclude the new product itself
       .order('personal_score', { ascending: true });
@@ -123,7 +124,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ isOpen, onClos
               onClick={() => handleComparison(false)}
               className="flex-1 p-4 border rounded-2xl text-xs font-semibold"
             >
-              {currentComparisonProduct.product_name}
+              {currentComparisonProduct?.product_name || 'Loading...'}
             </button>
         </div>
 

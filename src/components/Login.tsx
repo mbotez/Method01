@@ -5,11 +5,11 @@ import { supabase } from '../lib/supabase';
 interface LoginProps {
   onSuccess?: () => void;
   onError?: (error: string) => void;
-  isSignUpInitial?: boolean;
+  isSignUp: boolean;
+  setIsSignUp: (isSignUp: boolean) => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUpInitial = false }) => {
-  const [isSignUp, setIsSignUp] = useState(isSignUpInitial);
+export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setIsSignUp }) => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,20 +27,19 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUpInitia
     
     try {
       if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            data: {
+              username: username
+            }
+          }
+        });
         if (error) throw error;
         
-        if (data.user) {
-          const { error: profileError } = await supabase.from('users').insert([{
-            id: data.user.id,
-            email: email,
-            username: username
-          }]);
-          
-          if (profileError && profileError.code !== '23505') { 
-             console.error("Error creating user profile", profileError);
-          }
-        }
+        // Rows in public.users, public.user_profile, public.user_contacts 
+        // are now created automatically by the database trigger on auth.users insert.
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -64,11 +63,11 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUpInitia
     >
       <div className="clean-card p-10 border-2 border-black/5 bg-white shadow-2xl rounded-3xl">
         <div className="text-center mb-8">
-          <h2 className="text-3xl font-sans font-black text-black uppercase italic tracking-tighter mb-2">
+          <h2 className="text-2xl font-sans font-black text-black uppercase tracking-tighter mb-2">
             {isSignUp ? 'Sign Up' : 'Sign In'}
           </h2>
           <p className="text-black/50 text-sm font-medium">
-            {isSignUp ? 'Join the number 1 skincare community' : 'Access the community'}
+            {isSignUp ? 'Join the number 1 skincare community' : 'Consistency leads to lasting results'}
           </p>
         </div>
 
@@ -82,7 +81,6 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUpInitia
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-black/5 border-2 border-black/5 rounded-xl px-4 py-3 font-medium outline-none focus:border-black transition-colors"
-                placeholder="skincare_guru"
               />
             </div>
           )}
@@ -94,7 +92,6 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUpInitia
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-black/5 border-2 border-black/5 rounded-xl px-4 py-3 font-medium outline-none focus:border-black transition-colors"
-              placeholder="name@nexus.com"
             />
           </div>
           <div>
@@ -117,14 +114,14 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUpInitia
           <button 
             type="submit" 
             disabled={loading || isSubmitting}
-            className="w-full bg-black text-white font-black uppercase tracking-widest py-4 rounded-xl hover:bg-venus-accent transition-all disabled:opacity-50"
+            className="w-full bg-black text-white font-black uppercase tracking-widest py-3 rounded-xl hover:bg-neutral-800 transition-all disabled:opacity-50"
           >
             {loading || isSubmitting ? 'Authenticating...' : "Let's go"}
           </button>
         </form>
 
         <p className="mt-8 text-center text-xs font-black text-black/40 uppercase tracking-widest">
-          {isSignUp ? 'Already have credentials?' : 'Haven\'t joined yet?'}
+          {isSignUp ? 'Already joined?' : 'Haven\'t joined yet?'}
           <button 
             onClick={() => setIsSignUp(!isSignUp)}
             className="ml-2 text-black hover:text-venus-accent underline"

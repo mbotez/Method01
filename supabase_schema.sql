@@ -1,160 +1,214 @@
--- Supabase Schema for Method 01 Skincare App
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
--- 1. Create tables
-
--- Drop tables first to ensure clean state
-DROP TABLE IF EXISTS public.progress CASCADE;
-DROP TABLE IF EXISTS public.routines CASCADE;
-DROP TABLE IF EXISTS public.products CASCADE;
-DROP TABLE IF EXISTS public.users CASCADE;
-
--- Users Table
 CREATE TABLE public.users (
-  id uuid REFERENCES auth.users NOT NULL PRIMARY KEY,
-  email text,
-  username text,
+  id uuid NOT NULL,
   skin_type text,
   primary_issue text,
   onboarding_complete boolean DEFAULT false,
-  created_at timestamp with time zone DEFAULT now()
+  created_at timestamp with time zone DEFAULT now(),
+  username text,
+  CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
-
--- Products Table
-CREATE TABLE public.products (
-  id text PRIMARY KEY, -- Using text to match 'c1', 's1', etc. from your constants
-  brand text NOT NULL,
-  name text NOT NULL,
-  type text NOT NULL,
-  description text,
-  price numeric,
-  ingredients jsonb DEFAULT '[]'::jsonb,
-  created_at timestamp with time zone DEFAULT now()
-);
-
--- Routines Table
 CREATE TABLE public.routines (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id uuid REFERENCES public.users(id) NOT NULL,
-  routine_name text,
-  notes text,
-  time text NOT NULL, -- e.g., 'AM', 'PM'
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  time text NOT NULL,
   days jsonb DEFAULT '[]'::jsonb,
   products jsonb DEFAULT '[]'::jsonb,
   updated_at timestamp with time zone DEFAULT now(),
-  created_at timestamp with time zone DEFAULT now()
+  created_at timestamp with time zone DEFAULT now(),
+  routine_name text,
+  notes text,
+  reminder text,
+  CONSTRAINT routines_pkey PRIMARY KEY (id),
+  CONSTRAINT routines_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-
--- Progress Table
 CREATE TABLE public.progress (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id uuid REFERENCES public.users(id) NOT NULL,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
   image_url text NOT NULL,
   timestamp timestamp with time zone DEFAULT now(),
-  created_at timestamp with time zone DEFAULT now()
+  created_at timestamp with time zone DEFAULT now(),
+  rating integer,
+  notes text,
+  CONSTRAINT progress_pkey PRIMARY KEY (id),
+  CONSTRAINT progress_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-
--- UPP Table
 CREATE TABLE public.upp (
-  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id uuid REFERENCES public.users(id) NOT NULL,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
   product_name text NOT NULL,
   product_brand text NOT NULL,
-  category text, 
-  impression text, 
+  category text,
+  impression text,
   notes text,
   personal_score numeric,
+  created_at timestamp with time zone DEFAULT now(),
   length text,
   frequency text,
-  created_at timestamp with time zone DEFAULT now()
+  type text,
+  CONSTRAINT upp_pkey PRIMARY KEY (id),
+  CONSTRAINT upp_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-
--- Nudge function
-CREATE OR REPLACE FUNCTION nudge_lower_scores(
-  p_user_id uuid,
-  p_category text,
-  p_impression text,
-  p_exclude_id uuid
-) RETURNS void AS $$
-BEGIN
-  UPDATE public.upp
-  SET personal_score = personal_score - 0.2
-  WHERE user_id = p_user_id
-    AND category = p_category
-    AND impression = p_impression
-    AND id != p_exclude_id
-    AND personal_score > 0.2; 
-END;
-$$ LANGUAGE plpgsql;
-
--- Note: If table already exists, use:
--- ALTER TABLE public.upp ALTER COLUMN personal_score TYPE numeric;
-
--- 2. Set up RLS (Row Level Security)
-
--- Enable RLS on all tables
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.routines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.progress ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.upp ENABLE ROW LEVEL SECURITY;
-
-GRANT ALL ON TABLE public.upp TO authenticated;
-
--- Users policies
-CREATE POLICY "Users can view their own profile" ON public.users 
-  FOR SELECT USING (auth.uid() = id);
-
-CREATE POLICY "Users can update their own profile" ON public.users 
-  FOR UPDATE USING (auth.uid() = id);
-
-CREATE POLICY "Users can insert their own profile" ON public.users 
-  FOR INSERT WITH CHECK (auth.uid() = id);
-
--- Products policies
-CREATE POLICY "Anyone can view products" ON public.products 
-  FOR SELECT USING (true);
-
-CREATE POLICY "Authenticated users can manage products" ON public.products 
-  FOR ALL USING (auth.role() = 'authenticated');
-
--- Routines policies
-CREATE POLICY "Users can view their own routines" ON public.routines 
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert their own routines" ON public.routines 
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own routines" ON public.routines 
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete their own routines" ON public.routines 
-  FOR DELETE USING (auth.uid() = user_id);
-
--- Progress policies
-CREATE POLICY "Users can view their own progress" ON public.progress 
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert their own progress" ON public.progress 
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own progress" ON public.progress 
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete their own progress" ON public.progress 
-  FOR DELETE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can manage their own UPP" ON public.upp 
-  FOR ALL USING (auth.uid() = user_id);
-
--- 3. Seed Products (Optional but matches frontend INVENTORY)
-INSERT INTO public.products (id, brand, name, type, description, price, ingredients) VALUES
-('c1', 'Venus Radiance', 'Glow Gentle Cleanser', 'Cleanser', 'Mild foaming cleanser with Vitamin C and Green Tea.', 24, '["Vitamin C", "Green Tea"]'::jsonb),
-('c2', 'Natura', 'Purifying Clay Wash', 'Cleanser', 'Deep cleaning for oily skin with Kaolin clay.', 18, '["Kaolin Clay", "Salicylic Acid"]'::jsonb),
-('c3', 'Silk', 'Hydrating Cream Cleanser', 'Cleanser', 'Ultra-gentle for dry, sensitive skin.', 22, '["Ceramides", "Glycerin"]'::jsonb),
-('s1', 'Essence', 'Anti-Aging Elixir', 'Serum', 'Retinol based serum for fine lines.', 45, '["Retinol", "Bakuchiol"]'::jsonb),
-('s2', 'Venus Radiance', 'Blemish Control Drop', 'Serum', 'Targeted acne treatment with Niacinamide.', 32, '["Niacinamide", "Zinc"]'::jsonb),
-('s3', 'Dewy', 'Plumping Hyaluronic', 'Serum', 'Deep hydration for dull, dry skin.', 28, '["Hyaluronic Acid", "B5"]'::jsonb),
-('m1', 'Venus Radiance', 'Luminous Day Cream', 'Moisturizer', 'Lightweight moisturizer with SPF 30.', 38, '["Peptides", "SPF"]'::jsonb),
-('m2', 'Deep Restore', 'Rich Barrier Repair', 'Moisturizer', 'Thick moisturizer for intense nighttime recovery.', 42, '["Squalane", "Shea Butter"]'::jsonb),
-('m3', 'Balance', 'Oil-Free Water Gel', 'Moisturizer', 'Instantly absorbing hydration for oily skin.', 30, '["Hyaluronic Acid", "Witch Hazel"]'::jsonb)
-ON CONFLICT (id) DO NOTHING;
+CREATE TABLE public.tracker (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  brand text,
+  product_name text,
+  product_type text,
+  routine_time text,
+  ingredients text,
+  size text,
+  notes text,
+  in_use boolean DEFAULT true,
+  is_liked boolean DEFAULT false,
+  repurchase boolean DEFAULT false,
+  best_by_date date,
+  open_date date,
+  poa text,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  photo_url text,
+  product_id text,
+  product_verdict text,
+  CONSTRAINT tracker_pkey PRIMARY KEY (id),
+  CONSTRAINT tracker_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.follows (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  follower_id uuid NOT NULL,
+  following_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT follows_pkey PRIMARY KEY (id),
+  CONSTRAINT follows_follower_id_fkey FOREIGN KEY (follower_id) REFERENCES public.users(id),
+  CONSTRAINT follows_following_id_fkey FOREIGN KEY (following_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.posts (
+  post_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  title text,
+  content text NOT NULL,
+  post_media text,
+  timestamp timestamp with time zone DEFAULT now(),
+  is_article boolean DEFAULT false,
+  CONSTRAINT posts_pkey PRIMARY KEY (post_id),
+  CONSTRAINT posts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.comments (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  post_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  content text NOT NULL,
+  timestamp timestamp with time zone DEFAULT now(),
+  CONSTRAINT comments_pkey PRIMARY KEY (id),
+  CONSTRAINT comments_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(post_id),
+  CONSTRAINT comments_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.user_contacts (
+  user_id uuid NOT NULL,
+  email text,
+  CONSTRAINT user_contacts_pkey PRIMARY KEY (user_id),
+  CONSTRAINT user_contacts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.user_profile (
+  id uuid NOT NULL,
+  skin_type text,
+  age text,
+  skin_tone integer,
+  burn_risk text,
+  symptoms integer,
+  new_product_reaction integer,
+  barrier_risk integer,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  sensitivity jsonb DEFAULT '[]'::jsonb,
+  goals jsonb DEFAULT '[]'::jsonb,
+  breakout_type jsonb DEFAULT '[]'::jsonb,
+  breakout_where text,
+  env text,
+  sunscreen text,
+  makeup text,
+  makeup_remove text,
+  current_products jsonb DEFAULT '[]'::jsonb,
+  past_problems text,
+  redness smallint,
+  redness_score integer,
+  wrinkles_score integer,
+  redness_main_area text,
+  wrinkels_main_area text,
+  scan_acne_type text,
+  sex text,
+  pregnant text,
+  actives_used ARRAY DEFAULT '{}'::text[],
+  CONSTRAINT user_profile_pkey PRIMARY KEY (id),
+  CONSTRAINT user_profile_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.messages (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  sender_id uuid NOT NULL,
+  receiver_id uuid NOT NULL,
+  message text NOT NULL,
+  timestamp timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT messages_pkey PRIMARY KEY (id),
+  CONSTRAINT messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES auth.users(id),
+  CONSTRAINT messages_receiver_id_fkey FOREIGN KEY (receiver_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.ingredient_scores (
+  ingredient text,
+  Breakouts_Acne bigint,
+  Oiliness bigint,
+  Clogged_Pores_Blackheads bigint,
+  Dry_Skin bigint,
+  Large_Pores_Texture bigint,
+  Dark_Spots bigint,
+  Dullness bigint,
+  Redness bigint,
+  Elasticity_Loss bigint,
+  Barrier_Repair bigint,
+  Dry_Skin_Type bigint,
+  Oily_Skin_Type bigint,
+  Combination_Skin_Type bigint,
+  Normal_Skin_Type bigint,
+  UV_Sensitive text,
+  pH_Dependent_Active boolean,
+  Antagonistic_Group text,
+  Fatty_Acid_Profile text,
+  Tyrosinase_Inhibitor text,
+  Vasoconstrictor boolean,
+  Penetration_Enhancer boolean,
+  Astringent boolean,
+  Cell_Turnover_Accelerator boolean,
+  Pregnancy_Safe boolean,
+  Fungal_Acne_Trigger boolean,
+  High_Irritation_Risk boolean,
+  Essential_Oils_Fragrance boolean
+);
+CREATE TABLE public.product_ingredients (
+  product_id bigint,
+  Full name text,
+  Position bigint,
+  ingredient text,
+  CONSTRAINT fk_product_ingredients_product FOREIGN KEY (product_id) REFERENCES public.products(id)
+);
+CREATE TABLE public.products (
+  id bigint NOT NULL,
+  brand text,
+  name text,
+  full_name text,
+  photo_url text,
+  type text,
+  description text,
+  created_at timestamp with time zone,
+  user_add boolean,
+  user_id uuid,
+  fts_search tsvector DEFAULT to_tsvector('english'::regconfig, ((COALESCE(brand, ''::text) || ' '::text) || COALESCE(name, ''::text))),
+  CONSTRAINT products_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.product_description (
+  id bigint NOT NULL,
+  product_name text,
+  description text,
+  ingredients_list text,
+  CONSTRAINT product_description_pkey PRIMARY KEY (id)
+);

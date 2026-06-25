@@ -1,6 +1,6 @@
 {
-  "name": "Method 01",
-  "description": "Scientific, personalized skincare ritual analysis and tracking.",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
+  "name": "Méli",
+  "description": "Scientific, personalized skincare ritual analysis, tracking, and social community features.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
