@@ -244,6 +244,7 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
   // Scanner Phase States
   const [frontPhoto, setFrontPhoto] = useState<string | null>(null);
   const [closeUpPhoto, setCloseUpPhoto] = useState<string | null>(null);
+  const [cameraTarget, setCameraTarget] = useState<'front' | 'closeup'>('front');
   const [isScanning, setIsScanning] = useState(false);
   const [scanStepName, setScanStepName] = useState('');
   const [scanProgress, setScanProgress] = useState(0);
@@ -292,8 +293,9 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
     }
   };
 
-  const startCamera = async () => {
+  const startCamera = async (target: 'front' | 'closeup' = 'front') => {
     setCameraError(null);
+    setCameraTarget(target);
     setIsCameraActive(true);
     // Let's allow state to render, then open getUserMedia
     setTimeout(async () => {
@@ -311,7 +313,7 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
           videoRef.current.srcObject = stream;
         }
       } catch (err: any) {
-        console.error("Error accessing front-facing camera:", err);
+        console.error("Error accessing camera:", err);
         let errorMsg = "Could not access camera.";
         if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
           errorMsg = "Camera permission was denied. Please allow camera access in your browser settings to scan your face.";
@@ -351,7 +353,11 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
         ctx.setTransform(1, 0, 0, 1, 0, 0);
 
         const base64Image = canvas.toDataURL("image/jpeg", 0.95);
-        setFrontPhoto(base64Image);
+        if (cameraTarget === 'front') {
+          setFrontPhoto(base64Image);
+        } else {
+          setCloseUpPhoto(base64Image);
+        }
         
         // Trigger the Google AI Studio payload placeholder function
         await sendToGemini(base64Image);
@@ -1304,7 +1310,7 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
     if (isCameraActive) {
       return (
         <div 
-          className="fixed inset-0 bg-[#FFFFFF] z-[999] flex flex-col items-center justify-center p-6 md:p-12 text-black animate-fadeIn"
+          className="fixed inset-0 bg-[#FFFFFF] z-[999] flex flex-col items-center justify-start pt-12 p-6 md:p-12 text-black animate-fadeIn"
           id="camera-softbox-viewport"
         >
           <style>{`
@@ -1317,7 +1323,7 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
           
           <div className="text-center mb-6 space-y-2">
             <h2 className="text-xl md:text-3xl font-sans font-black uppercase text-black tracking-tight">
-              Clinical Dermal Scanner
+              Scan your face
             </h2>
             <p className="text-xs md:text-sm text-black/60 font-semibold">
               Live preview. Keep your camera stable.
@@ -1337,7 +1343,7 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
               </button>
             </div>
           ) : (
-            <div className="relative w-full max-w-md aspect-square bg-neutral-950 rounded-[40px] overflow-hidden shadow-2xl border-4 border-black/5 flex items-center justify-center">
+            <div className="relative w-full max-w-sm aspect-[9/21] bg-neutral-950 rounded-[40px] overflow-hidden shadow-2xl border-4 border-black/5 flex items-center justify-center">
               {/* Live stream video element */}
               <video
                 ref={videoRef}
@@ -1350,7 +1356,7 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
               {/* Futuristic holographic / scanner visual overlays */}
               <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-between p-6">
                 {/* Corner holographic target markers */}
-                <div className="absolute inset-6 border border-white/10 rounded-3xl">
+                <div className="absolute inset-4 border border-white/10 rounded-3xl">
                   {/* Top-left */}
                   <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white/90 rounded-tl-xl" />
                   {/* Top-right */}
@@ -1361,9 +1367,9 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
                   <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white/90 rounded-br-xl" />
                 </div>
 
-                {/* Glowing neon green scanning laser bar */}
+                {/* Glowing neon white scanning laser bar */}
                 <div 
-                  className="absolute left-0 right-0 h-1 bg-green-400 shadow-[0_0_15px_#4ade80] opacity-85"
+                  className="absolute left-0 right-0 h-1 bg-white shadow-[0_0_15px_rgba(255,255,255,0.8)] opacity-95"
                   style={{
                     animation: 'scanLine 3s ease-in-out infinite'
                   }}
@@ -1371,23 +1377,51 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
 
                 {/* Dotted face outline SVG guide line */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <svg 
-                    viewBox="0 0 200 200" 
-                    className="w-3/4 h-3/4 text-white/85 opacity-90 animate-pulse animate-duration-3000"
-                  >
-                    <path
-                      d="M100,25 C138,25 165,60 165,110 C165,152 138,178 100,178 C62,178 35,152 35,110 C35,60 62,25 100,25 Z"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeDasharray="6 4"
-                    />
-                    <circle cx="100" cy="110" r="2" fill="currentColor" />
-                    <line x1="100" y1="12" x2="100" y2="20" stroke="currentColor" strokeWidth="2" />
-                    <line x1="100" y1="183" x2="100" y2="191" stroke="currentColor" strokeWidth="2" />
-                    <line x1="22" y1="110" x2="30" y2="110" stroke="currentColor" strokeWidth="2" />
-                    <line x1="170" y1="110" x2="178" y2="110" stroke="currentColor" strokeWidth="2" />
-                  </svg>
+                  {cameraTarget === 'front' ? (
+                    <svg 
+                      viewBox="0 0 225 525" 
+                      className="w-full h-full text-white/85 opacity-90 animate-pulse animate-duration-3000"
+                    >
+                      {/* Beautiful larger vertical oval (ellipse) to make user take closer face scan */}
+                      <ellipse
+                        cx="112.5"
+                        cy="262.5"
+                        rx="85"
+                        ry="189"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeDasharray="6 4"
+                      />
+                      <circle cx="112.5" cy="262.5" r="2" fill="currentColor" />
+                      <line x1="112.5" y1="10" x2="112.5" y2="25" stroke="currentColor" strokeWidth="2" />
+                      <line x1="112.5" y1="500" x2="112.5" y2="515" stroke="currentColor" strokeWidth="2" />
+                      <line x1="10" y1="262.5" x2="25" y2="262.5" stroke="currentColor" strokeWidth="2" />
+                      <line x1="200" y1="262.5" x2="215" y2="262.5" stroke="currentColor" strokeWidth="2" />
+                    </svg>
+                  ) : (
+                    <svg 
+                      viewBox="0 0 300 400" 
+                      className="w-full h-full text-white/85 opacity-90 animate-pulse animate-duration-3000"
+                    >
+                      {/* Spot target / crosshair for Close-up photo */}
+                      <ellipse
+                        cx="150"
+                        cy="200"
+                        rx="75"
+                        ry="75"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeDasharray="4 4"
+                      />
+                      <circle cx="150" cy="200" r="3" fill="currentColor" />
+                      <line x1="150" y1="50" x2="150" y2="75" stroke="currentColor" strokeWidth="2" />
+                      <line x1="150" y1="325" x2="150" y2="350" stroke="currentColor" strokeWidth="2" />
+                      <line x1="30" y1="200" x2="55" y2="200" stroke="currentColor" strokeWidth="2" />
+                      <line x1="245" y1="200" x2="270" y2="200" stroke="currentColor" strokeWidth="2" />
+                    </svg>
+                  )}
                 </div>
               </div>
             </div>
@@ -1395,7 +1429,7 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
 
           {!cameraError && (
             <p className="text-xs md:text-sm text-black/70 font-mono tracking-tight text-center mt-6 max-w-xs leading-relaxed">
-              Position your face inside the lines — not too close, not too far.
+              Align your face with the oval guide. Move closer to fill the frame for an accurate scan.
             </p>
           )}
 
@@ -1405,9 +1439,9 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
                 id="capture-frame-btn"
                 type="button"
                 onClick={capturePhoto}
-                className="w-full py-4 bg-black text-white hover:bg-black/90 active:scale-95 rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2"
+                className="w-full py-4 bg-white text-black border-2 border-black hover:bg-black/5 active:scale-95 rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center justify-center gap-2"
               >
-                <Camera className="w-4 h-4 text-green-400" />
+                <Camera className="w-4 h-4 text-black" />
                 <span>Capture Scan</span>
               </button>
               
@@ -1451,7 +1485,7 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
               )}
               {/* Laser scanner effect */}
               <div 
-                className="absolute left-0 w-full h-1 bg-green-500 shadow-[0_0_10px_#22c55e] animate-bounce" 
+                className="absolute left-0 w-full h-1 bg-white shadow-[0_0_10px_rgba(255,255,255,0.8)] animate-bounce" 
                 style={{ animationDuration: '2s' }}
               />
             </div>
@@ -1566,39 +1600,68 @@ export const Questionnaire = ({ onComplete }: { onComplete: (answers: any) => vo
                   Zoom in on specific concern areas (redness, flaking, or spots). Optional.
                 </span>
 
-                <div 
-                  onClick={() => document.getElementById('closeup-file-input')?.click()}
-                  className={`border-2 border-dashed hover:border-black/30 rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer transition-all aspect-square relative overflow-hidden bg-black/[0.01] text-center ${
-                    closeUpPhoto ? 'border-black bg-transparent' : 'border-black/10'
-                  }`}
-                >
-                  <input 
-                    type="file" 
-                    id="closeup-file-input" 
-                    accept="image/*" 
-                    style={{ display: 'none' }} 
-                    onChange={(e) => handlePhotoUpload(e, false)}
-                  />
-                  {closeUpPhoto ? (
-                    <>
-                      <img src={closeUpPhoto} alt="Close Up" className="w-full h-full object-cover absolute inset-0" />
+                {closeUpPhoto ? (
+                  <div className="border-2 border-black rounded-2xl aspect-square relative overflow-hidden bg-transparent">
+                    <img src={closeUpPhoto} alt="Close Up selfie" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-all">
                       <button 
-                        onClick={(e) => { e.stopPropagation(); setCloseUpPhoto(null); }}
-                        className="absolute top-2 right-2 bg-black/80 text-white rounded-full p-1.5 hover:bg-black transition-all active:scale-90"
+                        type="button"
+                        onClick={() => setCloseUpPhoto(null)}
+                        className="bg-white text-black rounded-full px-4 py-2 text-xs font-black uppercase tracking-wider flex items-center gap-1.5 hover:bg-white/90 active:scale-95 transition-all"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Retake</span>
                       </button>
-                    </>
-                  ) : (
-                    <div className="space-y-2 flex flex-col items-center">
-                      <div className="p-3 bg-black/5 rounded-full text-black/50">
-                        <Upload className="w-6 h-6" />
-                      </div>
-                      <span className="text-xs font-bold text-black/70">Take photo / Upload</span>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-black/40">Optional</span>
                     </div>
-                  )}
-                </div>
+                    <button 
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setCloseUpPhoto(null); }}
+                      className="absolute top-3 right-3 bg-black/80 text-white rounded-full p-1.5 hover:bg-black transition-all active:scale-90"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed border-black/15 rounded-2xl p-6 flex flex-col items-center justify-center aspect-square bg-black/[0.01] text-center">
+                    <div className="space-y-4 flex flex-col items-center w-full max-w-[220px]">
+                      <div className="p-3 bg-black/5 rounded-full text-black">
+                        <Camera className="w-7 h-7" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-black uppercase tracking-wide text-black">Close-up / Spot Scan</h4>
+                        <p className="text-[10px] text-black/50 font-semibold leading-normal">
+                          Ready to scan your target area with the live camera?
+                        </p>
+                      </div>
+                      
+                      <button
+                        id="ready-closeup-camera-btn"
+                        type="button"
+                        onClick={() => startCamera('closeup')}
+                        className="w-full py-3 bg-black hover:bg-black/90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all active:scale-95 shadow-md flex items-center justify-center gap-2"
+                      >
+                        <Check className="w-4 h-4 text-green-400" />
+                        <span>Ready</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById('closeup-file-input')?.click()}
+                        className="text-[10px] text-black/50 hover:text-black font-semibold uppercase tracking-wider cursor-pointer underline mt-1 animate-fadeIn"
+                      >
+                        Upload file instead
+                      </button>
+
+                      <input 
+                        type="file" 
+                        id="closeup-file-input" 
+                        accept="image/*" 
+                        style={{ display: 'none' }} 
+                        onChange={(e) => handlePhotoUpload(e, false)}
+                      />
+                    </div>
+                  </div>
+                )}
                 {!closeUpPhoto && frontPhoto && (
                   <button 
                     onClick={() => loadDemoPhoto(false)} 

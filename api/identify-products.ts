@@ -82,7 +82,9 @@ If no skincare or makeup products are present, return:
 
     const text = response.text || "";
     const result = JSON.parse(text.trim());
-    return res.json({ success: true, products: result.products || [] });
+    const identifiedProducts = result.products || [];
+    console.log("Gemini Vision identified products on server:", identifiedProducts);
+    return res.json({ success: true, products: identifiedProducts });
 
   } catch (err: any) {
     console.error("Error in /api/identify-products:", err);

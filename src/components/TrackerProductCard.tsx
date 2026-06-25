@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, ChevronDown, ChevronUp, Sun, Moon, Calendar, HelpCircle, Heart, CheckCircle2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { evaluateProductCategory } from '../utils/productCategoryEvaluator';
 
 interface TrackerProductCardProps {
   item: any;
@@ -45,6 +46,33 @@ export const TrackerProductCard: React.FC<TrackerProductCardProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [localSize, setLocalSize] = useState(item.size || '');
   const [localNotes, setLocalNotes] = useState(cleanNotesForUser(item.notes));
+
+  const [evaluation, setEvaluation] = useState<any>(null);
+  const [loadingEval, setLoadingEval] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const fetchEvaluation = async () => {
+      if (!item.product_id || !item.user_id) return;
+      setLoadingEval(true);
+      try {
+        const res = await evaluateProductCategory(item.user_id, item.product_id, []);
+        if (active) {
+          setEvaluation(res);
+        }
+      } catch (err) {
+        console.error("Error evaluating product in TrackerProductCard:", err);
+      } finally {
+        if (active) {
+          setLoadingEval(false);
+        }
+      }
+    };
+    fetchEvaluation();
+    return () => {
+      active = false;
+    };
+  }, [item.product_id, item.user_id]);
 
   // Keep local states synced if item changes from backend/realtime
   useEffect(() => {
@@ -127,16 +155,20 @@ export const TrackerProductCard: React.FC<TrackerProductCardProps> = ({
                     AM & PM Routine
                   </span>
                 )}
-                {item.product_verdict && (
+                {loadingEval ? (
+                  <span className="bg-gray-50 text-gray-500 border border-gray-200 rounded-lg px-2 py-0.5 text-[9px] font-black uppercase flex items-center gap-1 animate-pulse">
+                    Evaluating...
+                  </span>
+                ) : (evaluation?.category || item.product_verdict) ? (
                   <span className={`border rounded-lg px-2 py-0.5 text-[9px] font-black uppercase flex items-center gap-1 ${
-                    item.product_verdict === 'Avoid' ? 'bg-red-50 text-red-800 border-red-200' :
-                    item.product_verdict === 'Caution' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                    item.product_verdict === 'Recommended' ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                    (evaluation?.category || item.product_verdict) === 'Avoid' ? 'bg-red-50 text-red-800 border-red-200' :
+                    (evaluation?.category || item.product_verdict) === 'Caution' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                    (evaluation?.category || item.product_verdict) === 'Recommended' ? 'bg-purple-50 text-purple-800 border-purple-200' :
                     'bg-emerald-50 text-emerald-800 border border-emerald-200'
                   }`}>
-                    Verdict: {item.product_verdict}
+                    Verdict: {evaluation?.category || item.product_verdict}
                   </span>
-                )}
+                ) : null}
                 {parseBreakoutRisk(item.notes) && (
                   <span className="bg-amber-100 text-amber-950 border border-amber-300 rounded-lg px-2 py-0.5 text-[9px] font-black uppercase flex items-center gap-1">
                     Potential Breakout Risk
@@ -271,6 +303,37 @@ export const TrackerProductCard: React.FC<TrackerProductCardProps> = ({
                 }
                 return null;
               })()}
+
+              {/* Dynamic Evaluation Details */}
+              {evaluation && (
+                <div className={`p-3 rounded-xl space-y-2 border ${
+                  (evaluation?.category || item.product_verdict) === 'Avoid' ? 'bg-red-50/50 border-red-200 text-red-950' :
+                  (evaluation?.category || item.product_verdict) === 'Caution' ? 'bg-amber-50/50 border-amber-200 text-amber-950' :
+                  (evaluation?.category || item.product_verdict) === 'Recommended' ? 'bg-purple-50/50 border-purple-200 text-purple-950' :
+                  'bg-emerald-50/50 border-emerald-200 text-emerald-950'
+                }`}>
+                  <span className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                    🔍 Dermal Evaluation Analysis
+                  </span>
+                  {evaluation.reasons && evaluation.reasons.length > 0 && (
+                    <ul className="list-disc list-inside text-[11px] pl-1 space-y-1 leading-relaxed">
+                      {evaluation.reasons.map((reason: string, i: number) => (
+                        <li key={i}>{reason}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {evaluation.potentialBreakoutRisk && evaluation.potentialBreakoutIngredients && evaluation.potentialBreakoutIngredients.length > 0 && (
+                    <div className="pt-2 border-t border-black/5 mt-2">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-red-800 flex items-center gap-1">
+                        ⚠️ Pore Clogging / Breakout Triggers:
+                      </span>
+                      <p className="text-[11px] font-bold text-red-900 mt-1">
+                        {evaluation.potentialBreakoutIngredients.join(', ')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Date Pickers, Size & POA */}
               <div className="space-y-2 bg-white p-3 rounded-xl border border-black/5 shadow-sm">

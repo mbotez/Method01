@@ -50,6 +50,12 @@ export async function searchProductsFromPhoto(imageFile: File): Promise<MatchedP
 
   const identifiedProducts: { brand: string; name: string }[] = data.products || [];
 
+  // Log what Gemini Vision identified
+  console.log("Gemini Vision identified products:", identifiedProducts);
+  identifiedProducts.forEach((prod, index) => {
+    console.log(`Product ${index + 1}: Brand: "${prod.brand}", Name: "${prod.name}"`);
+  });
+
   if (identifiedProducts.length === 0) {
     // Step 2: No Product Handling
     throw new Error("There doesn't seem to be any product in this picture. Please try again.");
@@ -142,23 +148,25 @@ export const ProductConfirmationModal: React.FC<ProductConfirmationModalProps> =
           exit={{ opacity: 0, scale: 0.95 }}
           className="bg-white p-6 rounded-3xl w-full max-w-lg space-y-6 max-h-[90vh] overflow-y-auto"
         >
-          <div className="flex flex-col gap-2 pb-4" id="modal-header">
-            <button
-              id="confirm-products-btn"
-              onClick={handleConfirm}
-              className="w-full bg-black text-white py-3 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black/80 hover:scale-[1.02] active:scale-[0.98] transition-all"
-            >
-              Take skin quiz
-            </button>
-            <p className="text-xs text-center text-black italic">
-              Take our quiz to find out if these products fit your skin.
-            </p>
-          </div>
+          {items.length > 0 && (
+            <div className="flex flex-col gap-2 pb-4" id="modal-header">
+              <button
+                id="confirm-products-btn"
+                onClick={handleConfirm}
+                className="w-full bg-black text-white py-3 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black/80 hover:scale-[1.02] active:scale-[0.98] transition-all"
+              >
+                Take skin quiz
+              </button>
+              <p className="text-xs text-center text-black italic">
+                Take our quiz to find out if these products fit your skin.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-4" id="matched-products-list">
             {items.length === 0 ? (
               <p id="no-products-message" className="text-sm font-bold text-black/50 text-center py-6">
-                All identified products have been removed.
+                Product not found
               </p>
             ) : (
               items.map((item, idx) => (

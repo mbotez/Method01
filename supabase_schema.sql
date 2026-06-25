@@ -212,3 +212,20 @@ CREATE TABLE public.product_description (
   ingredients_list text,
   CONSTRAINT product_description_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.blog_videos (
+  id bigint NOT NULL DEFAULT nextval('blog_videos_id_seq'::regclass),
+  video_id text NOT NULL,
+  video_url text NOT NULL,
+  type text NOT NULL CHECK (type = ANY (ARRAY['tiktok'::text, 'youtube'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  title text,
+  CONSTRAINT blog_videos_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.video_products (
+  id bigint NOT NULL DEFAULT nextval('video_products_id_seq'::regclass),
+  video_table_id bigint,
+  product_id text NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT video_products_pkey PRIMARY KEY (id),
+  CONSTRAINT video_products_video_table_id_fkey FOREIGN KEY (video_table_id) REFERENCES public.blog_videos(id)
+);

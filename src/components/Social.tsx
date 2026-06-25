@@ -3,6 +3,29 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MessageCircle, Users, Heart, Share2, MoreVertical, X, Search, Plus, Send, SlidersHorizontal, Camera } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../lib/supabase';
+import { useProductCard } from '../context/ProductCardContext';
+
+interface Product {
+  id: string;
+  brand: string;
+  name: string;
+  photo_url?: string;
+}
+
+interface VideoProduct {
+  product_id: string;
+  products: Product;
+}
+
+interface VideoItem {
+  id: string;
+  video_id: string;
+  url: string;
+  platform: 'youtube' | 'tiktok';
+  title: string;
+  category: 'Glass skin' | 'Routine' | 'Educational';
+  video_products: VideoProduct[];
+}
 
 interface SocialProps {
   isFollowsOpen?: boolean;
@@ -17,6 +40,7 @@ export const Social = ({
   socialTab: externalSocialTab,
   setSocialTab: externalSetSocialTab,
 }: SocialProps) => {
+  const { openProductCard } = useProductCard();
   const [internalSocialTab, internalSetSocialTab] = useState<'Messages' | 'Friends'>('Friends');
   const [internalIsFollowsOpen, internalSetIsFollowsOpen] = useState(false);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
@@ -33,6 +57,78 @@ export const Social = ({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'All' | 'Following' | 'Saved'>('All');
+
+  const [videos, setVideos] = useState<VideoItem[]>([]);
+
+  useEffect(() => {
+    const fetchVideos = async () => {
+      const { data, error } = await supabase
+        .from('blog_videos')
+        .select(`
+          *,
+          video_products (
+            product_id,
+            products (
+              id,
+              brand,
+              name,
+              photo_url
+            )
+          )
+        `)
+        .order('created_at', { ascending: false });
+      if (error) console.error('Error fetching videos:', error);
+      else {
+        const mappedVideos: VideoItem[] = (data || []).map((v: any) => ({
+          id: v.id,
+          video_id: v.video_id,
+          url: v.video_url,
+          platform: v.type,
+          title: v.title,
+          category: v.category,
+          video_products: v.video_products || [],
+        }));
+        setVideos(mappedVideos);
+      }
+    };
+    fetchVideos();
+  }, []);
+
+  // Video Feed States
+  const [activeMainTab, setActiveMainTab] = useState<'videos' | 'community'>('videos');
+  const [videoCategoryFilter, setVideoCategoryFilter] = useState<'All' | 'Glass skin' | 'Routine' | 'Educational'>('All');
+  const [isVideoCategoryDropdownOpen, setIsVideoCategoryDropdownOpen] = useState(false);
+  const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
+  const [savedVideos, setSavedVideos] = useState<Record<string, boolean>>({});
+  const [videoLikesCount, setVideoLikesCount] = useState<Record<string, number>>({
+    "nabwuTwtlnM": 1420,
+    "C6xZDLw6vwM": 852,
+    "ythV9PhG-XQ": 2405,
+    "7606234334558981396": 34500,
+    "7629345393230318862": 51200,
+    "7341849029694737696": 12800
+  });
+
+  const toggleLikeVideo = (id: string) => {
+    setLikedVideos(prev => {
+      const wasLiked = prev[id];
+      setVideoLikesCount(likes => ({
+        ...likes,
+        [id]: wasLiked ? likes[id] - 1 : likes[id] + 1
+      }));
+      return {
+        ...prev,
+        [id]: !wasLiked
+      };
+    });
+  };
+
+  const toggleSaveVideo = (id: string) => {
+    setSavedVideos(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
   
   // New: User Search
   const [userSearch, setUserSearch] = useState('');
@@ -307,6 +403,16 @@ export const Social = ({
     ? baseFiltered.filter(p => follows.some(f => f.following_id === p.user_id))
     : baseFiltered;
 
+  const filteredVideos = videos.filter(video => {
+    const matchesSearch = searchQuery.trim() === '' || 
+      video.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      video.category.toLowerCase().includes(searchQuery.toLowerCase());
+      
+    const matchesCategory = videoCategoryFilter === 'All' || video.category === videoCategoryFilter;
+    
+    return matchesSearch && matchesCategory;
+  });
+
   return (
     <div className="flex h-full w-full">
       {/* Panel 1: Topics (New Left Panel) - 3/10 width on desktop */}
@@ -316,197 +422,408 @@ export const Social = ({
         </div>
 
         <div className="space-y-4">
-          {['Skincare', 'Sunscreen', 'Anti-Aging', 'Acne', 'Sensitive'].map(topic => (
-            <div key={topic} className="p-3 hover:bg-black/[0.02] rounded-xl transition-all cursor-pointer border border-transparent hover:border-black/5">
+          {['Glass skin', 'Routine', 'Educational', 'Skincare', 'Sensitive'].map(topic => (
+            <div 
+              key={topic} 
+              onClick={() => {
+                setSearchQuery(topic);
+                if (topic === 'Glass skin' || topic === 'Routine' || topic === 'Educational') {
+                  setVideoCategoryFilter(topic);
+                } else {
+                  setVideoCategoryFilter('All');
+                }
+              }}
+              className={`p-3 rounded-xl transition-all cursor-pointer border ${
+                searchQuery === topic || videoCategoryFilter === topic 
+                  ? 'bg-black text-white border-black font-black' 
+                  : 'hover:bg-black/[0.02] border-transparent hover:border-black/5 text-black/80'
+              }`}
+            >
               <p className="text-[14px] font-black uppercase tracking-tight truncate">#{topic}</p>
             </div>
           ))}
+          {(searchQuery || videoCategoryFilter !== 'All') && (
+            <button 
+              onClick={() => {
+                setSearchQuery('');
+                setVideoCategoryFilter('All');
+              }}
+              className="w-full text-left p-3 text-[10px] font-black uppercase tracking-widest text-venus-accent hover:opacity-80"
+            >
+              Reset Filters
+            </button>
+          )}
         </div>
       </div>
 
       {/* Panel 2: Feed - 7/10 width on desktop */}
       <div className="w-full md:w-[70%] md:pl-10 h-full overflow-y-auto">
+        
+        {/* Main Tab Switcher */}
+        <div className="flex gap-6 border-b border-black/5 pb-2.5 mb-6">
+          <button 
+            onClick={() => {
+              setActiveMainTab('videos');
+              setSearchQuery('');
+            }} 
+            className={`text-[10px] font-black uppercase tracking-widest relative pb-2 transition-all ${
+              activeMainTab === 'videos' 
+                ? 'text-black font-black border-b-2 border-black' 
+                : 'text-black/40 hover:text-black/60'
+            }`}
+          >
+            Video Tutorials
+          </button>
+          <button 
+            onClick={() => {
+              setActiveMainTab('community');
+              setSearchQuery('');
+            }} 
+            className={`text-[10px] font-black uppercase tracking-widest relative pb-2 transition-all ${
+              activeMainTab === 'community' 
+                ? 'text-black font-black border-b-2 border-black' 
+                : 'text-black/40 hover:text-black/60'
+            }`}
+          >
+            Community Q&A
+          </button>
+        </div>
+
+        {/* Search Bar (Shared for both tabs) */}
         <div className="flex items-center gap-2 mb-6 w-full">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-black/30" />
             <input 
               type="text" 
-              placeholder="Search feed..."
+              placeholder={activeMainTab === 'videos' ? "Search video tutorials..." : "Search community feed..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-black/5 border-none rounded-lg py-2 pl-9 pr-4 text-[10px] font-bold focus:ring-2 focus:ring-black/10 outline-none transition-all placeholder:uppercase placeholder:tracking-tighter"
             />
           </div>
 
-          {/* Filter button and dropdown */}
-          <div className="relative">
-            <button 
-              onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-black/5 hover:bg-black/10 text-black rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Filter: {filter}</span>
-            </button>
-            
-            <AnimatePresence>
-              {isFilterDropdownOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-10" 
-                    onClick={() => setIsFilterDropdownOpen(false)} 
-                  />
-                  <motion.div 
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 5 }}
-                    className="absolute right-0 mt-1 w-32 bg-white border border-black/5 rounded-lg shadow-xl z-20 py-1"
-                  >
-                    {(['All', 'Following', 'Saved'] as const).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => {
-                          setFilter(t);
-                          setIsFilterDropdownOpen(false);
-                        }}
-                        className={`w-full text-left px-3 py-2 text-[9px] font-black uppercase tracking-wider hover:bg-black/5 transition-all ${filter === t ? 'text-venus-accent font-black' : 'text-black/60'}`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        {/* Inline Post Bar */}
-        <div className="bg-black/5 p-4 rounded-xl mb-6">
-          <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-black/60">Ask a question to the community</p>
-          <input 
-            type="text"
-            placeholder="Post Title (Optional)"
-            value={postTitle}
-            onChange={(e) => setPostTitle(e.target.value)}
-            className="w-full bg-white border-none rounded-lg py-2 px-3 text-[11px] font-bold focus:ring-1 focus:ring-black outline-none mb-2"
-          />
-          <input 
-            type="text"
-            placeholder="What's on your mind?"
-            value={postContent}
-            onChange={(e) => setPostContent(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreatePost()}
-            className="w-full bg-white border-none rounded-lg py-2 px-3 text-[11px] font-bold focus:ring-1 focus:ring-black outline-none mb-3"
-          />
-          <div className="flex items-center justify-between">
-            <input 
-              type="file"
-              ref={fileInputRef}
-              onChange={(e) => setPostImage(e.target.files?.[0] || null)}
-              className="hidden"
-              accept="image/*"
-            />
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className={`flex items-center gap-2 text-[10px] font-black uppercase cursor-pointer ${postImage ? 'text-venus-accent' : 'text-black'}`}
-            >
-              <Camera className="w-4 h-4" />
-              {postImage ? 'Image Attached' : 'Attach Photo'}
-            </button>
-            <button 
-              onClick={handleCreatePost}
-              disabled={!postContent.trim()}
-              className="text-[9px] font-black uppercase tracking-widest bg-black text-white px-6 py-2 rounded-lg hover:bg-venus-accent transition-all disabled:opacity-50"
-            >
-              Post
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-4 pb-32">
-          {loading ? (
-            <div className="space-y-4">
-              {[1, 2, 3].map(i => <div key={i} className="h-32 bg-black/5 rounded-xl animate-pulse" />)}
-            </div>
-          ) : (
-            displayPosts.map(post => (
-              <div key={post.post_id} className="bg-white border border-black/5 rounded-xl overflow-hidden hover:border-black/20 transition-all">
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-venus-accent/20 border border-black flex items-center justify-center text-[9px] font-black">
-                        {post.users?.username?.[0] || 'U'}
-                      </div>
-                      <div>
-                        <h4 className="text-[9px] font-black uppercase tracking-tight leading-none">{post.users?.username || 'Anonymous'}</h4>
-                        <p className="text-[7px] text-black/40 font-bold">@{post.users?.skin_type || 'member'} • {new Date(post.timestamp).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <button className="text-black/20 hover:text-black">
-                      <MoreVertical className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  
-                  {post.title && (
-                    <h3 className="text-[9px] font-black uppercase tracking-tight mb-0.5 text-venus-accent">{post.title}</h3>
-                  )}
-                  <p className="text-[11px] font-medium leading-normal mb-3 text-black/80">{post.content}</p>
-                  
-                  {post.post_media && (
-                    <div className="rounded-lg overflow-hidden border border-black/5 mb-3">
-                      <img src={post.post_media} className="w-full max-h-48 object-cover" alt="Post media" />
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center gap-3 pt-2 border-t border-black/5">
-                    <button className="flex items-center gap-1 text-black/40 hover:text-venus-accent transition-colors">
-                      <Heart className="w-3 h-3" />
-                      <span className="text-[8px] font-black">0</span>
-                    </button>
-                    <button 
-                      onClick={() => setCommentsOpenPostId(commentsOpenPostId === post.post_id ? null : post.post_id)}
-                      className="flex items-center gap-1 text-black/40 hover:text-black transition-colors"
+          {activeMainTab === 'videos' && (
+            /* Filter button and dropdown for Videos */
+            <div className="relative">
+              <button 
+                onClick={() => setIsVideoCategoryDropdownOpen(!isVideoCategoryDropdownOpen)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-black/5 hover:bg-black/10 text-black rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Category: {videoCategoryFilter}</span>
+              </button>
+              
+              <AnimatePresence>
+                {isVideoCategoryDropdownOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setIsVideoCategoryDropdownOpen(false)} 
+                    />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 5 }}
+                      className="absolute right-0 mt-1 w-36 bg-white border border-black/5 rounded-lg shadow-xl z-20 py-1"
                     >
-                      <MessageCircle className="w-3 h-3" />
-                      <span className="text-[8px] font-black">{comments[post.post_id]?.length || 0}</span>
-                    </button>
-                    <button className="flex items-center gap-1 text-black/40 hover:text-black transition-colors ml-auto">
-                      <Share2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                  
-                  {commentsOpenPostId === post.post_id && (
-                    <div className="mt-4 pt-4 border-t border-black/5 space-y-4">
-                      {comments[post.post_id]?.map(c => (
-                        <div key={c.id} className="text-[10px] bg-black/5 p-2 rounded-lg">
-                          <span className="font-black mr-1 uppercase">{c.users?.username || 'U'}:</span>
-                          {c.content}
-                        </div>
-                      ))}
-                      
-                      <div className="flex gap-2">
-                        <input 
-                          type="text"
-                          value={newCommentText}
-                          onChange={(e) => setNewCommentText(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleComment(post.post_id)}
-                          placeholder="Write a comment..."
-                          className="flex-1 bg-black/5 border-none rounded-lg py-2 px-3 text-[10px] font-bold focus:ring-1 focus:ring-black outline-none"
-                        />
-                        <button 
-                          onClick={() => handleComment(post.post_id)}
-                          className="px-3 py-2 bg-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-venus-accent transition-colors"
+                      {(['All', 'Glass skin', 'Routine', 'Educational'] as const).map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => {
+                            setVideoCategoryFilter(cat);
+                            setIsVideoCategoryDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-[9px] font-black uppercase tracking-wider hover:bg-black/5 transition-all ${videoCategoryFilter === cat ? 'text-venus-accent font-black' : 'text-black/60'}`}
                         >
-                          Save
+                          {cat}
                         </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
+                      ))}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {activeMainTab === 'community' && (
+            /* Filter button and dropdown for Community */
+            <div className="relative">
+              <button 
+                onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-black/5 hover:bg-black/10 text-black rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Filter: {filter}</span>
+              </button>
+              
+              <AnimatePresence>
+                {isFilterDropdownOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setIsFilterDropdownOpen(false)} 
+                    />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 5 }}
+                      className="absolute right-0 mt-1 w-32 bg-white border border-black/5 rounded-lg shadow-xl z-20 py-1"
+                    >
+                      {(['All', 'Following', 'Saved'] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            setFilter(t);
+                            setIsFilterDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-[9px] font-black uppercase tracking-wider hover:bg-black/5 transition-all ${filter === t ? 'text-venus-accent font-black' : 'text-black/60'}`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
           )}
         </div>
+
+        {activeMainTab === 'videos' ? (
+          /* VIDEO TUTORIALS TAB CONTENT */
+          <div className="space-y-6">
+            {/* Video List Feed */}
+            {filteredVideos.length === 0 ? (
+              <div className="text-center py-12 bg-black/[0.02] rounded-xl border border-dashed border-black/10">
+                <p className="text-xs text-black/40 font-bold uppercase italic">No videos match your search or filters</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-32">
+                {filteredVideos.map(video => {
+                  const isLiked = likedVideos[video.id];
+                  const isSaved = savedVideos[video.id];
+                  const likesCount = videoLikesCount[video.id] || 0;
+
+                  return (
+                    <div 
+                      key={video.id} 
+                      className="bg-white border border-black/5 rounded-xl overflow-hidden hover:border-black/20 hover:shadow-md transition-all duration-300 flex flex-col h-full justify-between"
+                    >
+                      <div className="p-2 flex flex-col h-full justify-between gap-1">
+                        {/* Video Title */}
+                        <h3 className="text-xs font-black uppercase tracking-tight text-black leading-tight min-h-[2rem] flex items-center">
+                          {video.title}
+                        </h3>
+
+                        {/* Video Player Box */}
+                        {video.platform === 'youtube' ? (
+                          <div className="w-full aspect-video relative rounded-xl overflow-hidden border border-black/5 bg-black/5 shadow-inner">
+                            <iframe
+                              src={video.url}
+                              className="absolute inset-0 w-full h-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex justify-center w-full bg-black/[0.02] py-1 rounded-xl border border-black/5">
+                            <div className="w-full max-w-[260px] aspect-[9/16] relative rounded-xl overflow-hidden shadow-lg bg-black">
+                              <iframe
+                                src={video.url}
+                                className="absolute inset-0 w-full h-full"
+                                allow="fullscreen"
+                                scrolling="no"
+                                style={{ overflow: 'hidden' }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Products */}
+                        {video.video_products.length > 0 && (
+                          <div className="space-y-2 pt-2 pb-2">
+                            {video.video_products.map((vp) => (
+                              <button
+                                key={vp.product_id}
+                                onClick={() => openProductCard(vp.product_id)}
+                                className="flex items-center gap-3 w-full p-2 bg-black/5 rounded-xl hover:bg-venus-accent/10 transition-colors text-left"
+                              >
+                                {vp.products.photo_url && (
+                                  <img 
+                                    src={vp.products.photo_url} 
+                                    alt={vp.products.name} 
+                                    className="w-12 h-12 object-cover rounded-lg flex-shrink-0"
+                                  />
+                                )}
+                                <div className="flex flex-col justify-center overflow-hidden">
+                                  <span className="text-xs font-black uppercase tracking-wider text-black">{vp.products.brand}</span>
+                                  <span className="text-[10px] font-bold text-black/60 truncate">{vp.products.name}</span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Footer: Like and bookmark buttons */}
+                        <div className="flex items-center gap-4 pt-2 border-t border-black/5 mt-auto">
+                          <button 
+                            onClick={() => toggleLikeVideo(video.id)}
+                            className={`flex items-center gap-1.5 transition-colors ${
+                              isLiked ? 'text-red-500' : 'text-black/40 hover:text-red-500'
+                            }`}
+                          >
+                            <Heart className={`w-3 h-3 ${isLiked ? 'fill-current' : ''}`} />
+                            <span className="text-[9px] font-black">{likesCount.toLocaleString()}</span>
+                          </button>
+                          <button 
+                            onClick={() => toggleSaveVideo(video.id)}
+                            className={`flex items-center gap-1.5 transition-colors ${
+                              isSaved ? 'text-venus-accent font-black' : 'text-black/40 hover:text-venus-accent'
+                            }`}
+                          >
+                            <Share2 className="w-3 h-3" />
+                            <span className="text-[9px] font-black">{isSaved ? 'Saved' : 'Save'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* COMMUNITY TAB CONTENT */
+          <>
+            {/* Inline Post Bar */}
+            <div className="bg-black/5 p-4 rounded-xl mb-6">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-black/60">Ask a question to the community</p>
+              <input 
+                type="text"
+                placeholder="Post Title (Optional)"
+                value={postTitle}
+                onChange={(e) => setPostTitle(e.target.value)}
+                className="w-full bg-white border-none rounded-lg py-2 px-3 text-[11px] font-bold focus:ring-1 focus:ring-black outline-none mb-2"
+              />
+              <input 
+                type="text"
+                placeholder="What's on your mind?"
+                value={postContent}
+                onChange={(e) => setPostContent(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreatePost()}
+                className="w-full bg-white border-none rounded-lg py-2 px-3 text-[11px] font-bold focus:ring-1 focus:ring-black outline-none mb-3"
+              />
+              <div className="flex items-center justify-between">
+                <input 
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={(e) => setPostImage(e.target.files?.[0] || null)}
+                  className="hidden"
+                  accept="image/*"
+                />
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`flex items-center gap-2 text-[10px] font-black uppercase cursor-pointer ${postImage ? 'text-venus-accent' : 'text-black'}`}
+                >
+                  <Camera className="w-4 h-4" />
+                  {postImage ? 'Image Attached' : 'Attach Photo'}
+                </button>
+                <button 
+                  onClick={handleCreatePost}
+                  disabled={!postContent.trim()}
+                  className="text-[9px] font-black uppercase tracking-widest bg-black text-white px-6 py-2 rounded-lg hover:bg-venus-accent transition-all disabled:opacity-50"
+                >
+                  Post
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4 pb-32">
+              {loading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map(i => <div key={i} className="h-32 bg-black/5 rounded-xl animate-pulse" />)}
+                </div>
+              ) : (
+                displayPosts.map(post => (
+                  <div key={post.post_id} className="bg-white border border-black/5 rounded-xl overflow-hidden hover:border-black/20 transition-all">
+                    <div className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-venus-accent/20 border border-black flex items-center justify-center text-[9px] font-black">
+                            {post.users?.username?.[0] || 'U'}
+                          </div>
+                          <div>
+                            <h4 className="text-[9px] font-black uppercase tracking-tight leading-none">{post.users?.username || 'Anonymous'}</h4>
+                            <p className="text-[7px] text-black/40 font-bold">@{post.users?.skin_type || 'member'} • {new Date(post.timestamp).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        <button className="text-black/20 hover:text-black">
+                          <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      
+                      {post.title && (
+                        <h3 className="text-[9px] font-black uppercase tracking-tight mb-0.5 text-venus-accent">{post.title}</h3>
+                      )}
+                      <p className="text-[11px] font-medium leading-normal mb-3 text-black/80">{post.content}</p>
+                      
+                      {post.post_media && (
+                        <div className="rounded-lg overflow-hidden border border-black/5 mb-3">
+                          <img src={post.post_media} className="w-full max-h-48 object-cover" alt="Post media" />
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center gap-3 pt-2 border-t border-black/5">
+                        <button className="flex items-center gap-1 text-black/40 hover:text-venus-accent transition-colors">
+                          <Heart className="w-3 h-3" />
+                          <span className="text-[8px] font-black">0</span>
+                        </button>
+                        <button 
+                          onClick={() => setCommentsOpenPostId(commentsOpenPostId === post.post_id ? null : post.post_id)}
+                          className="flex items-center gap-1 text-black/40 hover:text-black transition-colors"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          <span className="text-[8px] font-black">{comments[post.post_id]?.length || 0}</span>
+                        </button>
+                        <button className="flex items-center gap-1 text-black/40 hover:text-black transition-colors ml-auto">
+                          <Share2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                      
+                      {commentsOpenPostId === post.post_id && (
+                        <div className="mt-4 pt-4 border-t border-black/5 space-y-4">
+                          {comments[post.post_id]?.map(c => (
+                            <div key={c.id} className="text-[10px] bg-black/5 p-2 rounded-lg">
+                              <span className="font-black mr-1 uppercase">{c.users?.username || 'U'}:</span>
+                              {c.content}
+                            </div>
+                          ))}
+                          
+                          <div className="flex gap-2">
+                            <input 
+                              type="text"
+                              value={newCommentText}
+                              onChange={(e) => setNewCommentText(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleComment(post.post_id)}
+                              placeholder="Write a comment..."
+                              className="flex-1 bg-black/5 border-none rounded-lg py-2 px-3 text-[10px] font-bold focus:ring-1 focus:ring-black outline-none"
+                            />
+                            <button 
+                              onClick={() => handleComment(post.post_id)}
+                              className="px-3 py-2 bg-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-venus-accent transition-colors"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Mobile Floating Action Button removed */}

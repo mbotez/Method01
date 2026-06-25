@@ -837,23 +837,9 @@ export default function App() {
                     try {
                         const productsToEvaluate = JSON.parse(cachedLanding);
                         
-                        // Automatically save these products to tracker for the new user, like handleLandingConfirmScan
-                        const trackerPayload = productsToEvaluate.map((prod: any) => ({
-                          user_id: currentUser.id,
-                          brand: prod.brand,
-                          product_name: prod.name,
-                          product_type: prod.type,
-                          routine_time: 'AM/PM',
-                          in_use: true,
-                          photo_url: prod.photo_url || null,
-                          product_id: prod.id
-                        }));
-                        const { error: insertError } = await supabase.from('tracker').insert(trackerPayload);
-                        if (insertError) {
-                            console.error("Error saving cached landing products to tracker:", insertError);
-                        } else {
-                            await fetchTrackerData(currentUser.id);
-                        }
+                        // We do NOT automatically save the scanned photo-captured products to the tracker table here.
+                        // Only products they explicitly declared they are using in the questionnaire are saved to tracker.
+                        await fetchTrackerData(currentUser.id);
 
                         // Evaluate each product's category for the new skin profile
                         const evaluations = await Promise.all(
