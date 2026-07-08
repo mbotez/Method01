@@ -34,7 +34,11 @@ import {
   MessageCircle,
   Camera,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  Droplet,
+  Shield,
+  ArrowLeft,
+  RefreshCw
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from './lib/supabase';
@@ -47,10 +51,11 @@ import { ComparisonModal } from './components/ComparisonModal';
 import { TrackerNewProductModal } from './components/TrackerNewProductModal';
 import { TrackerProductCard } from './components/TrackerProductCard';
 import { Social } from './components/Social';
-import { Questionnaire } from './components/Questionnaire';
+import { ChatQuestionnaire } from './components/ChatQuestionnaire';
 import { INVENTORY, Product } from './constants';
 import { searchProductsFromPhoto, ProductConfirmationModal, MatchedProduct } from './components/photo_search';
 import { evaluateProductCategory } from './utils/productCategoryEvaluator';
+import { productSort } from './utils/productsort';
 
 // --- Components ---
 
@@ -85,8 +90,53 @@ enum AppState {
   LEADERBOARD,
   TRACKER,
   SOCIAL,
-  PROFILE
+  PROFILE,
+  PROGRESS
 }
+
+const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
+  "Cleanser": [
+    { id: 1, name: "Facewash" },
+    { id: 2, name: "Makeup Remover" },
+    { id: 3, name: "Exfoliator" },
+    { id: 7, name: "Oil" },
+    { id: 14, name: "Pad" },
+    { id: 15, name: "Scrub" }
+  ],
+  "Moisturiser": [
+    { id: 6, name: "Cream" },
+    { id: 7, name: "Oil" },
+    { id: 10, name: "Eyecare" },
+    { id: 11, name: "Lipcare" },
+    { id: 16, name: "Mask" }
+  ],
+  "Treatment": [
+    { id: 3, name: "Exfoliator" },
+    { id: 4, name: "Serum" },
+    { id: 5, name: "Toner" },
+    { id: 7, name: "Oil" },
+    { id: 12, name: "Spot Treatment" },
+    { id: 14, name: "Pad" },
+    { id: 15, name: "Scrub" },
+    { id: 16, name: "Mask" }
+  ],
+  "Targeted": [
+    { id: 4, name: "Serum" },
+    { id: 5, name: "Toner" },
+    { id: 6, name: "Cream" },
+    { id: 10, name: "Eyecare" },
+    { id: 11, name: "Lipcare" },
+    { id: 12, name: "Spot Treatment" },
+    { id: 13, name: "Patch" },
+    { id: 14, name: "Pad" },
+    { id: 16, name: "Mask" }
+  ],
+  "SPF": [
+    { id: 8, name: "Mineral SPF" },
+    { id: 9, name: "Chemical SPF" },
+    { id: 11, name: "Lipcare" }
+  ]
+};
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>(AppState.LANDING);
@@ -144,6 +194,11 @@ export default function App() {
   const [selectedPhoto, setSelectedPhoto] = useState<any | null>(null);
   const [isFollowsOpen, setIsFollowsOpen] = useState(false);
   const [socialTab, setSocialTab] = useState<'Messages' | 'Friends'>('Friends');
+  const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'community'>('videos');
+  const [latestVideos, setLatestVideos] = useState<any[]>([]);
+  const [lastPost, setLastPost] = useState<any>(null);
+  const [loadingLatestVideos, setLoadingLatestVideos] = useState(true);
+  const [loadingLastPost, setLoadingLastPost] = useState(true);
 
   // Dashboard Product Scan States
   const dashboardFileInputRef = useRef<HTMLInputElement>(null);
@@ -169,6 +224,90 @@ export default function App() {
   const [landingEvaluationResults, setLandingEvaluationResults] = useState<any[]>([]);
   const [isLandingEvaluationOpen, setIsLandingEvaluationOpen] = useState(false);
   const [isLandingEvaluating, setIsLandingEvaluating] = useState(false);
+
+  // Inspiration Sorting States
+  const [selectedInspirationCategory, setSelectedInspirationCategory] = useState<string | null>(null);
+  const [selectedCat3, setSelectedCat3] = useState<number | null>(null);
+  const [isSortingProducts, setIsSortingProducts] = useState(false);
+  const [isLoadingMoreProducts, setIsLoadingMoreProducts] = useState(false);
+  const [sortedProductsResult, setSortedProductsResult] = useState<any>(null);
+  const [sortingError, setSortingError] = useState<string | null>(null);
+
+  const handleSelectInspiration = async (category: string, forceRefresh: boolean = false, page: number = 1, cat3Override: number | null | undefined = undefined) => {
+    const activeCat3 = cat3Override !== undefined ? cat3Override : selectedCat3;
+    if (page === 1) {
+      setSelectedInspirationCategory(category);
+      setIsSortingProducts(true);
+      setSortingError(null);
+      setSortedProductsResult(null);
+    } else {
+      setIsLoadingMoreProducts(true);
+      setSortingError(null);
+    }
+
+    try {
+      const activeProfile = userProfile || {
+        skin_type: profile?.skin_type || 'normal',
+        age: '25',
+        skin_tone: 1,
+        burn_risk: 'medium',
+        symptoms: 0,
+        new_product_reaction: 0,
+        barrier_risk: 0,
+        sensitivity: [],
+        main_concern: 12, // general/not sure fallback
+        scnd_concern: null,
+        breakout_type: [],
+        pregnant: 'No',
+        scan_acne_type: []
+      };
+
+      const result = await productSort(activeProfile, category, page, forceRefresh, activeCat3);
+      
+      if (page === 1) {
+        setSortedProductsResult(result);
+      } else {
+        setSortedProductsResult((prev: any) => ({
+          ...result,
+          products: [...(prev?.products || []), ...(result.products || [])],
+          prescriptions: [...(prev?.prescriptions || []), ...(result.prescriptions || [])],
+        }));
+      }
+    } catch (err: any) {
+      console.error("Error running productSort:", err);
+      setSortingError(err.message || "Could not sort products. Please ensure your profile is fully set up in the Profile tab.");
+    } finally {
+      if (page === 1) {
+        setIsSortingProducts(false);
+      } else {
+        setIsLoadingMoreProducts(false);
+      }
+    }
+  };
+
+  const handleAddProductToTracker = async (p: any) => {
+    if (!user) {
+      setError("Please sign in or join to add products to your tracker!");
+      return;
+    }
+    try {
+      const { error: trackerError } = await supabase.from('tracker').insert({
+          user_id: user.id,
+          brand: p.brand || p.Brand || '',
+          product_name: p.name || p.ProductName || p.Name || '',
+          product_type: p.type || p.Type || 'Custom',
+          routine_time: 'AM/PM',
+          in_use: true,
+          photo_url: p.photo_url || null,
+          product_id: p.id || p.product_id || null
+      });
+      if (trackerError) throw trackerError;
+      fetchTrackerData();
+    } catch (err: any) {
+      console.error("Error adding product to tracker:", err);
+      setError(`Failed to add product to tracker: ${err.message}`);
+    }
+  };
 
   const handleDashboardPhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -321,6 +460,90 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const fetchLastVideoAndPost = async () => {
+      try {
+        const { data: videoData, error: videoError } = await supabase
+          .from('blog_videos')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(3);
+
+        if (videoError) {
+          console.error("Error fetching latest videos:", videoError);
+        } else if (videoData) {
+          setLatestVideos(videoData);
+        }
+      } catch (err) {
+        console.error("Exception fetching latest videos:", err);
+      } finally {
+        setLoadingLatestVideos(false);
+      }
+
+      try {
+        const { data: postData, error: postError } = await supabase
+          .from('posts')
+          .select(`
+            *,
+            users (
+              username,
+              skin_type
+            )
+          `)
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (postError) {
+          console.error("Error fetching last post:", postError);
+        } else if (postData) {
+          setLastPost(postData);
+        }
+      } catch (err) {
+        console.error("Exception fetching last post:", err);
+      } finally {
+        setLoadingLastPost(false);
+      }
+    };
+
+    fetchLastVideoAndPost();
+
+    // Setup realtime subscription
+    const videosChannel = supabase.channel('blog-videos-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'blog_videos' }, async () => {
+        const { data } = await supabase
+          .from('blog_videos')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(3);
+        if (data) setLatestVideos(data);
+      })
+      .subscribe();
+
+    const postsChannel = supabase.channel('posts-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async () => {
+        const { data } = await supabase
+          .from('posts')
+          .select(`
+            *,
+            users (
+              username,
+              skin_type
+            )
+          `)
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data) setLastPost(data);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(videosChannel);
+      supabase.removeChannel(postsChannel);
+    };
+  }, []);
+
+  useEffect(() => {
     window.scrollTo(0, 0);
   }, [appState]);
 
@@ -404,6 +627,26 @@ export default function App() {
             'Often get redness, bumps, or burning': 2,
             'Almost everything irritates my skin': 3
         };
+        const concernMap: Record<string, number> = {
+            'Acne and scars': 1,
+            'Redness': 2,
+            'Dark Spots': 3,
+            'Dullness': 4,
+            'Dryness': 5,
+            'Oily skin': 6,
+            'Wrinkles & fine lines': 7,
+            'Large pores & texture': 8,
+            'Sensitivity': 9,
+            'Eczema': 10,
+            'Fungal acne': 11,
+            'Not sure': 12
+        };
+        const activesMap: Record<string, number> = {
+            'Prescription retinoids (tretinoin, adapalene etc)': 1,
+            'Over-the-counter retinols': 2,
+            'Exfoliating acids (salicylic, glycolic etc)': 3,
+            "None/ I'm not sure": 4
+        };
 
         const symptomsScore = (answers.sensitivity || []).length;
         const reactionScore = reactionMap[answers.reaction] || 0;
@@ -414,10 +657,11 @@ export default function App() {
         if (sensitivityList.includes('Redness')) {
             rednessScore += 45;
         }
-        const goals = answers.goals || [];
-        const hasCalmRedness = Array.isArray(goals) 
-            ? goals.includes('Calm redness') 
-            : goals === 'Calm redness';
+        
+        const mainConcern = answers.mainConcern;
+        const scndConcern = answers.scndConcern;
+        
+        const hasCalmRedness = mainConcern === 'Redness' || scndConcern === 'Redness';
         if (hasCalmRedness) {
             rednessScore += 20;
         }
@@ -438,7 +682,8 @@ export default function App() {
             new_product_reaction: reactionScore,
             barrier_risk: symptomsScore + reactionScore,
             sensitivity: answers.sensitivity || [],
-            goals: answers.goals || [],
+            main_concern: concernMap[mainConcern] || null,
+            scnd_concern: concernMap[scndConcern] || null,
             breakout_type: answers.breakoutType || [],
             breakout_where: answers.breakoutWhere || null,
             env: answers.env || null,
@@ -455,7 +700,7 @@ export default function App() {
             scan_acne_type: answers.scan_acne_type || null,
             sex: answers.sex || null,
             pregnant: answers.pregnant || null,
-            actives_used: answers.activesUsed || []
+            actives_used: (answers.activesUsed || []).map((a: string) => activesMap[a] || 0)
         };
 
         let { error: profileError } = await supabase
@@ -845,7 +1090,7 @@ export default function App() {
                         const evaluations = await Promise.all(
                             productsToEvaluate.map(async (prod: any) => {
                                 try {
-                                    const result = await evaluateProductCategory(currentUser.id, prod.id, []);
+                                    const result = await evaluateProductCategory(currentUser.id, prod.id);
                                     return {
                                         product: prod,
                                         evaluation: result
@@ -947,6 +1192,13 @@ export default function App() {
       }
     }
   }, [user, profile, appState, loading]);
+
+  useEffect(() => {
+    if (!userProfile?.id) return;
+    ['Cleanser', 'Treatment', 'Moisturiser', 'SPF'].forEach(type => {
+      productSort(userProfile, type); // fires and caches silently
+    });
+  }, [userProfile?.id]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -1735,9 +1987,9 @@ export default function App() {
             </div>
             {/* Navigation items moved from footer */}
             <div className="flex flex-col gap-4">
-              <button onClick={() => { setAppState(AppState.LANDING); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.LANDING ? 'text-black font-black' : 'text-black/60'}`}>
+              <button onClick={() => { setAppState(AppState.PROGRESS); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.PROGRESS ? 'text-black font-black' : 'text-black/60'}`}>
                 <Newspaper className="w-6 h-6" />
-                <span className="text-sm uppercase tracking-widest font-black">Feed</span>
+                <span className="text-sm uppercase tracking-widest font-black">Progress</span>
               </button>
               <button onClick={() => { setAppState(AppState.DASHBOARD); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.DASHBOARD ? 'text-black font-black' : 'text-black/60'}`}>
                 <FlaskConical className="w-6 h-6" />
@@ -1858,6 +2110,8 @@ export default function App() {
                 setIsFollowsOpen={setIsFollowsOpen}
                 socialTab={socialTab}
                 setSocialTab={setSocialTab}
+                activeMainTab={socialActiveMainTab}
+                setActiveMainTab={setSocialActiveMainTab}
               />
             </motion.div>
           )}
@@ -1917,7 +2171,7 @@ export default function App() {
 
           {/* ONBOARDING: DETAILS */}
           {appState === AppState.ONBOARDING_DETAILS && (
-            <Questionnaire onComplete={handleQuestionnaireComplete} />
+            <ChatQuestionnaire onComplete={handleQuestionnaireComplete} />
           )}
 
           {/* CURATED SELECTION */}
@@ -1929,14 +2183,14 @@ export default function App() {
               className="space-y-12 pb-12"
             >
               <header className="text-center space-y-4">
-                <h2 className="text-5xl font-sans font-black text-black uppercase italic tracking-tighter">Curated Selection</h2>
+                <h2 className="text-5xl font-sans font-black text-black uppercase tracking-tighter">Curated Selection</h2>
                 <div className="bg-black inline-block px-6 py-2 rounded-lg">
                   <span className="text-white text-xs font-black uppercase tracking-widest">Ritual 01-A</span>
                 </div>
               </header>
 
               <div className="space-y-10">
-                <h3 className="text-3xl font-sans font-black text-center text-black uppercase italic tracking-tight underline decoration-venus-accent decoration-4">Your Daily Ritual</h3>
+                <h3 className="text-3xl font-sans font-black text-center text-black uppercase tracking-tight underline decoration-venus-accent decoration-4">Your Daily Ritual</h3>
                 {defaultRitualSteps.map((rec, idx) => {
                   const options = INVENTORY.filter(p => p.type.toLowerCase() === rec.type.toLowerCase() || rec.type.toLowerCase().includes(p.type.toLowerCase()));
                   const selection = selectedProducts.find(p => p.type.toLowerCase() === rec.type.toLowerCase() || rec.type.toLowerCase().includes(p.type.toLowerCase()));
@@ -1996,135 +2250,707 @@ export default function App() {
 
           {/* DASHBOARD */}
           {appState === AppState.DASHBOARD && (
-            <motion.div 
-              key="dashboard"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-2 text-[80%]"
-            >
-              
-
-              {/* Routine Card */}
-              <div className="space-y-4 md:space-y-6">
-                <div className="flex items-center justify-between md:border-0 md:pb-0">
-                  <div className="flex items-center gap-2 text-black">
-                    <h3 className="font-sans font-black text-lg md:text-xl uppercase italic tracking-tight">My routines</h3>
+            selectedInspirationCategory ? (
+              <motion.div
+                key="inspiration-results"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                className="space-y-6 pb-12 text-[80%]"
+              >
+                {/* Back button and title */}
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black">
+                      {selectedInspirationCategory === 'Moisturiser' ? 'Moisturisers' : 
+                                   selectedInspirationCategory === 'Treatment' ? 'Serums & Treatments' : 
+                                   selectedInspirationCategory === 'Cleanser' ? 'Cleansers' : 'Sunscreens (SPF)'}
+                    </h2>
+                    <button
+                      onClick={() => setSelectedInspirationCategory(null)}
+                      className="p-1.5 rounded-full hover:bg-black/5 text-black/40 hover:text-black transition-all flex items-center justify-center cursor-pointer"
+                      title="Go back"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button 
-                    onClick={handleAddRoutine}
-                    className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2"
+
+                  <button
+                    onClick={() => {
+                      if (selectedInspirationCategory) {
+                        handleSelectInspiration(selectedInspirationCategory, true);
+                      }
+                    }}
+                    disabled={isSortingProducts}
+                    className="px-3 py-1.5 border border-black/15 hover:border-black hover:bg-black hover:text-white disabled:opacity-50 transition-all rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 cursor-pointer shrink-0"
+                    title="Force a fresh re-calculation by clearing current sessionStorage cache"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span className="hidden md:inline">New Routine</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSortingProducts ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
                   </button>
-                  <button 
-                    onClick={() => dashboardFileInputRef.current?.click()}
-                    disabled={isDashboardScanning}
-                    className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2"
-                  >
-                    {isDashboardScanning ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Camera className="w-4 h-4" />
-                    )}
-                    <span className="hidden md:inline">Scan Product</span>
-                  </button>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    ref={dashboardFileInputRef}
-                    onChange={handleDashboardPhotoScan}
-                    className="hidden"
-                  />
                 </div>
-                
-                {dashboardScanError && (
-                  <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold border-2 border-red-500/15">
-                    {dashboardScanError}
+
+                <div className="mb-6">
+                  <p className="text-[10px] md:text-xs text-black/40 font-bold uppercase tracking-wider">
+                    Suggestions made based on your declared skin type & needs ⭐ Not medical advice.
+                  </p>
+                </div>
+
+                {/* Subcategory (Cat3) Filters */}
+                {selectedInspirationCategory && CAT3_MAPPING[selectedInspirationCategory] && (
+                  <div className="flex flex-wrap gap-2 pb-2">
+                    {CAT3_MAPPING[selectedInspirationCategory].map(cat => {
+                      const isActive = selectedCat3 === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          onClick={() => {
+                            const newCat3 = isActive ? null : cat.id;
+                            setSelectedCat3(newCat3);
+                            handleSelectInspiration(selectedInspirationCategory, false, 1, newCat3);
+                          }}
+                          className={`px-4 py-2 rounded-full border text-xs font-bold whitespace-nowrap transition-all ${
+                            isActive
+                              ? 'bg-black text-white border-black shadow-md'
+                              : 'bg-white text-black border-black/10 hover:border-black/30'
+                          }`}
+                        >
+                          {cat.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
-                <div className="space-y-8">
-                  {routines.length === 0 ? (
-                    <div className="py-12 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50">
-                      <p className="text-black/50 text-sm font-black uppercase tracking-widest">No routine added yet</p>
-                    </div>
-                  ) : (
-                    routines.map((rt: any, rIdx: number) => (
-                      <div key={rIdx} className="clean-card p-4 border-2 border-black/5 bg-white relative group flex flex-col gap-2">
-                        {/* Header row: Number, Routine Name + Actions - Clickable to toggle */}
-                        <div className="flex items-start gap-4 cursor-pointer" onClick={() => toggleRoutineExpansion(rIdx)}>
-                            {/* Routine Name and Metadata */}
-                            <div className="flex-1 min-w-0">
-                                {rt.routine_name && (
-                                  <div className="flex items-center justify-between w-full">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[9px] font-black bg-venus-accent/20 text-venus-accent px-1.5 py-0.5 rounded uppercase">{rt.time || 'AM'}</span>
-                                      <h4 className="font-black text-black uppercase text-sm md:text-base tracking-tight pt-1 truncate">
-                                        {rt.routine_name}
-                                      </h4>
-                                    </div>
-                                    <span className="text-[9px] font-black bg-black/5 text-black px-1.5 py-0.5 rounded uppercase shrink-0">0/100</span>
-                                  </div>
-                                )}
-                                {/* Day */}
-                                <div className="mt-0.5">
-                                   <span className="text-[9px] uppercase font-bold tracking-widest text-black/40 truncate">{(rt.days || []).join(', ')}</span>
-                                </div>
-                            </div>
-                        </div>
 
-                        {/* Products */}
-                        {expandedRoutines.includes(rIdx) && (
-                          <div className="space-y-2 pt-2 border-t border-black/5">
-                              {(rt.products || []).map((p: any, i: number) => (
-                                  <div key={i} className="flex flex-col gap-0.5 text-xs border-b border-black/5 pb-1">
-                                      <div className="flex items-center gap-2">
-                                          <span className="uppercase font-black tracking-widest text-venus-accent">{p.type}</span>
-                                          <span className="font-bold text-black/80">{p.brand}</span>
-                                      </div>
-                                      <ProductLink 
-                                           productId={p.id} 
-                                           productName={p.name} 
-                                           className="text-black/60 hover:text-venus-accent transition-colors text-left" 
-                                       />
+
+                {/* Alerts/Warnings generated by productSort */}
+                {sortedProductsResult?.alerts && sortedProductsResult.alerts.filter((alert: string) => 
+                  !alert.includes('night due to UV sensitivity') && 
+                  !alert.includes('trigger fungal acne')
+                ).length > 0 && (
+                  <div className="space-y-2">
+                    {sortedProductsResult.alerts
+                      .filter((alert: string) => 
+                        !alert.includes('night due to UV sensitivity') && 
+                        !alert.includes('trigger fungal acne')
+                      )
+                      .map((alert: string, idx: number) => (
+                        <div key={idx} className="p-3 bg-rose-50 text-rose-700 rounded-xl text-[10px] font-black uppercase tracking-wider border border-rose-100 flex items-center gap-2 animate-pulse text-left">
+                          <Sparkles className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <span>{alert}</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+                {/* Loading / Error / Results */}
+                {isSortingProducts ? (
+                  <div className="py-16 flex flex-col items-center justify-center gap-3 bg-white/50 rounded-2xl border-2 border-black/5">
+                    <Loader2 className="w-8 h-8 animate-spin text-venus-accent" />
+                    <div className="text-center">
+                      <p className="text-xs font-black uppercase tracking-wider text-black">Running productSort Algorithm...</p>
+                      <p className="text-[9px] text-black/50 mt-1 font-mono">Analyzing database and skin compatibility</p>
+                    </div>
+                  </div>
+                ) : sortingError ? (
+                  <div className="py-10 px-5 bg-red-50 text-red-700 rounded-2xl border border-red-100 text-center space-y-3">
+                    <p className="text-xs font-bold">{sortingError}</p>
+                    <button
+                      onClick={() => handleSelectInspiration(selectedInspirationCategory)}
+                      className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-700 transition-all cursor-pointer"
+                    >
+                      Retry Sorting
+                    </button>
+                  </div>
+                ) : (!sortedProductsResult?.products?.length && !sortedProductsResult?.prescriptions?.length) ? (
+                  <div className="py-12 text-center bg-white/50 rounded-2xl border border-black/5 flex flex-col items-center justify-center gap-3">
+                    <ShoppingBag className="w-10 h-10 text-black/10" />
+                    <p className="text-black/40 text-xs font-black uppercase tracking-widest">No compatible products found in this category.</p>
+                  </div>
+                ) : (
+                  (() => {
+                    const regularProducts = sortedProductsResult.products || [];
+                    const prescriptionProducts = sortedProductsResult.prescriptions || [];
+
+                    return (
+                      <div className="space-y-8">
+                        {/* SECTION 1 — regular products */}
+                        {regularProducts.length > 0 && (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {regularProducts.map((p: any) => {
+                              const product = p;
+                              return (
+                                <div
+                                  key={product.product_id}
+                                  onClick={() => openProductCard(String(product.product_id))}
+                                  className="cursor-pointer clean-card p-2 border border-black/5 bg-white hover:border-black transition-all flex flex-col items-center gap-1 shadow-sm group text-center"
+                                >
+                                  {product.photo_url ? (
+                                    <img
+                                      src={product.photo_url}
+                                      alt={product.name}
+                                      referrerPolicy="no-referrer"
+                                      className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-lg border border-black/5 flex-shrink-0 group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                  ) : (
+                                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black/5 rounded-lg border border-black/5 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40 text-center font-mono leading-tight">
+                                      No Image
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 w-full">
+                                    <span className="text-[8px] uppercase font-black tracking-widest text-venus-accent block mb-0.5">
+                                      {product.brand || 'Unknown'}
+                                    </span>
+                                    <h4 className="text-[10px] md:text-xs font-bold text-black uppercase leading-tight line-clamp-2">
+                                      {product.name || 'Unnamed'}
+                                    </h4>
                                   </div>
-                              ))}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
-                        
-                        {/* Actions */}
-                        {expandedRoutines.includes(rIdx) && (
-                          <div className="flex items-center gap-1 shrink-0 pt-2 border-t border-black/5 mt-1 justify-end">
-                              <label className="flex items-center gap-1 p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer text-black/40 hover:text-black text-xs mr-auto">
-                                  <input type="checkbox" onChange={(e) => handleToggleTrackerRoutine(rt.products, rt.time, e.target.checked)} className="form-checkbox" />
-                                  <span>Add to tracker</span>
-                              </label>
-                              <button onClick={() => { setShareRoutine(rt); setIsSharingOpen(true); }} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Share">
-                                  <Share2 className="w-4 h-4 text-black/40 hover:text-black" />
-                              </button>
-                              <button onClick={() => handleEditRoutine(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Edit">
-                                  <Pencil className="w-4 h-4 text-black/40 hover:text-black" />
-                              </button>
-                              <button onClick={() => handleSetReminder(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Reminder">
-                                  <AlarmClock className="w-4 h-4 text-black/40 hover:text-black" />
-                              </button>
-                              <button onClick={() => setRoutineToDelete(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors text-red-500/40 hover:text-red-500' title="Delete">
-                                  <Trash2 className="w-4 h-4" />
-                              </button>
+
+                        {/* SECTION 2 — prescription products */}
+                        {prescriptionProducts.length > 0 && (
+                          <div className="space-y-6">
+                            <div className="mt-8 pt-6 border-t border-black/5 text-left">
+                              <h3 className="text-xs font-black uppercase tracking-tight text-black italic">
+                                Prescription Only
+                              </h3>
+                              <p className="text-[10px] text-black/50 font-medium mt-1">
+                                These products require a prescription. Consult a dermatologist.
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                              {prescriptionProducts.map((p: any) => {
+                                const product = p;
+                                return (
+                                  <div
+                                    key={product.product_id}
+                                    onClick={() => openProductCard(String(product.product_id))}
+                                    className="relative cursor-pointer clean-card p-2 border border-black/5 bg-white hover:border-black transition-all flex flex-col items-center gap-1 shadow-sm group text-center"
+                                  >
+                                    <span className="absolute top-1 right-1 text-[8px] font-black bg-rose-100 text-rose-700 px-1 py-0.5 rounded uppercase tracking-wider z-10">
+                                      Rx
+                                    </span>
+                                    {product.photo_url ? (
+                                      <img
+                                        src={product.photo_url}
+                                        alt={product.name}
+                                        referrerPolicy="no-referrer"
+                                        className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-lg border border-black/5 flex-shrink-0 group-hover:scale-105 transition-transform duration-300"
+                                      />
+                                    ) : (
+                                      <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black/5 rounded-lg border border-black/5 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40 text-center font-mono leading-tight">
+                                        No Image
+                                      </div>
+                                    )}
+                                    <div className="min-w-0 w-full">
+                                      <span className="text-[8px] uppercase font-black tracking-widest text-venus-accent block mb-0.5">
+                                        {product.brand || 'Unknown'}
+                                      </span>
+                                      <h4 className="text-[10px] md:text-xs font-bold text-black uppercase leading-tight line-clamp-2">
+                                        {product.name || 'Unnamed'}
+                                      </h4>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* LOAD MORE BUTTON */}
+                        {sortedProductsResult?.meta?.itemsReturned === 30 && (
+                          <div className="flex justify-center mt-8">
+                            <button
+                              onClick={() => handleSelectInspiration(selectedInspirationCategory!, false, (sortedProductsResult.meta.currentPage || 1) + 1)}
+                              disabled={isLoadingMoreProducts}
+                              className="px-6 py-3 bg-black text-white hover:bg-venus-accent transition-all rounded-lg text-[10px] font-black uppercase tracking-widest cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                            >
+                              {isLoadingMoreProducts ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Loading...
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="w-4 h-4" />
+                                  Load More
+                                </>
+                              )}
+                            </button>
                           </div>
                         )}
                       </div>
-                    ))
+                    );
+                  })()
+                )}
+              </motion.div>
+            ) : (
+              <motion.div 
+                key="dashboard"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="space-y-2 text-[80%]"
+              >
+              
+                {/* For you Section (formerly Inspiration) */}
+                <div className="space-y-4 text-left mb-10 mt-2">
+                  <div>
+                    <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight text-black">
+                      For you
+                    </h3>
+                    <p className="text-xs text-black/50 font-medium mt-1">
+                      Explore products chosen for your skin type and goals
+                    </p>
+                  </div>
+                  
+                  <div className="flex gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth snap-x snap-mandatory">
+                    {/* Column 1 */}
+                    <div className="flex flex-col gap-2 shrink-0">
+                      {/* Moisturisers Card */}
+                      <motion.div
+                        whileHover={{ y: -1, scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => handleSelectInspiration('Moisturiser')}
+                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                      >
+                        <div className="flex items-center gap-1.5 w-full h-full">
+                          <div className="p-2 bg-blue-100/60 text-blue-600 rounded-lg shrink-0">
+                            <Droplet className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Moisturisers</h4>
+                            </div>
+                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Quench your skin</p>
+                          </div>
+                        </div>
+                      </motion.div>
+
+                      {/* Serums Card */}
+                      <motion.div
+                        whileHover={{ y: -1, scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => handleSelectInspiration('Treatment')}
+                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                      >
+                        <div className="flex items-center gap-1.5 w-full h-full">
+                          <div className="p-2 bg-purple-100/60 text-purple-600 rounded-lg shrink-0">
+                            <FlaskConical className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Serums & Treatments</h4>
+                            </div>
+                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Targeted active formulas</p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+
+                    {/* Column 2 */}
+                    <div className="flex flex-col gap-2 shrink-0">
+                      {/* Cleansers Card */}
+                      <motion.div
+                        whileHover={{ y: -1, scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => handleSelectInspiration('Cleanser')}
+                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                      >
+                        <div className="flex items-center gap-1.5 w-full h-full">
+                          <div className="p-2 bg-emerald-100/60 text-emerald-600 rounded-lg shrink-0">
+                            <Sparkles className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Cleansers</h4>
+                            </div>
+                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Gentle purify</p>
+                          </div>
+                        </div>
+                      </motion.div>
+
+                      {/* SPF Card */}
+                      <motion.div
+                        whileHover={{ y: -1, scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => handleSelectInspiration('SPF')}
+                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                      >
+                        <div className="flex items-center gap-1.5 w-full h-full">
+                          <div className="p-2 bg-amber-100/60 text-amber-600 rounded-lg shrink-0">
+                            <Sun className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Sunscreen (SPF)</h4>
+                            </div>
+                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Essential daily UV protection</p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+
+                    {/* Column 3 */}
+                    <div className="flex flex-col gap-2 shrink-0">
+                      {/* Glass Skin Card */}
+                      <motion.div
+                        whileHover={{ y: -1, scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => handleSelectInspiration('Glass skin essentials')}
+                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                      >
+                        <div className="flex items-center gap-1.5 w-full h-full">
+                          <div className="p-2 bg-cyan-100/60 text-cyan-600 rounded-lg shrink-0">
+                            <Sparkles className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Glass skin essentials</h4>
+                            </div>
+                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Radiant & translucent</p>
+                          </div>
+                        </div>
+                      </motion.div>
+
+                      {/* Sensitive Skin Card */}
+                      <motion.div
+                        whileHover={{ y: -1, scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => handleSelectInspiration('Soothe sensitive skin')}
+                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                      >
+                        <div className="flex items-center gap-1.5 w-full h-full">
+                          <div className="p-2 bg-rose-100/60 text-rose-600 rounded-lg shrink-0">
+                            <Heart className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Soothe sensitive skin</h4>
+                            </div>
+                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Calming & gentle care</p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+
+                    {/* Column 4 */}
+                    <div className="flex flex-col gap-2 shrink-0">
+                      {/* Barrier Repair Card */}
+                      <motion.div
+                        whileHover={{ y: -1, scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => handleSelectInspiration('Barrier repair')}
+                        className="snap-start shrink-0 w-[180px] p-2.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                      >
+                        <div className="flex items-center gap-3 w-full h-full">
+                          <div className="p-2 bg-indigo-100/60 text-indigo-600 rounded-lg shrink-0">
+                            <Shield className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Barrier repair</h4>
+                            </div>
+                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Strengthen & protect</p>
+                          </div>
+                        </div>
+                      </motion.div>
+
+                      {/* Anti-aging Card */}
+                      <motion.div
+                        whileHover={{ y: -1, scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        onClick={() => handleSelectInspiration('Anti-aging')}
+                        className="snap-start shrink-0 w-[180px] p-2.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                      >
+                        <div className="flex items-center gap-3 w-full h-full">
+                          <div className="p-2 bg-slate-100/60 text-slate-600 rounded-lg shrink-0">
+                            <History className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-center">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Anti-aging</h4>
+                            </div>
+                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Youthful rejuvenation</p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Routine Card */}
+                <div className="space-y-4 md:space-y-6">
+                  <div className="flex items-center justify-between md:border-0 md:pb-0">
+                    <div className="flex items-center gap-2 text-black">
+                      <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight">My routines</h3>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={handleAddRoutine}
+                        className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span className="hidden md:inline">New Routine</span>
+                      </button>
+                      <button 
+                        onClick={() => dashboardFileInputRef.current?.click()}
+                        disabled={isDashboardScanning}
+                        className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2"
+                      >
+                        {isDashboardScanning ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Camera className="w-4 h-4" />
+                        )}
+                        <span className="hidden md:inline">Scan Product</span>
+                      </button>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      ref={dashboardFileInputRef}
+                      onChange={handleDashboardPhotoScan}
+                      className="hidden"
+                    />
+                  </div>
+                  
+                  {dashboardScanError && (
+                    <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold border-2 border-red-500/15">
+                      {dashboardScanError}
+                    </div>
+                  )}
+                  <div className="space-y-8">
+                    {routines.length === 0 ? (
+                      <div className="py-12 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50">
+                        <p className="text-black/50 text-sm font-black uppercase tracking-widest">No routine added yet</p>
+                      </div>
+                    ) : (
+                      routines.map((rt: any, rIdx: number) => (
+                        <div key={rIdx} className="clean-card p-4 border-2 border-black/5 bg-venus-accent/[0.06] relative group flex flex-col gap-2">
+                          {/* Header row: Number, Routine Name + Actions - Clickable to toggle */}
+                          <div className="flex items-start gap-4 cursor-pointer" onClick={() => toggleRoutineExpansion(rIdx)}>
+                              {/* Routine Name and Metadata */}
+                              <div className="flex-1 min-w-0">
+                                  {rt.routine_name && (
+                                    <div className="flex items-center justify-between w-full">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[9px] font-black bg-venus-accent/20 text-venus-accent px-1.5 py-0.5 rounded uppercase">{rt.time || 'AM'}</span>
+                                        <h4 className="font-black text-black uppercase text-sm md:text-base tracking-tight pt-1 truncate">
+                                          {rt.routine_name}
+                                        </h4>
+                                      </div>
+                                      <span className="text-[9px] font-black bg-black/5 text-black px-1.5 py-0.5 rounded uppercase shrink-0">0/100</span>
+                                    </div>
+                                  )}
+                                  {/* Day */}
+                                  <div className="mt-0.5">
+                                     <span className="text-[9px] uppercase font-bold tracking-widest text-black/40 truncate">{(rt.days || []).join(', ')}</span>
+                                  </div>
+                              </div>
+                          </div>
+
+                          {/* Products */}
+                          {expandedRoutines.includes(rIdx) && (
+                            <div className="space-y-2 pt-2 border-t border-black/5">
+                                {(rt.products || []).map((p: any, i: number) => (
+                                    <div key={i} className="flex flex-col gap-0.5 text-xs border-b border-black/5 pb-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="uppercase font-black tracking-widest text-venus-accent">{p.type}</span>
+                                            <span className="font-bold text-black/80">{p.brand}</span>
+                                        </div>
+                                        <ProductLink 
+                                             productId={p.id} 
+                                             productName={p.name} 
+                                             className="text-black/60 hover:text-venus-accent transition-colors text-left" 
+                                         />
+                                    </div>
+                                ))}
+                            </div>
+                          )}
+                          
+                          {/* Actions */}
+                          {expandedRoutines.includes(rIdx) && (
+                            <div className="flex items-center gap-1 shrink-0 pt-2 border-t border-black/5 mt-1 justify-end">
+                                <label className="flex items-center gap-1 p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer text-black/40 hover:text-black text-xs mr-auto">
+                                    <input type="checkbox" onChange={(e) => handleToggleTrackerRoutine(rt.products, rt.time, e.target.checked)} className="form-checkbox" />
+                                    <span>Add to tracker</span>
+                                </label>
+                                <button onClick={() => { setShareRoutine(rt); setIsSharingOpen(true); }} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Share">
+                                    <Share2 className="w-4 h-4 text-black/40 hover:text-black" />
+                                </button>
+                                <button onClick={() => handleEditRoutine(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Edit">
+                                    <Pencil className="w-4 h-4 text-black/40 hover:text-black" />
+                                </button>
+                                <button onClick={() => handleSetReminder(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Reminder">
+                                    <AlarmClock className="w-4 h-4 text-black/40 hover:text-black" />
+                                </button>
+                                <button onClick={() => setRoutineToDelete(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors text-red-500/40 hover:text-red-500' title="Delete">
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Trending Section */}
+                <div className="space-y-4 mt-12 text-left">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight text-black">
+                      Trending
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setSocialActiveMainTab('videos');
+                        setAppState(AppState.SOCIAL);
+                      }}
+                      className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>See more</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {loadingLatestVideos ? (
+                    <div className="flex md:grid md:grid-cols-3 gap-2 overflow-x-auto no-scrollbar pb-4">
+                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-black/5 rounded-2xl animate-pulse" />
+                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-black/5 rounded-2xl animate-pulse" />
+                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-black/5 rounded-2xl animate-pulse" />
+                    </div>
+                  ) : latestVideos && latestVideos.length > 0 ? (
+                    <div className="flex md:grid md:grid-cols-3 gap-2 w-full overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory pb-4">
+                      {latestVideos.map((video: any) => {
+                        const isYoutube = video.type === 'youtube' || video.video_url?.includes('youtube.com') || video.video_url?.includes('youtu.be');
+                        return (
+                          <div 
+                            key={video.id} 
+                            className={`snap-start shrink-0 md:w-auto clean-card p-2 border-2 border-black/5 bg-white space-y-2 flex flex-col justify-center ${
+                              isYoutube ? 'w-[300px]' : 'w-[200px]'
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              {isYoutube && video.title && (
+                                <h4 className="text-xs font-black uppercase tracking-tight text-black leading-tight line-clamp-2">
+                                  {video.title}
+                                </h4>
+                              )}
+                              {isYoutube ? (
+                                <div className="w-full h-[195px] aspect-video relative rounded-xl overflow-hidden border border-black/5 bg-black/5 shadow-inner mx-auto">
+                                  <iframe
+                                    src={video.video_url}
+                                    className="absolute inset-0 w-full h-full"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowFullScreen
+                                  />
+                                </div>
+                              ) : (
+                                <div className="flex justify-center w-full">
+                                  <div className="w-full max-w-[150px] aspect-[9/16] relative rounded-xl overflow-hidden shadow-lg bg-black">
+                                    <iframe
+                                      src={video.video_url}
+                                      className="absolute inset-0 w-full h-full"
+                                      allow="fullscreen"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-8 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50">
+                      <p className="text-black/50 text-[10px] font-black uppercase tracking-widest">No updates available</p>
+                    </div>
                   )}
                 </div>
-              </div>
 
-              {/* Progress Tracker increased spacing*/}
+                {/* Chatter Section */}
+                <div className="space-y-4 mt-12 text-left">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight text-black">
+                      Chatter
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setSocialActiveMainTab('community');
+                        setAppState(AppState.SOCIAL);
+                      }}
+                      className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>See more</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {loadingLastPost ? (
+                    <div className="h-32 bg-black/5 rounded-2xl animate-pulse" />
+                  ) : lastPost ? (
+                    <div className="clean-card p-4 border-2 border-black/5 bg-white hover:border-black/10 transition-all max-w-xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-venus-accent/20 border border-black flex items-center justify-center text-[9px] font-black">
+                            {lastPost.users?.username?.[0] || 'U'}
+                          </div>
+                          <div>
+                            <h4 className="text-[9px] font-black uppercase tracking-tight leading-none">{lastPost.users?.username || 'Anonymous'}</h4>
+                            <p className="text-[7px] text-black/40 font-bold">@{lastPost.users?.skin_type || 'member'} • {new Date(lastPost.timestamp).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div>
+                        {lastPost.title && (
+                          <h4 className="text-[10px] font-black uppercase tracking-tight mb-1 text-venus-accent">{lastPost.title}</h4>
+                        )}
+                        <p className="text-xs font-medium leading-normal text-black/80">{lastPost.content}</p>
+                      </div>
+                      
+                      {lastPost.post_media && (
+                        <div className="rounded-lg overflow-hidden border border-black/5 max-h-40">
+                          <img src={lastPost.post_media} className="w-full h-full object-cover" alt="Post media" />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="py-8 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50">
+                      <p className="text-black/50 text-[10px] font-black uppercase tracking-widest">No chatter posts available</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-center pt-8">
+                  <div className="clean-card px-8 py-8 text-center space-y-4 max-w-sm bg-venus-accent/5">
+                     <Heart className="w-8 h-8 text-venus-accent mx-auto fill-venus-accent/20" />
+                     <p className="text-sm leading-relaxed opacity-80">"Routine is the foundation of change. Stick to the steps and the results will follow."</p>
+                  </div>
+                </div>
+              </motion.div>
+            )
+          )}
+
+
+          {/* PROGRESS */}
+          {appState === AppState.PROGRESS && (
+            <motion.div 
+              key="progress"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-12"
+            >
+
+              {/* Progress Tracker increased spacing */}
               <div className="space-y-6 mt-12">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-black">
-                    <h3 className="font-sans font-black text-lg md:text-xl uppercase italic tracking-tight">Progress</h3>
+                    <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight">Progress</h3>
                   </div>
                   <button 
                     onClick={() => progressInputRef.current?.click()}
@@ -2224,12 +3050,6 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex justify-center pt-8">
-                <div className="clean-card px-8 py-8 text-center space-y-4 max-w-sm bg-venus-accent/5">
-                   <Heart className="w-8 h-8 text-venus-accent mx-auto fill-venus-accent/20" />
-                   <p className="text-sm leading-relaxed opacity-80">"Routine is the foundation of change. Stick to the steps and the results will follow."</p>
-                </div>
-              </div>
             </motion.div>
           )}
 
@@ -2244,7 +3064,7 @@ export default function App() {
               {/* Left Column: Existing Products/Search - Only show on mobile if AppState.RANK */}
               <div className={`space-y-4 md:pl-2 ${appState === AppState.LEADERBOARD ? 'hidden md:block' : 'block'}`}>
                 <div className="flex flex-col gap-4 border-b-2 border-black pb-4">
-                  <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase italic tracking-tight">Products</h2>
+                  <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase tracking-tight">Products</h2>
                   
                   {/* Tabs */}
                   <div className="flex gap-2">
@@ -2378,7 +3198,7 @@ export default function App() {
               {/* Right Column: Leaderboard - Only show on mobile if AppState.LEADERBOARD */}
               <div className={`space-y-4 ${appState === AppState.RANK ? 'hidden md:block' : 'block'}`}>
                 <div className="pb-4">
-                  <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase italic tracking-tight">Rankings</h2>
+                  <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase tracking-tight">Rankings</h2>
                   <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar pb-2">
                     {['All', 'Cleanser', 'SPF', 'Cream', 'Serum', 'Toner', 'Retinol', 'Moisturizer'].map((type) => (
                       <button
@@ -2500,7 +3320,7 @@ export default function App() {
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-black pb-4 px-4 gap-4">
                   <div>
-                    <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase italic tracking-tight">Tracker</h2>
+                    <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase tracking-tight">Tracker</h2>
                     <p className="text-venus-accent font-black text-[8px] md:text-[10px] uppercase tracking-widest mt-1">Keep track of your products and set alerts.</p>
                   </div>
 
@@ -2670,7 +3490,7 @@ export default function App() {
                 <div className="inline-flex p-3 bg-black/5 rounded-full mb-2">
                   <UserIcon className="w-8 h-8 text-black" />
                 </div>
-                <h2 className="text-4xl md:text-5xl font-sans font-black text-black uppercase italic tracking-tighter">
+                <h2 className="text-4xl md:text-5xl font-sans font-black text-black uppercase tracking-tighter">
                   My Skin Profile
                 </h2>
                 <p className="text-sm font-medium text-black/50 italic max-w-md mx-auto">
@@ -3273,7 +4093,7 @@ export default function App() {
       )}
 
       {/* Bottom Nav Hint */}
-      {(appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.LEADERBOARD || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
+      {(appState === AppState.PROGRESS || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.LEADERBOARD || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
         <div className="fixed bottom-0 left-0 right-0 flex justify-center bg-gradient-to-t from-white to-transparent z-40">
           <div className="clean-card py-3 px-6 flex justify-between md:justify-center gap-6 md:gap-8 items-center w-full md:w-auto bg-white border-t-2 md:border-2 border-black/5 shadow-2xl md:rounded-3xl">
             <Home className={`w-6 h-6 text-black cursor-pointer ${appState === AppState.DASHBOARD ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.DASHBOARD)} />
@@ -3485,10 +4305,16 @@ export default function App() {
                           {reason}
                         </p>
                       ))}
-                      {evalResult.potentialBreakoutRisk && (
-                        <div className="mt-2 p-2 bg-rose-50 text-rose-800 rounded-lg text-[11px] leading-relaxed">
-                          <span className="font-bold">Breakout Risk: </span>
-                          Contains potentially acne-triggering ingredients in low concentrations.
+                      {evalResult.warnings?.fungalAcneWarning && (
+                        <div className="mt-2 p-2 bg-amber-50 text-amber-900 rounded-lg text-[11px] leading-relaxed border border-amber-200">
+                          <span className="font-bold">Fungal Acne Trigger: </span>
+                          Contains ingredients known to trigger fungal acne.
+                        </div>
+                      )}
+                      {evalResult.warnings?.highIrritationWarning && (
+                        <div className="mt-2 p-2 bg-rose-50 text-rose-900 rounded-lg text-[11px] leading-relaxed border border-rose-200">
+                          <span className="font-bold">High Irritation Risk: </span>
+                          May cause irritation given your current barrier state.
                         </div>
                       )}
                     </div>

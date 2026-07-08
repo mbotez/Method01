@@ -134,56 +134,18 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
         if (selectedProduct.id && userId) {
           console.log(`[TrackerNewProductModal] Evaluating product verdict for user: ${userId}, product: ${selectedProduct.id}`);
           
-          // 1. Try fetching from product_ingredients first
-          const { data: piData, error: piError } = await supabase
-            .from('product_ingredients')
-            .select('ingredient')
-            .eq('product_id', selectedProduct.id);
-
-          let ingredientsArr: string[] = [];
-
-          if (piError) {
-            console.error('[TrackerNewProductModal] Error fetching product_ingredients:', piError);
-          } else if (piData && piData.length > 0) {
-            ingredientsArr = piData
-              .map(row => row.ingredient)
-              .filter((i): i is string => typeof i === 'string' && i.trim().length > 0);
-            console.log(`[TrackerNewProductModal] Retrieved ${ingredientsArr.length} ingredients from product_ingredients for product: ${selectedProduct.id}`);
-          }
-
-          // 2. Fall back to product_description.ingredients_list if product_ingredients was empty
-          if (ingredientsArr.length === 0) {
-            console.log('[TrackerNewProductModal] product_ingredients empty or failed, trying product_description fallback');
-            const { data: descData, error: descError } = await supabase
-              .from('product_description')
-              .select('ingredients_list')
-              .eq('id', selectedProduct.id)
-              .maybeSingle();
-
-            if (descError) {
-              console.error('[TrackerNewProductModal] Error fetching fallback ingredients from product_description:', descError);
-            } else if (descData?.ingredients_list) {
-              const rawIngs = descData.ingredients_list;
-              ingredientsArr = Array.isArray(rawIngs)
-                ? rawIngs
-                : typeof rawIngs === 'string'
-                ? rawIngs.split(',').map((i: string) => i.trim()).filter((i: string) => i.length > 0)
-                : [];
-              console.log(`[TrackerNewProductModal] Retrieved ${ingredientsArr.length} fallback ingredients from product_description`);
+          const evalResult = await evaluateProductCategory(userId, selectedProduct.id.toString());
+          if (evalResult && evalResult.category) {
+            productVerdict = evalResult.category;
+            hasBreakoutRisk = !!(evalResult.warnings?.fungalAcneWarning || evalResult.warnings?.highIrritationWarning);
+            
+            if (evalResult.warnings?.fungalAcneWarning) {
+              breakoutReasons.push('Fungal acne trigger');
             }
-          }
-
-          if (ingredientsArr.length > 0) {
-            const evalResult = await evaluateProductCategory(userId, selectedProduct.id.toString(), ingredientsArr);
-            if (evalResult && evalResult.category) {
-              productVerdict = evalResult.category;
-              hasBreakoutRisk = !!evalResult.potentialBreakoutRisk;
-              breakoutIngredients = evalResult.potentialBreakoutIngredients || [];
-              breakoutReasons = evalResult.potentialBreakoutReasons || [];
-              console.log(`[TrackerNewProductModal] Evaluation successful. Category: ${productVerdict}, potentialBreakoutRisk: ${hasBreakoutRisk}`);
+            if (evalResult.warnings?.highIrritationWarning) {
+              breakoutReasons.push('High irritation risk');
             }
-          } else {
-            console.warn('[TrackerNewProductModal] No ingredients found in either product_ingredients or product_description.');
+            console.log(`[TrackerNewProductModal] Evaluation successful. Category: ${productVerdict}, potentialBreakoutRisk: ${hasBreakoutRisk}`);
           }
         }
       } catch (err) {
@@ -199,8 +161,8 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
         size: formData.size,
         notes: hasBreakoutRisk
           ? (formData.notes 
-              ? `${formData.notes} [Potential Breakout Risk: ${breakoutIngredients.join(', ')} | ${breakoutReasons.join('; ')}]` 
-              : `[Potential Breakout Risk: ${breakoutIngredients.join(', ')} | ${breakoutReasons.join('; ')}]`)
+              ? `${formData.notes} [Potential Breakout Risk: ${breakoutReasons.join('; ')}]` 
+              : `[Potential Breakout Risk: ${breakoutReasons.join('; ')}]`)
           : formData.notes,
         in_use: formData.inUse,
         is_liked: formData.isLiked,

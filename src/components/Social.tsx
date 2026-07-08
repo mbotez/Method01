@@ -32,6 +32,8 @@ interface SocialProps {
   setIsFollowsOpen?: (open: boolean) => void;
   socialTab?: 'Messages' | 'Friends';
   setSocialTab?: (tab: 'Messages' | 'Friends') => void;
+  activeMainTab?: 'videos' | 'community';
+  setActiveMainTab?: (tab: 'videos' | 'community') => void;
 }
 
 export const Social = ({
@@ -39,6 +41,8 @@ export const Social = ({
   setIsFollowsOpen: externalSetIsFollowsOpen,
   socialTab: externalSocialTab,
   setSocialTab: externalSetSocialTab,
+  activeMainTab: externalActiveMainTab,
+  setActiveMainTab: externalSetActiveMainTab,
 }: SocialProps) => {
   const { openProductCard } = useProductCard();
   const [internalSocialTab, internalSetSocialTab] = useState<'Messages' | 'Friends'>('Friends');
@@ -95,7 +99,9 @@ export const Social = ({
   }, []);
 
   // Video Feed States
-  const [activeMainTab, setActiveMainTab] = useState<'videos' | 'community'>('videos');
+  const [internalActiveMainTab, internalSetActiveMainTab] = useState<'videos' | 'community'>('videos');
+  const activeMainTab = externalActiveMainTab !== undefined ? externalActiveMainTab : internalActiveMainTab;
+  const setActiveMainTab = externalSetActiveMainTab !== undefined ? externalSetActiveMainTab : internalSetActiveMainTab;
   const [videoCategoryFilter, setVideoCategoryFilter] = useState<'All' | 'Glass skin' | 'Routine' | 'Educational'>('All');
   const [isVideoCategoryDropdownOpen, setIsVideoCategoryDropdownOpen] = useState(false);
   const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
@@ -485,7 +491,7 @@ export const Social = ({
                 : 'text-black/40 hover:text-black/60'
             }`}
           >
-            Community Q&A
+            Chatter Q&A
           </button>
         </div>
 
@@ -495,7 +501,7 @@ export const Social = ({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-black/30" />
             <input 
               type="text" 
-              placeholder={activeMainTab === 'videos' ? "Search video tutorials..." : "Search community feed..."}
+              placeholder={activeMainTab === 'videos' ? "Search video tutorials..." : "Search chatter feed..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-black/5 border-none rounded-lg py-2 pl-9 pr-4 text-[10px] font-bold focus:ring-2 focus:ring-black/10 outline-none transition-all placeholder:uppercase placeholder:tracking-tighter"
@@ -598,7 +604,7 @@ export const Social = ({
                 <p className="text-xs text-black/40 font-bold uppercase italic">No videos match your search or filters</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-32">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-32">
                 {filteredVideos.map(video => {
                   const isLiked = likedVideos[video.id];
                   const isSaved = savedVideos[video.id];
@@ -609,7 +615,7 @@ export const Social = ({
                       key={video.id} 
                       className="bg-white border border-black/5 rounded-xl overflow-hidden hover:border-black/20 hover:shadow-md transition-all duration-300 flex flex-col h-full justify-between"
                     >
-                      <div className="p-2 flex flex-col h-full justify-between gap-1">
+                      <div className="p-1 flex flex-col h-full justify-between gap-1">
                         {/* Video Title */}
                         <h3 className="text-xs font-black uppercase tracking-tight text-black leading-tight min-h-[2rem] flex items-center">
                           {video.title}
@@ -617,17 +623,17 @@ export const Social = ({
 
                         {/* Video Player Box */}
                         {video.platform === 'youtube' ? (
-                          <div className="w-full aspect-video relative rounded-xl overflow-hidden border border-black/5 bg-black/5 shadow-inner">
+                          <div className="w-full aspect-[9/16] relative rounded-xl overflow-hidden border border-black/5 bg-black/5 shadow-inner">
                             <iframe
                               src={video.url}
-                              className="absolute inset-0 w-full h-full"
+                              className="absolute inset-0 w-full h-[100%] top-1/2 -translate-y-1/2"
                               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                               allowFullScreen
                             />
                           </div>
                         ) : (
-                          <div className="flex justify-center w-full bg-black/[0.02] py-1 rounded-xl border border-black/5">
-                            <div className="w-full max-w-[260px] aspect-[9/16] relative rounded-xl overflow-hidden shadow-lg bg-black">
+                          <div className="flex justify-center w-full bg-black/[0.02] py-0 rounded-xl border border-black/5">
+                            <div className="w-full max-w-[273px] aspect-[9/16] relative rounded-xl overflow-hidden shadow-lg bg-black">
                               <iframe
                                 src={video.url}
                                 className="absolute inset-0 w-full h-full"
@@ -697,7 +703,7 @@ export const Social = ({
           <>
             {/* Inline Post Bar */}
             <div className="bg-black/5 p-4 rounded-xl mb-6">
-              <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-black/60">Ask a question to the community</p>
+              <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-black/60">Ask a question to the chatter feed</p>
               <input 
                 type="text"
                 placeholder="Post Title (Optional)"

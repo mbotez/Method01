@@ -7,6 +7,7 @@ import "dotenv/config";
 import identifyProductsHandler from "./api/identify-products.js";
 import verifyFaceHandler from "./api/verify-face.js";
 import analyzeFaceHandler from "./api/analyze-face.js";
+import productSortHandler from "./api/product-sort.js";
 
 async function startServer() {
   const app = express();
@@ -39,6 +40,15 @@ async function startServer() {
     } catch (err: any) {
       console.error("Local Dev Server Error in analyze-face:", err);
       res.status(500).json({ success: false, error: err.message || "Failed to analyze skin image." });
+    }
+  });
+
+  app.post("/api/product-sort", async (req, res) => {
+    try {
+      await productSortHandler(req as any, res as any);
+    } catch (err: any) {
+      console.error("Local Dev Server Error in product-sort:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to sort products." });
     }
   });
 

@@ -104,7 +104,8 @@ CREATE TABLE public.comments (
   timestamp timestamp with time zone DEFAULT now(),
   CONSTRAINT comments_pkey PRIMARY KEY (id),
   CONSTRAINT comments_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(post_id),
-  CONSTRAINT comments_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT comments_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT fk_comments_users FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
 CREATE TABLE public.user_contacts (
   user_id uuid NOT NULL,
@@ -141,6 +142,8 @@ CREATE TABLE public.user_profile (
   sex text,
   pregnant text,
   actives_used ARRAY DEFAULT '{}'::text[],
+  main_concern integer,
+  scnd_concern integer,
   CONSTRAINT user_profile_pkey PRIMARY KEY (id),
   CONSTRAINT user_profile_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
@@ -182,13 +185,19 @@ CREATE TABLE public.ingredient_scores (
   Pregnancy_Safe boolean,
   Fungal_Acne_Trigger boolean,
   High_Irritation_Risk boolean,
-  Essential_Oils_Fragrance boolean
+  Essential_Oils_Fragrance boolean,
+  id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
+  CONSTRAINT ingredient_scores_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.product_ingredients (
-  product_id bigint,
-  Full name text,
+  product_id bigint NOT NULL,
+  Full name text NOT NULL,
   Position bigint,
   ingredient text,
+  row_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  ingredient_id integer,
+  CONSTRAINT product_ingredients_pkey PRIMARY KEY (row_id),
+  CONSTRAINT fk_product_ingredients_ingredient_scores FOREIGN KEY (ingredient_id) REFERENCES public.ingredient_scores(id),
   CONSTRAINT fk_product_ingredients_product FOREIGN KEY (product_id) REFERENCES public.products(id)
 );
 CREATE TABLE public.products (
@@ -198,7 +207,6 @@ CREATE TABLE public.products (
   full_name text,
   photo_url text,
   type text,
-  description text,
   created_at timestamp with time zone,
   user_add boolean,
   user_id uuid,
@@ -224,8 +232,61 @@ CREATE TABLE public.blog_videos (
 CREATE TABLE public.video_products (
   id bigint NOT NULL DEFAULT nextval('video_products_id_seq'::regclass),
   video_table_id bigint,
-  product_id text NOT NULL,
+  product_id bigint NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT video_products_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_video_products_products FOREIGN KEY (product_id) REFERENCES public.products(id),
   CONSTRAINT video_products_video_table_id_fkey FOREIGN KEY (video_table_id) REFERENCES public.blog_videos(id)
+);
+CREATE TABLE public.product_scores (
+  product_id bigint NOT NULL,
+  product_name text,
+  cat1 text,
+  cat2 text,
+  cat3 integer,
+  pregnancy_safe boolean,
+  vehicle integer,
+  liposomal text,
+  viscosity integer,
+  skin_types_to_avoid text,
+  barrier_states_to_avoid integer,
+  barrier_repair_dry_skin integer,
+  barrier_repair_oily_skin integer,
+  barrier_repair_combi_skin integer,
+  hydration_dry_skin integer,
+  hydration_oily_skin integer,
+  hydration_combi_skin integer,
+  oil_control integer,
+  calm_redness_dry_skin integer,
+  calm_redness_oily_skin integer,
+  calm_redness_combi_skin integer,
+  clear_blackheads integer,
+  clear_whiteheads integer,
+  clear_surface_acne integer,
+  soothe_deep_acne integer,
+  fade_pie integer,
+  fade_pih integer,
+  reduce_wrinkles integer,
+  reg_type integer,
+  type2_makeup text,
+  type3_makeup text,
+  has_brightening_ingredient boolean DEFAULT false,
+  has_fungal_trigger boolean DEFAULT false,
+  has_fragrance_top50 boolean DEFAULT false,
+  has_high_irritation boolean DEFAULT false,
+  has_bha_active boolean DEFAULT false,
+  has_antibacterial_active boolean DEFAULT false,
+  has_5alpha_reductase_inhibitor boolean DEFAULT false,
+  synergy_inflammatory_acne integer DEFAULT 0 CHECK (synergy_inflammatory_acne >= '-5'::integer AND synergy_inflammatory_acne <= 5),
+  synergy_deep_acne_penetration integer DEFAULT 0 CHECK (synergy_deep_acne_penetration >= '-5'::integer AND synergy_deep_acne_penetration <= 5),
+  aggregated_clogging_risk integer DEFAULT 0 CHECK (aggregated_clogging_risk >= '-5'::integer AND aggregated_clogging_risk <= 5),
+  fatty_acid_mismatch boolean DEFAULT false,
+  has_vascular_calmer boolean DEFAULT false,
+  has_melanin_inhibitor boolean DEFAULT false,
+  active_antagonistic_group character varying DEFAULT 'None'::character varying,
+  uv_sensitivity_required boolean DEFAULT false,
+  disc character varying DEFAULT 'n'::character varying,
+  night boolean DEFAULT false,
+  CONSTRAINT product_scores_pkey PRIMARY KEY (product_id),
+  CONSTRAINT fk_product_scores_products FOREIGN KEY (product_id) REFERENCES public.products(id)
 );

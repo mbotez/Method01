@@ -14,19 +14,20 @@ export const ProductCardContent = ({ productId, onClose }: { productId: string, 
     const fetchProduct = async () => {
       setLoading(true);
       
-      const [productRes, descriptionRes] = await Promise.all([
+      const [productRes, descriptionRes, ingredientsRes] = await Promise.all([
         supabase.from('products').select('name, brand, type').eq('id', productId).maybeSingle(),
-        supabase.from('product_description').select('description, ingredients_list').eq('id', productId).maybeSingle()
+        supabase.from('product_description').select('description').eq('id', productId).maybeSingle(),
+        supabase.from('product_ingredients').select('ingredient').eq('product_id', productId).order('"Position"', { ascending: true })
       ]);
       
-      console.log('Product fetch debug:', { productId, productRes, descriptionRes });
+      console.log('Product fetch debug:', { productId, productRes, descriptionRes, ingredientsRes });
+      if (ingredientsRes.error) {
+        console.error('Ingredients fetch error:', ingredientsRes.error);
+      }
 
       if (productRes.data) {
-        const ingredientsRaw = descriptionRes.data?.ingredients_list || [];
-        const ingredientsList = Array.isArray(ingredientsRaw)
-          ? ingredientsRaw
-          : typeof ingredientsRaw === 'string'
-          ? ingredientsRaw.split(',').map((i: string) => i.trim()).filter(Boolean)
+        const ingredientsList = ingredientsRes.data 
+          ? ingredientsRes.data.map((row: any) => row.ingredient)
           : [];
 
         setProduct({
@@ -39,7 +40,7 @@ export const ProductCardContent = ({ productId, onClose }: { productId: string, 
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user?.id) {
-            const result = await evaluateProductCategory(session.user.id, productId, ingredientsList);
+            const result = await evaluateProductCategory(session.user.id, productId);
             console.log('[ProductCardContent] dynamic evaluation:', result);
             setEvalResult(result);
           }
@@ -98,38 +99,43 @@ export const ProductCardContent = ({ productId, onClose }: { productId: string, 
               Verdict: {evalResult.category}
             </span>
             
-            {evalResult.potentialBreakoutRisk && (
+            {evalResult.warnings?.fungalAcneWarning && (
               <span className="bg-amber-100 text-amber-950 border border-amber-300 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wide">
-                Potential Breakout Risk
+                Fungal Acne Trigger
+              </span>
+            )}
+            {evalResult.warnings?.highIrritationWarning && (
+              <span className="bg-red-100 text-red-950 border border-red-300 rounded-lg px-2.5 py-1 text-xs font-black uppercase tracking-wide">
+                High Irritation Risk
               </span>
             )}
           </div>
         </div>
       )}
 
-      {/* Detailed Breakout Risk Box */}
-      {evalResult?.potentialBreakoutRisk && (
+      {/* Detailed Warnings Box */}
+      {(evalResult?.warnings?.fungalAcneWarning || evalResult?.warnings?.highIrritationWarning || evalResult?.warnings?.pmOnly || evalResult?.warnings?.isPrescription) && (
         <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl mb-4 space-y-2">
           <p className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1">
-            ⚠️ Potential Breakout Risk Details
+            ⚠️ Compatibility Warnings
           </p>
           
-          {evalResult.potentialBreakoutIngredients && evalResult.potentialBreakoutIngredients.length > 0 && (
-            <p className="text-xs text-amber-950/80 leading-relaxed">
-              <strong className="text-amber-950">Trigger Ingredients:</strong> {evalResult.potentialBreakoutIngredients.join(', ')}
-            </p>
-          )}
-          
-          {evalResult.potentialBreakoutReasons && evalResult.potentialBreakoutReasons.length > 0 && (
-            <div className="text-xs text-amber-950/85 space-y-1">
-              <p className="font-semibold text-amber-950">Why this is a potential risk:</p>
-              <ul className="list-disc list-inside pl-1 space-y-1 leading-relaxed">
-                {evalResult.potentialBreakoutReasons.map((reason: string, i: number) => (
-                  <li key={i}>{reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <div className="text-xs text-amber-950/85 space-y-2">
+            <ul className="list-disc list-inside pl-1 space-y-1 leading-relaxed">
+              {evalResult.warnings?.fungalAcneWarning && (
+                <li><strong>Fungal Acne Trigger:</strong> Contains ingredients known to trigger fungal acne.</li>
+              )}
+              {evalResult.warnings?.highIrritationWarning && (
+                <li><strong>High Irritation Risk:</strong> May cause irritation given your current barrier state.</li>
+              )}
+              {evalResult.warnings?.pmOnly && (
+                <li><strong>PM Only:</strong> Contains UV-sensitizing ingredients. Use at night only.</li>
+              )}
+              {evalResult.warnings?.isPrescription && (
+                <li><strong>Prescription:</strong> This is a prescription-grade product.</li>
+              )}
+            </ul>
+          </div>
         </div>
       )}
       

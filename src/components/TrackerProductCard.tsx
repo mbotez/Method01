@@ -19,10 +19,20 @@ const cleanNotesForUser = (notes: string | null): string => {
 
 const parseBreakoutRisk = (notes: string | null) => {
   if (!notes) return null;
-  const match = notes.match(/\[Potential Breakout Risk:\s*([^\]|]+)(?:\|\s*([^\]]+))?\]/i);
+  const match = notes.match(/\[Potential Breakout Risk:\s*([^\]]+)\]/i);
   if (match) {
-    const ingredientsStr = match[1] || '';
-    const reasonsStr = match[2] || '';
+    const contentStr = match[1] || '';
+    let ingredientsStr = '';
+    let reasonsStr = '';
+    
+    if (contentStr.includes('|')) {
+      const parts = contentStr.split('|');
+      ingredientsStr = parts[0] || '';
+      reasonsStr = parts[1] || '';
+    } else {
+      reasonsStr = contentStr;
+    }
+    
     return {
       ingredients: ingredientsStr.split(',').map(s => s.trim()).filter(Boolean),
       reasons: reasonsStr.split(';').map(s => s.trim()).filter(Boolean)
@@ -56,7 +66,7 @@ export const TrackerProductCard: React.FC<TrackerProductCardProps> = ({
       if (!item.product_id || !item.user_id) return;
       setLoadingEval(true);
       try {
-        const res = await evaluateProductCategory(item.user_id, item.product_id, []);
+        const res = await evaluateProductCategory(item.user_id, item.product_id);
         if (active) {
           setEvaluation(res);
         }
@@ -322,13 +332,23 @@ export const TrackerProductCard: React.FC<TrackerProductCardProps> = ({
                       ))}
                     </ul>
                   )}
-                  {evaluation.potentialBreakoutRisk && evaluation.potentialBreakoutIngredients && evaluation.potentialBreakoutIngredients.length > 0 && (
+                  {evaluation.warnings?.fungalAcneWarning && (
                     <div className="pt-2 border-t border-black/5 mt-2">
                       <span className="text-[9px] font-black uppercase tracking-wider text-red-800 flex items-center gap-1">
-                        ⚠️ Pore Clogging / Breakout Triggers:
+                        ⚠️ Fungal Acne Trigger:
                       </span>
                       <p className="text-[11px] font-bold text-red-900 mt-1">
-                        {evaluation.potentialBreakoutIngredients.join(', ')}
+                        Contains ingredients known to trigger fungal acne.
+                      </p>
+                    </div>
+                  )}
+                  {evaluation.warnings?.highIrritationWarning && (
+                    <div className="pt-2 border-t border-black/5 mt-2">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 flex items-center gap-1">
+                        ⚠️ High Irritation Risk:
+                      </span>
+                      <p className="text-[11px] font-bold text-amber-900 mt-1">
+                        May cause irritation given your current barrier state.
                       </p>
                     </div>
                   )}
