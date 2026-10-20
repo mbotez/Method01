@@ -31,18 +31,44 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
         setIngredients(descData.ingredients_list);
       }
 
-      // 2. If user is logged in and product.id is numeric (not custom-...), fetch personal compatibility via RPC
-      if (user?.id && product.id && !String(product.id).startsWith('custom-')) {
+      // 2. Fetch compatibility and scores for both logged in and unauthenticated users
+      if (product.id && !String(product.id).startsWith('custom-') && !String(product.id).startsWith('scanned-')) {
         try {
           const { data: rpcData, error: rpcError } = await supabase.rpc('evaluate_product_compatibility', {
-            p_user_id: user.id,
+            p_user_id: user?.id || '00000000-0000-0000-0000-000000000000',
             p_product_id: String(product.id)
           });
-          if (!rpcError && rpcData && rpcData.compatibility) {
-            setCompatibility(rpcData.compatibility);
+          if (!rpcError && rpcData) {
+            let effComp = rpcData.compatibility;
+            const s = rpcData.scores || {};
+            if (!effComp) {
+              const benefits: string[] = [];
+              const safetyConcerns: string[] = [];
+              if (s.calm_redness_dry_skin > 0 || s.calm_redness_oily_skin > 0 || s.calm_redness_combi_skin > 0) benefits.push('Calms facial redness');
+              if (s.barrier_repair_dry_skin > 0 || s.barrier_repair_oily_skin > 0 || s.barrier_repair_combi_skin > 0) benefits.push('Repairs skin barrier');
+              if (s.hydration_dry_skin > 0 || s.hydration_oily_skin > 0) benefits.push('Deep hydration');
+              if (s.reduce_wrinkles > 0) benefits.push('Smooths fine lines & wrinkles');
+              if (s.has_brightening_ingredient) benefits.push('Brightens skin tone');
+              if (benefits.length === 0) benefits.push('Balances skin & maintains health');
+
+              if (s.contains_frag || s.has_fragrance_top50) safetyConcerns.push('Contains Fragrance');
+              if (s.has_fungal_trigger) safetyConcerns.push('Fungal Acne Trigger');
+              if (s.has_high_irritation) safetyConcerns.push('High Irritation Risk');
+
+              effComp = {
+                skinTypeFit: 'Compatible Formula',
+                conflicts: [],
+                benefits,
+                safetyConcerns
+              };
+            }
+            setCompatibility({
+              ...effComp,
+              scores: s
+            });
           }
         } catch (e) {
-          console.warn('Error fetching personal compatibility in ProductResultRow:', e);
+          console.warn('Error fetching compatibility in ProductResultRow:', e);
         }
       }
 
@@ -83,67 +109,87 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
         </div>
       </div>
 
-      {/* Personal Compatibility Display */}
-      {user ? (
-        loading ? (
-          <div className="text-[10px] font-black uppercase tracking-wider text-black/40 animate-pulse pt-1">
-            Analyzing personal compatibility...
+      {/* Compatibility & Analysis Display (Shown for all users including unauthenticated) */}
+      {loading ? (
+        <div className="text-[10px] font-black uppercase tracking-wider text-black/40 animate-pulse pt-1">
+          Analyzing product properties & compatibility...
+        </div>
+      ) : compatibility ? (
+        <div className="bg-black/[0.03] border border-black/10 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Formula Compatibility Analysis</span>
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${
+              compatibility.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+              compatibility.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
+              'bg-amber-100 text-amber-800 border-amber-300'
+            }`}>
+              {compatibility.skinTypeFit || 'Compatible'}
+            </span>
           </div>
-        ) : compatibility ? (
-          <div className="bg-black/[0.03] border border-black/10 rounded-xl p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Personal Compatibility</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${
-                compatibility.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                compatibility.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
-                'bg-amber-100 text-amber-800 border-amber-300'
-              }`}>
-                {compatibility.skinTypeFit || 'Compatible'}
-              </span>
-            </div>
 
-            {compatibility.benefits && compatibility.benefits.length > 0 && (
-              <div className="flex flex-wrap gap-1 pt-1">
+          {compatibility.benefits && compatibility.benefits.length > 0 && (
+            <div>
+              <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Targeted Functions Achieved</span>
+              <div className="flex flex-wrap gap-1">
                 {compatibility.benefits.map((benefit: string, idx: number) => (
-                  <span key={idx} className="bg-emerald-50 text-emerald-900 border border-emerald-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> {benefit}
+                  <span key={idx} className="bg-purple-50 text-purple-900 border border-purple-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-2.5 h-2.5 text-purple-600" /> {benefit}
                   </span>
                 ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {compatibility.safetyConcerns && compatibility.safetyConcerns.length > 0 && (
-              <div className="flex flex-wrap gap-1 pt-0.5">
+          {compatibility.safetyConcerns && compatibility.safetyConcerns.length > 0 && (
+            <div>
+              <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Triggers & Reactive Markers</span>
+              <div className="flex flex-wrap gap-1">
                 {compatibility.safetyConcerns.map((concern: string, idx: number) => (
                   <span key={idx} className="bg-amber-50 text-amber-900 border border-amber-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
                     <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> {concern}
                   </span>
                 ))}
               </div>
-            )}
+            </div>
+          )}
 
-            {compatibility.conflicts && compatibility.conflicts.length > 0 && (
-              <div className="flex flex-wrap gap-1 pt-0.5">
-                {compatibility.conflicts.map((conflict: string, idx: number) => (
-                  <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                    <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
+          {compatibility.scores && (
+            <div className="pt-1 border-t border-black/5">
+              <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Formula Properties</span>
+              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+                  <span className="text-gray-500">Oil-Free</span>
+                  <span className={`font-bold ${compatibility.scores.oil_free ? 'text-emerald-600' : 'text-gray-400'}`}>{compatibility.scores.oil_free ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+                  <span className="text-gray-500">Sulfate-Free</span>
+                  <span className={`font-bold ${compatibility.scores.sulfate_free ? 'text-emerald-600' : 'text-gray-400'}`}>{compatibility.scores.sulfate_free ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+                  <span className="text-gray-500">Fragrance-Free</span>
+                  <span className={`font-bold ${(!compatibility.scores.contains_frag && !compatibility.scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-gray-400'}`}>
+                    {(!compatibility.scores.contains_frag && !compatibility.scores.has_fragrance_top50) ? 'Yes' : 'No'}
                   </span>
-                ))}
+                </div>
+                <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+                  <span className="text-gray-500">Fungal Acne Safe</span>
+                  <span className={`font-bold ${!compatibility.scores.has_fungal_trigger ? 'text-emerald-600' : 'text-gray-400'}`}>{!compatibility.scores.has_fungal_trigger ? 'Yes' : 'No'}</span>
+                </div>
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="text-[10px] font-medium text-black/50 italic">
-            Compatibility details will appear once your skin profile is complete.
-          </div>
-        )
-      ) : (
-        <div className="bg-venus-accent/10 border border-venus-accent/20 rounded-xl p-2.5 text-center">
-          <p className="text-[10px] font-black uppercase tracking-wider text-black">
-            Log in or take skin quiz to see personal compatibility
-          </p>
+            </div>
+          )}
+
+          {compatibility.conflicts && compatibility.conflicts.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {compatibility.conflicts.map((conflict: string, idx: number) => (
+                <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                  <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      ) : null}
       
       <p className="text-xs text-black/60 pt-1">
         {loading ? 'Loading...' : description || 'No description available.'}

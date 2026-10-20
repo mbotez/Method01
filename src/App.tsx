@@ -2819,18 +2819,18 @@ export default function App() {
                   </div>
                   
                   <div className="flex gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth snap-x snap-mandatory">
-                    {/* Column 1 */}
+                     {/* Column 1 */}
                     <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
                       {/* Moisturisers Card */}
                       <motion.div
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Moisturiser')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/moisturiser.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/moisturiser.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
                       >
                         <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
                           <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Moisturisers</h4>
+                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Moisturisers</h4>
                           </div>
                           <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Quench your skin</p>
                         </div>
@@ -2841,11 +2841,11 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Treatment')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/serum.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/serum.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
                       >
                         <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
                           <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Serums & Treatments</h4>
+                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Serums & Treatments</h4>
                           </div>
                           <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Targeted active formulas</p>
                         </div>
@@ -2859,11 +2859,11 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Cleanser')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/cleanse.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/cleanse.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
                       >
                         <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
                           <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Cleansers</h4>
+                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Cleansers</h4>
                           </div>
                           <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Gentle purify</p>
                         </div>
@@ -2874,11 +2874,11 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('SPF')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sunscreen.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sunscreen.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
                       >
                         <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
                           <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Sunscreen (SPF)</h4>
+                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Sunscreen (SPF)</h4>
                           </div>
                           <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Essential daily UV protection</p>
                         </div>
@@ -2892,11 +2892,11 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Glass skin essentials')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/glass.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/glass.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
                       >
                         <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
                           <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Glass skin essentials</h4>
+                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Glass skin essentials</h4>
                           </div>
                           <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Radiant & translucent</p>
                         </div>
@@ -2907,11 +2907,11 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Soothe sensitive skin')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sensitive.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sensitive.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
                       >
                         <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
                           <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Soothe sensitive skin</h4>
+                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Soothe sensitive skin</h4>
                           </div>
                           <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Calming & gentle care</p>
                         </div>
@@ -2925,11 +2925,11 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Barrier repair')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/barrier.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/barrier.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
                       >
                         <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
                           <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Barrier repair</h4>
+                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Barrier repair</h4>
                           </div>
                           <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Strengthen & protect</p>
                         </div>
@@ -2940,11 +2940,11 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Anti-aging')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/age.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/age.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
                       >
                         <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
                           <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Anti-aging</h4>
+                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Anti-aging</h4>
                           </div>
                           <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Youthful rejuvenation</p>
                         </div>

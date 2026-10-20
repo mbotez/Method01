@@ -205,10 +205,91 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
             console.error('[ProductCard] Database engine returned diagnostic error:', data);
             setRpcErrorObj(data);
           } else {
+            let effectiveComp = data.compatibility;
+            if (!effectiveComp) {
+              const s = data.scores || {};
+              const p = data.product || {};
+              const benefits: string[] = [];
+              const safetyConcerns: string[] = [];
+
+              if (s.calm_redness_dry_skin > 0 || s.calm_redness_oily_skin > 0 || s.calm_redness_combi_skin > 0 || p.name?.toLowerCase().includes('redness') || p.description?.toLowerCase().includes('redness')) {
+                benefits.push('Calms facial redness');
+              }
+              if (s.barrier_repair_dry_skin > 0 || s.barrier_repair_oily_skin > 0 || s.barrier_repair_combi_skin > 0 || p.name?.toLowerCase().includes('barrier') || p.description?.toLowerCase().includes('barrier')) {
+                benefits.push('Repairs skin barrier');
+              }
+              if (s.hydration_dry_skin > 0 || s.hydration_oily_skin > 0 || s.hydration_combi_skin > 0) {
+                benefits.push('Deep hydration');
+              }
+              if (s.reduce_wrinkles > 0) {
+                benefits.push('Smooths fine lines & wrinkles');
+              }
+              if (s.has_brightening_ingredient) {
+                benefits.push('Brightens skin tone & fades dark spots');
+              }
+              if (s.clear_blackheads > 0 || s.clear_surface_acne > 0) {
+                benefits.push('Clears pores & blemishes');
+              }
+              if (benefits.length === 0) {
+                benefits.push('Balances skin & maintains health');
+              }
+
+              if (s.contains_frag || s.has_fragrance_top50) {
+                safetyConcerns.push('Contains Fragrance');
+              }
+              if (s.has_fungal_trigger) {
+                safetyConcerns.push('Fungal Acne Trigger');
+              }
+              if (s.has_high_irritation) {
+                safetyConcerns.push('High Irritation Risk');
+              }
+              if (s.uv_sensitivity_required) {
+                safetyConcerns.push('Requires UV Sunscreen Protection');
+              }
+              if (s.night) {
+                safetyConcerns.push('Photosensitizing Active (Use PM Only)');
+              }
+
+              effectiveComp = {
+                skinTypeFit: 'Compatible Formula',
+                conflicts: [],
+                benefits,
+                safetyConcerns
+              };
+            } else {
+              const s = data.scores || {};
+              const concerns = [...(effectiveComp.safetyConcerns || [])];
+              if ((s.contains_frag || s.has_fragrance_top50) && !concerns.some(c => c.toLowerCase().includes('fragrance'))) {
+                concerns.push('Contains Fragrance');
+              }
+              if (s.has_fungal_trigger && !concerns.some(c => c.toLowerCase().includes('fungal'))) {
+                concerns.push('Fungal Acne Trigger');
+              }
+              if (s.has_high_irritation && !concerns.some(c => c.toLowerCase().includes('irritation'))) {
+                concerns.push('High Irritation Risk');
+              }
+              if (s.uv_sensitivity_required && !concerns.some(c => c.toLowerCase().includes('uv') || c.toLowerCase().includes('sunscreen'))) {
+                concerns.push('Requires UV Sunscreen Protection');
+              }
+              if (s.night && !concerns.some(c => c.toLowerCase().includes('night') || c.toLowerCase().includes('photosensitizing'))) {
+                concerns.push('Photosensitizing Active (Use PM Only)');
+              }
+              effectiveComp.safetyConcerns = concerns;
+            }
+
+            const effectiveScores = data.scores || {
+              oil_free: true,
+              sulfate_free: true,
+              contains_frag: false,
+              has_fragrance_top50: false,
+              has_fungal_trigger: false,
+              night: false
+            };
+
             setProduct(data.product);
-            setScores(data.scores);
+            setScores(effectiveScores);
             setUserProfile(data.user_meta);
-            setComp(data.compatibility); 
+            setComp(effectiveComp);
             setRpcErrorObj(null);
           }
         }
@@ -314,17 +395,17 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
 
 
 
-      {comp ? (
+      {comp && (
         <div className="space-y-4 border-t pt-4 mb-5">
           <h3 className="font-black text-xs uppercase tracking-widest text-gray-400">Personal Compatibility Analysis</h3>
           {/* Skin Type Fit Badge */}
           <div className="flex items-center justify-between bg-gray-50 p-2.5 rounded-xl border border-gray-100">
-            <span className="text-xs font-bold text-gray-700">Skin Type Fit ({userProfile?.skin_type}):</span>
+            <span className="text-xs font-bold text-gray-700">Skin Type Fit {userProfile?.skin_type ? `(${userProfile.skin_type})` : ''}:</span>
             <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border ${
               comp.skinTypeFit === 'Good Fit' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
               comp.skinTypeFit === 'Bad Fit' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-gray-100 text-gray-600 border-gray-200'
             }`}>
-              {comp.skinTypeFit}
+              {comp.skinTypeFit || 'Compatible'}
             </span>
           </div>
 
@@ -368,14 +449,6 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
                 ))}
               </div>
             </div>
-          )}
-        </div>
-      ) : (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-800 mb-5 text-center font-medium">
-          {isAuthenticated ? (
-            <>💡 Profile insights unavailable. Complete your skin quiz profile setup to unlock live analysis calculations.</>
-          ) : (
-            <>Log in to find out how this product fits your skin</>
           )}
         </div>
       )}
