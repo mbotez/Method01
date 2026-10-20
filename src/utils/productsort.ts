@@ -6,7 +6,6 @@ function safeSessionStorageSet(key: string, value: string) {
     sessionStorage.setItem(key, value);
   } catch (e: any) {
     console.warn("[productSort Client] Failed to set sessionStorage due to quota limit or browser restriction. Attempting to clear existing productsort cache to free space...", e);
-    // Try to free up space by clearing all other productsort items
     try {
       const keysToRemove: string[] = [];
       for (let i = 0; i < sessionStorage.length; i++) {
@@ -22,11 +21,9 @@ function safeSessionStorageSet(key: string, value: string) {
           // ignore
         }
       });
-      // Try setting the item again now that we freed some space
       sessionStorage.setItem(key, value);
-
     } catch (retryErr) {
-      console.warn("[productSort Client] Could not save to sessionStorage even after clearing keys. Proceeding without caching.", retryErr);
+      console.warn("[productSort Client] Could not save to sessionStorage even after clearing keys.", retryErr);
     }
   }
 }
@@ -36,7 +33,7 @@ function safeSessionStorageGet(key: string): string | null {
   try {
     return sessionStorage.getItem(key);
   } catch (e) {
-    console.warn("[productSort Client] Failed to read from sessionStorage. Proceeding without cache.", e);
+    console.warn("[productSort Client] Failed to read from sessionStorage.", e);
     return null;
   }
 }
@@ -51,7 +48,6 @@ function safeSessionStorageRemove(key: string) {
 }
 
 export function clearProductSortCache() {
-
   try {
     const keysToRemove: string[] = [];
     for (let i = 0; i < sessionStorage.length; i++) {
@@ -61,16 +57,12 @@ export function clearProductSortCache() {
       }
     }
     keysToRemove.forEach(key => sessionStorage.removeItem(key));
-
   } catch (e) {
     console.error("[productSort Client] Failed to clear productsort cache.", e);
   }
 }
 
 export async function productSort(userProfile: any, productType: string, page: number = 1, forceRefresh: boolean = false, cat3: number | null = null) {
-
-
-  // Create a unique key reflecting all user profile attributes that influence recommendation logic
   const skinType = userProfile?.skin_type || 'any';
   const barrierRisk = userProfile?.barrier_risk !== undefined && userProfile?.barrier_risk !== null 
     ? Number(userProfile.barrier_risk) 
@@ -85,15 +77,12 @@ export async function productSort(userProfile: any, productType: string, page: n
   const cacheKey = `productsort_${productType}_pg-${page}_cat3-${cat3}_${userProfile?.id || 'anonymous'}_st-${skinType}_br-${barrierRisk}_pr-${pregnant}_mc-${mainConcern}_sc-${scndConcern}_act-${activesUsed}`;
   
   if (forceRefresh) {
-
     safeSessionStorageRemove(cacheKey);
   } else {
     const cached = safeSessionStorageGet(cacheKey);
     if (cached) {
-
       try {
         const parsed = JSON.parse(cached);
-
         return parsed;
       } catch (e) {
         console.error("[productSort Client] Error parsing cached products JSON. Bypassing cache.", e);
@@ -102,10 +91,10 @@ export async function productSort(userProfile: any, productType: string, page: n
     }
   }
 
+  let lastError: any = null;
 
+  // 1. Try local Express backend API route
   try {
-    // Try calling the local Express backend API route first (faster and runs the latest bundled code)
-
     const response = await fetch('/api/product-sort', {
       method: 'POST',
       headers: {
@@ -116,37 +105,36 @@ export async function productSort(userProfile: any, productType: string, page: n
 
     if (response.ok) {
       const data = await response.json();
-
       safeSessionStorageSet(cacheKey, JSON.stringify(data));
       return data;
     } else {
-      console.warn('[productSort Client] Local API failed with status:', response.status);
+      const errJson = await response.json().catch(() => ({}));
+      throw new Error(errJson.error || `Product sort API failed with status ${response.status}`);
     }
-  } catch (apiErr) {
-    console.warn('[productSort Client] Local API request failed, falling back to Edge Function:', apiErr);
+  } catch (apiErr: any) {
+    console.warn('[productSort Client] Local API request failed, trying Edge Function:', apiErr);
+    lastError = apiErr;
   }
 
+  // 2. Fallback: Supabase Edge Function
   try {
-    // Fallback: Supabase Edge Function
-
     const { data, error } = await supabase.functions.invoke('product-sort', {
       body: { userProfile, productType, page, cat3 }
     });
 
     if (!error && data) {
-
       safeSessionStorageSet(cacheKey, JSON.stringify(data));
       return data;
     }
 
     if (error) {
-      console.warn('[productSort Client] Edge Function returned an error:', error);
+      throw new Error(error.message || "Supabase Edge Function error during product sort");
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('[productSort Client] Edge Function connection failed:', err);
+    lastError = err;
   }
 
-  // Final fallback
-  console.error("%c[productSort Client] Critical failure: All endpoints failed. Serving empty state fallback.", "color: #ff0000; font-weight: bold;");
-  return { route: 2, barrier_level: 'low', products: [], prescriptions: [], alerts: ['Error loading products'] };
+  // No silent fallback / mock data — throw exact error so it bubbles up to global error modal
+  throw new Error(lastError?.message || "Failed to retrieve sorted products from all available endpoints.");
 }

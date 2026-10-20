@@ -99,7 +99,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           p_skin_type: skin_type,
           p_limit: LIMIT_PER_PAGE, 
           p_offset: offset,
-          p_cat3: cat3 // <-- Forwarding the optional cat3 filter to the DB
+          p_cat3: cat3
         });
         if (error) throw error;
         rawProducts = data;
@@ -117,8 +117,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error("Hint:", (rpcError as any).hint);
       console.error("Full Error Object:", JSON.stringify(rpcError, null, 2));
       
-      console.warn('Database RPC failed:', rpcError.message);
-      return res.status(200).json({ route: 2, barrier_level: 'low', products: [], locked_products: [], prescriptions: [], alerts: [rpcError.message] });
+      return res.status(500).json({ 
+        success: false, 
+        error: rpcError.message || "Database RPC function failed",
+        details: rpcError.details,
+        hint: rpcError.hint,
+        code: rpcError.code 
+      });
     }
 
     const filteredProducts = rawProducts || [];
@@ -136,6 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     return res.status(200).json({
+      success: true,
       route,
       barrier_level,
       products: standardProducts, 
@@ -149,6 +155,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error: any) {
     console.error('product-sort handler error:', error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message || "Internal server error in product-sort",
+      details: error.stack
+    });
   }
 }

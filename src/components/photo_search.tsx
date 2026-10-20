@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Trash2, X, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { ProductResultRow } from './ProductResultRow';
+import imageCompression from 'browser-image-compression';
 
 export interface MatchedProduct {
   id: string;
@@ -12,19 +13,35 @@ export interface MatchedProduct {
   photo_url?: string;
 }
 
-// Helper to convert File to base64 Data URL
-function fileToBase64(file: File): Promise<string> {
+// Helper to convert File to base64 Data URL with client-side compression (max width 1000px, JPEG quality 0.8)
+async function fileToBase64(file: File): Promise<string> {
+  const options = {
+    maxSizeMB: 1,
+    maxWidthOrHeight: 1000,
+    useWebWorker: true,
+    fileType: 'image/jpeg',
+    initialQuality: 0.8
+  };
+
+  let fileToProcess = file;
+  try {
+    fileToProcess = await imageCompression(file, options);
+  } catch (err: any) {
+    throw new Error(`Client-side image compression failed: ${err.message || err}`);
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(fileToProcess);
     reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
+    reader.onerror = (error) => reject(new Error(`FileReader error: ${error}`));
   });
 }
 
 /**
- * Sends a product photo to Gemini Vision API, identifies products, 
+ * Sends a compressed product photo to Gemini Vision API, identifies products, 
  * and queries Supabase using fts_search and fallbacks to find matching database records.
+ * Completely removes silent fallbacks and mock data—errors and missing matches bubble up.
  */
 export async function searchProductsFromPhoto(imageFile: File): Promise<MatchedProduct[]> {
   const base64 = await fileToBase64(imageFile);
@@ -45,47 +62,30 @@ export async function searchProductsFromPhoto(imageFile: File): Promise<MatchedP
     });
   } catch (err: any) {
     if (err.name === 'AbortError') {
-      throw new Error("Product identification timed out. Please try again with a clearer photo.");
+      throw new Error("Product identification request timed out after 20 seconds. Please try again with a clearer photo.");
     }
-    throw err;
+    throw new Error(`Network failure during product identification: ${err.message || err}`);
   } finally {
     clearTimeout(timeoutId);
   }
 
   if (!response.ok) {
     const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error || "Failed to identify products from photo.");
+    throw new Error(errData.error || `Product identification API failed with status ${response.status}`);
   }
 
   const data = await response.json();
-  console.log("=== PHOTO SEARCH RESPONSE SCHEMA & DATA (MATCHED WITH SUPABASE) ===");
-  console.log("Raw API Response Object:", JSON.stringify(data, null, 2));
-  console.log("Response Schema Type:", typeof data, "Keys:", Object.keys(data));
-  if (data.products) {
-    console.log("Products Array Schema/Length:", data.products.length);
-    data.products.forEach((p: any, i: number) => {
-      console.log(`Product [${i}] Schema Keys:`, Object.keys(p), "Values:", p);
-    });
-  }
-  console.log("===============================================================");
-
   if (!data.success) {
     throw new Error(data.error || "Failed to identify products from photo.");
   }
 
   const identifiedProducts: { brand: string; name: string }[] = data.products || [];
 
-  // Log what Gemini Vision identified
-  console.log("Gemini Vision identified products:", identifiedProducts);
-  identifiedProducts.forEach((prod, index) => {
-    console.log(`Product ${index + 1}: Brand: "${prod.brand}", Name: "${prod.name}"`);
-  });
-
   if (identifiedProducts.length === 0) {
-    throw new Error("There doesn't seem to be any product in this picture. Please try again.");
+    throw new Error("No skincare or cosmetic products could be identified in this photo. Please ensure the product labels are clearly visible and try again.");
   }
 
-  // Match Products Against Supabase with timeout and fallbacks
+  // Match Products Against Supabase with timeout (no silent fallbacks or mock data)
   const matchedProducts: MatchedProduct[] = [];
 
   for (const prod of identifiedProducts) {
@@ -97,87 +97,72 @@ export async function searchProductsFromPhoto(imageFile: File): Promise<MatchedP
     let match: any = null;
 
     // 1. Try textSearch with timeout
-    try {
-      const formattedQuery = searchString
-        .split(/\s+/)
-        .filter(w => w.length > 0)
-        .map(w => `${w}:*`)
-        .join(' & ');
+    const formattedQuery = searchString
+      .split(/\s+/)
+      .filter(w => w.length > 0)
+      .map(w => `${w}:*`)
+      .join(' & ');
 
-      const queryPromise = supabase
+    const queryPromise = supabase
+      .from("products")
+      .select("id, brand, name, type, photo_url")
+      .textSearch("fts_search", formattedQuery, { config: "english" })
+      .limit(1);
+
+    const dbRes = await Promise.race([
+      queryPromise,
+      new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Supabase FTS search query timeout")), 5000))
+    ]);
+
+    if (dbRes.error) {
+      throw new Error(`Supabase search error for "${searchString}": ${dbRes.error.message}`);
+    }
+
+    if (dbRes.data && dbRes.data.length > 0) {
+      match = dbRes.data[0];
+    }
+
+    // 2. If no match via textSearch, try ILIKE name/brand search
+    if (!match && name) {
+      const keywords = name.split(/\s+/).filter(w => w.length > 2);
+      const keywordQuery = keywords.length > 0 ? keywords[0] : name;
+
+      const nameQuery = supabase
         .from("products")
         .select("id, brand, name, type, photo_url")
-        .textSearch("fts_search", formattedQuery, { config: "english" })
-        .limit(1);
+        .ilike("brand", `%${brand}%`)
+        .ilike("name", `%${keywordQuery}%`)
+        .limit(5);
 
-      const dbRes = await Promise.race([
-        queryPromise,
-        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Supabase query timeout")), 4000))
+      const nameRes = await Promise.race([
+        nameQuery,
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Supabase ILIKE search query timeout")), 5000))
       ]);
 
-      if (dbRes && dbRes.data && dbRes.data.length > 0) {
-        match = dbRes.data[0];
+      if (nameRes.error) {
+        throw new Error(`Supabase ILIKE error for "${name}": ${nameRes.error.message}`);
       }
-    } catch (e) {
-      console.warn("Text search timeout or error:", e);
-    }
 
-    // 2. If no match via textSearch, try ILIKE name/brand search with keyword verification
-    if (!match && name) {
-      try {
-        const keywords = name.split(/\s+/).filter(w => w.length > 2);
-        const keywordQuery = keywords.length > 0 ? keywords[0] : name;
-
-        const nameQuery = supabase
-          .from("products")
-          .select("id, brand, name, type, photo_url")
-          .ilike("brand", `%${brand}%`)
-          .ilike("name", `%${keywordQuery}%`)
-          .limit(5);
-
-        const nameRes = await Promise.race([
-          nameQuery,
-          new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Supabase query timeout")), 4000))
-        ]);
-
-        if (nameRes && nameRes.data && nameRes.data.length > 0) {
-          match = nameRes.data[0];
-        }
-      } catch (e) {
-        console.warn("Name ILIKE fallback timeout or error:", e);
+      if (nameRes.data && nameRes.data.length > 0) {
+        match = nameRes.data[0];
       }
     }
 
-    // Verify match validity (ensure brand or name shares words, avoid picking completely unrelated products)
-    if (match) {
-      const matchNameLower = (match.name || "").toLowerCase();
-      const identifiedNameLower = name.toLowerCase();
-      const identifiedWords = identifiedNameLower.split(/\s+/).filter(w => w.length > 2);
-      const hasOverlap = identifiedWords.length === 0 || identifiedWords.some(w => matchNameLower.includes(w));
-      
-      if (!hasOverlap) {
-        match = null;
-      }
+    if (!match) {
+      throw new Error(`Product "${brand} - ${name}" identified in photo was not found in the verified database. Please select or add it manually.`);
     }
 
-    // 3. If a valid match was found in the database, use it. Otherwise, use Gemini's identified product directly!
-    if (match) {
-      matchedProducts.push({
-        id: match.id,
-        brand: match.brand,
-        name: match.name,
-        type: match.type || "Treatment",
-        photo_url: match.photo_url || undefined,
-      });
-    } else {
-      matchedProducts.push({
-        id: `scanned-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        brand: brand || "Unknown Brand",
-        name: name || "Scanned Product",
-        type: name.toLowerCase().includes('shampoo') ? 'Cleanser' : (name.toLowerCase().includes('cream') || name.toLowerCase().includes('moisturizer') ? 'Moisturiser' : 'Treatment'),
-        photo_url: undefined,
-      });
-    }
+    matchedProducts.push({
+      id: match.id,
+      brand: match.brand,
+      name: match.name,
+      type: match.type || "Treatment",
+      photo_url: match.photo_url || undefined,
+    });
+  }
+
+  if (matchedProducts.length === 0) {
+    throw new Error("No matching products found in the database.");
   }
 
   return matchedProducts;
@@ -208,16 +193,6 @@ export const ProductConfirmationModal: React.FC<ProductConfirmationModalProps> =
     }
   }, [isOpen, products]);
 
-  const handleToggle = (index: number) => {
-    setItems((prev) =>
-      prev.map((item, idx) => (idx === index ? { ...item, selected: !item.selected } : item))
-    );
-  };
-
-  const handleRemove = (index: number) => {
-    setItems((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
   const handleConfirm = () => {
     const confirmed = items.filter((item) => item.selected).map((item) => item.product);
     onConfirm(confirmed);
@@ -236,7 +211,7 @@ export const ProductConfirmationModal: React.FC<ProductConfirmationModalProps> =
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-white p-6 rounded-3xl w-full max-w-lg space-y-6 max-h-[90vh] overflow-y-auto"
+          className="bg-white p-6 rounded-3xl w-full max-w-lg space-y-6 max-h-[90vh] overflow-y-auto shadow-2xl"
         >
           {items.length > 0 && (
             <div className="flex flex-col gap-3 pb-4" id="modal-header">
