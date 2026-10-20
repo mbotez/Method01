@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageCircle, Users, Heart, Share2, MoreVertical, X, Search, Plus, Send, SlidersHorizontal, Camera } from 'lucide-react';
+import { MessageCircle, Users, Heart, Share2, MoreVertical, X, Search, Plus, Send, SlidersHorizontal, Camera, ArrowRight } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
@@ -24,6 +24,7 @@ interface VideoItem {
   platform: 'youtube' | 'tiktok';
   title: string;
   category: 'Glass skin' | 'Routine' | 'Educational';
+  tags?: string[];
   video_products: VideoProduct[];
 }
 
@@ -32,8 +33,8 @@ interface SocialProps {
   setIsFollowsOpen?: (open: boolean) => void;
   socialTab?: 'Messages' | 'Friends';
   setSocialTab?: (tab: 'Messages' | 'Friends') => void;
-  activeMainTab?: 'videos' | 'community';
-  setActiveMainTab?: (tab: 'videos' | 'community') => void;
+  activeMainTab?: 'videos' | 'articles' | 'community';
+  setActiveMainTab?: (tab: 'videos' | 'articles' | 'community') => void;
 }
 
 export const Social = ({
@@ -56,6 +57,8 @@ export const Social = ({
   const setIsFollowsOpen = externalSetIsFollowsOpen !== undefined ? externalSetIsFollowsOpen : internalSetIsFollowsOpen;
 
   const [posts, setPosts] = useState<any[]>([]);
+  const [articles, setArticles] = useState<any[]>([]);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [follows, setFollows] = useState<any[]>([]);
   const [comments, setComments] = useState<{[key: string]: any[]}>({});
   const [loading, setLoading] = useState(true);
@@ -90,6 +93,7 @@ export const Social = ({
           platform: v.type,
           title: v.title,
           category: v.category,
+          tags: v.tags || [],
           video_products: v.video_products || [],
         }));
         setVideos(mappedVideos);
@@ -99,7 +103,7 @@ export const Social = ({
   }, []);
 
   // Video Feed States
-  const [internalActiveMainTab, internalSetActiveMainTab] = useState<'videos' | 'community'>('videos');
+  const [internalActiveMainTab, internalSetActiveMainTab] = useState<'videos' | 'articles' | 'community'>('videos');
   const activeMainTab = externalActiveMainTab !== undefined ? externalActiveMainTab : internalActiveMainTab;
   const setActiveMainTab = externalSetActiveMainTab !== undefined ? externalSetActiveMainTab : internalSetActiveMainTab;
   const [videoCategoryFilter, setVideoCategoryFilter] = useState<'All' | 'Glass skin' | 'Routine' | 'Educational'>('All');
@@ -302,6 +306,14 @@ export const Social = ({
       if (pError) console.error('Posts fetch error:', pError);
       setPosts(postsData || []);
 
+      // Fetch Articles
+      const { data: articlesData, error: aError } = await supabase
+        .from('articles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (aError) console.error('Articles fetch error:', aError);
+      setArticles(articlesData || []);
+
       // Fetch Comments only for the loaded posts
       if (postsData && postsData.length > 0) {
         const postIds = postsData.map(p => p.post_id);
@@ -400,27 +412,52 @@ export const Social = ({
     }
   }
 
-  const baseFiltered = posts.filter(p => 
-    p.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    p.title?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const displayPosts = filter === 'Following' 
-    ? baseFiltered.filter(p => follows.some(f => f.following_id === p.user_id))
-    : baseFiltered;
-
   const filteredVideos = videos.filter(video => {
     const matchesSearch = searchQuery.trim() === '' || 
       video.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      video.category.toLowerCase().includes(searchQuery.toLowerCase());
+      video.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (video.tags && video.tags.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase())));
       
     const matchesCategory = videoCategoryFilter === 'All' || video.category === videoCategoryFilter;
+    const matchesTag = !selectedTag || (video.tags && video.tags.map(t => t.toLowerCase()).includes(selectedTag.toLowerCase()));
     
-    return matchesSearch && matchesCategory;
+    return matchesSearch && matchesCategory && matchesTag;
   });
 
+  const filteredArticles = articles.filter(article => {
+    const matchesSearch = searchQuery.trim() === '' || 
+      article.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      article.article_content?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (article.tags && article.tags.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase())));
+      
+    const matchesTag = !selectedTag || (article.tags && article.tags.map(t => t.toLowerCase()).includes(selectedTag.toLowerCase()));
+
+    return matchesSearch && matchesTag;
+  });
+
+  const baseFilteredPosts = posts.filter(p => 
+    p.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    p.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (p.tags && p.tags.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase())))
+  );
+
+  const tagFilteredPosts = selectedTag 
+    ? baseFilteredPosts.filter(p => p.tags && p.tags.map(t => t.toLowerCase()).includes(selectedTag.toLowerCase()))
+    : baseFilteredPosts;
+
+  const displayPosts = filter === 'Following' 
+    ? tagFilteredPosts.filter(p => follows.some(f => f.following_id === p.user_id))
+    : tagFilteredPosts;
+
+  const availableTags = Array.from(new Set([
+    'Glass skin', 'Routine', 'Educational', 'Skincare', 'Sensitive',
+    ...videos.flatMap(v => v.tags || []),
+    ...articles.flatMap(a => a.tags || []),
+    ...posts.flatMap(p => p.tags || [])
+  ])).filter(Boolean);
+
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full w-[70%] mx-auto">
       {/* Panel 1: Topics (New Left Panel) - 3/10 width on desktop */}
       <div className={`hidden md:block w-[30%] border-r-2 border-black/5 pr-8 h-full overflow-y-auto`}>
         <div className="flex items-center justify-between mb-8 mt-2">
@@ -428,19 +465,14 @@ export const Social = ({
         </div>
 
         <div className="space-y-4">
-          {['Glass skin', 'Routine', 'Educational', 'Skincare', 'Sensitive'].map(topic => (
+          {availableTags.map(topic => (
             <div 
               key={topic} 
               onClick={() => {
-                setSearchQuery(topic);
-                if (topic === 'Glass skin' || topic === 'Routine' || topic === 'Educational') {
-                  setVideoCategoryFilter(topic);
-                } else {
-                  setVideoCategoryFilter('All');
-                }
+                setSelectedTag(selectedTag === topic ? null : topic);
               }}
               className={`p-3 rounded-xl transition-all cursor-pointer border ${
-                searchQuery === topic || videoCategoryFilter === topic 
+                selectedTag === topic 
                   ? 'bg-black text-white border-black font-black' 
                   : 'hover:bg-black/[0.02] border-transparent hover:border-black/5 text-black/80'
               }`}
@@ -448,9 +480,10 @@ export const Social = ({
               <p className="text-[14px] font-black uppercase tracking-tight truncate">#{topic}</p>
             </div>
           ))}
-          {(searchQuery || videoCategoryFilter !== 'All') && (
+          {(selectedTag || searchQuery || videoCategoryFilter !== 'All') && (
             <button 
               onClick={() => {
+                setSelectedTag(null);
                 setSearchQuery('');
                 setVideoCategoryFilter('All');
               }}
@@ -482,6 +515,19 @@ export const Social = ({
           </button>
           <button 
             onClick={() => {
+              setActiveMainTab('articles');
+              setSearchQuery('');
+            }} 
+            className={`text-[10px] font-black uppercase tracking-widest relative pb-2 transition-all ${
+              activeMainTab === 'articles' 
+                ? 'text-black font-black border-b-2 border-black' 
+                : 'text-black/40 hover:text-black/60'
+            }`}
+          >
+            Articles
+          </button>
+          <button 
+            onClick={() => {
               setActiveMainTab('community');
               setSearchQuery('');
             }} 
@@ -501,7 +547,7 @@ export const Social = ({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-black/30" />
             <input 
               type="text" 
-              placeholder={activeMainTab === 'videos' ? "Search video tutorials..." : "Search chatter feed..."}
+              placeholder={activeMainTab === 'videos' ? "Search video tutorials..." : activeMainTab === 'articles' ? "Search articles..." : "Search chatter feed..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-black/5 border-none rounded-lg py-2 pl-9 pr-4 text-[10px] font-bold focus:ring-2 focus:ring-black/10 outline-none transition-all placeholder:uppercase placeholder:tracking-tighter"
@@ -670,6 +716,27 @@ export const Social = ({
                           </div>
                         )}
 
+                        {video.tags && video.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1 pb-2">
+                            {video.tags.map((tag: string) => (
+                              <button
+                                key={tag}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTag(selectedTag === tag ? null : tag);
+                                }}
+                                className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors ${
+                                  selectedTag === tag 
+                                    ? 'bg-black text-white' 
+                                    : 'bg-black/5 hover:bg-black/10 text-black/70'
+                                }`}
+                              >
+                                #{tag}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
                         {/* Footer: Like and bookmark buttons */}
                         <div className="flex items-center gap-4 pt-2 border-t border-black/5 mt-auto">
                           <button 
@@ -696,6 +763,62 @@ export const Social = ({
                   );
                 })}
               </div>
+            )}
+          </div>
+        ) : activeMainTab === 'articles' ? (
+          /* ARTICLES TAB CONTENT */
+          <div className="space-y-4 pb-32">
+            {filteredArticles.length === 0 ? (
+              <div className="text-center py-12 bg-black/[0.02] rounded-xl border border-dashed border-black/10">
+                <p className="text-xs text-black/40 font-bold uppercase italic">No articles match your search or tag filters</p>
+              </div>
+            ) : (
+              filteredArticles.map(article => (
+                <div key={article.article_id || article.id} className="bg-white border border-black/5 p-5 rounded-2xl hover:border-black/20 hover:shadow-sm transition-all space-y-3">
+                  {article.image_url && (
+                    <div className="rounded-lg overflow-hidden border border-black/5 mb-3">
+                      <img src={article.image_url} alt={article.title} className="w-full max-h-48 object-cover" />
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-black uppercase tracking-wider px-2.5 py-1 bg-black/5 rounded-full text-black/70">Article</span>
+                    <span className="text-[9px] font-bold text-black/40">{new Date(article.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <h3 className="text-sm font-black uppercase tracking-tight text-black hover:text-venus-accent transition-colors cursor-pointer">
+                    {article.title}
+                  </h3>
+                  <p className="text-xs text-black/70 leading-relaxed font-medium">
+                    {article.article_content}
+                  </p>
+                  {article.tags && article.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-2">
+                      {article.tags.map((tag: string) => (
+                        <button
+                          key={tag}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTag(selectedTag === tag ? null : tag);
+                          }}
+                          className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors ${
+                            selectedTag === tag 
+                              ? 'bg-black text-white' 
+                              : 'bg-black/5 hover:bg-black/10 text-black/70'
+                          }`}
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="pt-2 flex items-center justify-between border-t border-black/5">
+                    <a href={article.article_link || '#'} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black uppercase tracking-widest text-black hover:underline flex items-center gap-1">
+                      <span>Read Full Article</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </a>
+                    <span className="text-[9px] font-bold text-black/40">Skincare Science Lab</span>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         ) : (
@@ -779,6 +902,27 @@ export const Social = ({
                         </div>
                       )}
                       
+                      {post.tags && post.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pb-2">
+                          {post.tags.map((tag: string) => (
+                            <button
+                              key={tag}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedTag(selectedTag === tag ? null : tag);
+                              }}
+                              className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors ${
+                                selectedTag === tag 
+                                  ? 'bg-black text-white' 
+                                  : 'bg-black/5 hover:bg-black/10 text-black/70'
+                              }`}
+                            >
+                              #{tag}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-3 pt-2 border-t border-black/5">
                         <button className="flex items-center gap-1 text-black/40 hover:text-venus-accent transition-colors">
                           <Heart className="w-3 h-3" />

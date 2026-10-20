@@ -81,7 +81,11 @@ If no skincare or makeup products are present, return:
     });
 
     const text = response.text || "";
+    console.log("=== GEMINI VISION RAW API RESPONSE TEXT & SCHEMA ===");
+    console.log("Raw Response Text:", text);
     const result = JSON.parse(text.trim());
+    console.log("Parsed JSON Result Schema:", JSON.stringify(result, null, 2));
+    console.log("====================================================");
     const identifiedProducts = result.products || [];
     console.log("Gemini Vision identified products on server:", identifiedProducts);
     return res.json({ success: true, products: identifiedProducts });

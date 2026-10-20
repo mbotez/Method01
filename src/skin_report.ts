@@ -12,6 +12,7 @@ export interface UserProfileAnswers {
   redness_main_area?: string | null;
   wrinkels_main_area?: string | null;
   scan_acne_type?: string | null;
+  blemish_assessment?: string | null;
   [key: string]: any;
 }
 
@@ -45,9 +46,16 @@ export function mapAnswersToProfile(answers: any): UserProfileAnswers {
   const symptomsScore = sensitivityList.length;
   const reactionScore = reactionMap[answers.reaction] || 0;
 
+  // Normalizes breakoutType into an array format regardless of input type
+  const breakoutTypeArray = Array.isArray(answers.breakoutType)
+    ? answers.breakoutType
+    : answers.breakoutType
+    ? [answers.breakoutType]
+    : [];
+
   return {
     skin_type: feelMap[answers.feel] || 'normal',
-    breakout_type: answers.breakoutType || [],
+    breakout_type: breakoutTypeArray,
     barrier_risk: symptomsScore + reactionScore,
     burn_risk: sunMap[answers.sun] || 'medium',
     sunscreen: answers.sunscreen || 'Sometimes',
@@ -55,7 +63,8 @@ export function mapAnswersToProfile(answers: any): UserProfileAnswers {
     wrinkles_score: answers.wrinkles_score !== undefined ? Number(answers.wrinkles_score) : null,
     redness_main_area: answers.redness_main_area || null,
     wrinkels_main_area: answers.wrinkels_main_area || null,
-    scan_acne_type: answers.scan_acne_type || null,
+    scan_acne_type: answers.blemish_assessment || answers.scan_acne_type || null,
+    blemish_assessment: answers.blemish_assessment || answers.scan_acne_type || null,
     sex: answers.sex || null,
     pregnant: answers.pregnant || null,
     actives_used: answers.activesUsed || []
@@ -83,15 +92,14 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
   );
 
   const BREAKOUT_DISPLAY_MAP: Record<string, string> = {
-    whiteheads: 'whiteheads',
-    blackheads: 'blackheads',
-    pie: 'pink/red acne marks (PIE)',
-    pih: 'dark acne marks (PIH)',
-    papules: 'papules',
-    conglo: 'conglobate acne',
-    pustules: 'pustules',
-    nodules: 'nodules',
-    cystic: 'cystic acne'
+    whiteheads: 'surface whiteheads',
+    blackheads: 'surface blackheads',
+    pie: 'post-blemish red marks',
+    pih: 'post-blemish dark spots',
+    papules: 'surface bumps',
+    congestion: 'skin congestion',
+    pustules: 'surface blemishes',
+    severe_painful: 'deep & tender blemishes'
   };
 
   // Format breakout_type for display S1.a / S1.b
@@ -113,19 +121,20 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
     breakout_display = BREAKOUT_DISPLAY_MAP[val] || val;
   }
 
-  // Handle scan_acne_type null check
+  // Handle blemish_assessment / scan_acne_type null check
+  const scanVal = profile.blemish_assessment || profile.scan_acne_type;
   const isScanAcneNull = (
-    !profile.scan_acne_type || 
-    profile.scan_acne_type.trim() === '' || 
-    profile.scan_acne_type.toLowerCase() === 'none'
+    !scanVal || 
+    scanVal.trim() === '' || 
+    scanVal.toLowerCase() === 'none'
   );
 
   let scan_acne_display = '';
-  if (profile.scan_acne_type && profile.scan_acne_type.toLowerCase() !== 'none') {
-    scan_acne_display = profile.scan_acne_type.toLowerCase();
+  if (scanVal && scanVal.toLowerCase() !== 'none') {
+    scan_acne_display = scanVal.toLowerCase();
   }
 
-  // Semantic matcher for breakout_type and scan_acne_type
+  // Semantic matcher for breakout_type and scan scan result
   function breakoutMatchesScan(breakoutVal: string, scanVal: string): boolean {
     const b = breakoutVal.toLowerCase().trim();
     const s = scanVal.toLowerCase().trim();
@@ -133,7 +142,7 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
     if (b.includes(s) || s.includes(b)) return true;
     
     // Semantic equivalent matching:
-    if (b.includes('cystic') && s.includes('cystic')) return true;
+    if (b.includes('severe_painful') && s.includes('tender')) return true;
     if (b.includes('blackhead') && (s.includes('blackhead') || s.includes('open comedone') || s.includes('open_comedone'))) return true;
     if (b.includes('whitehead') && (s.includes('whitehead') || s.includes('closed comedone') || s.includes('closed_comedone'))) return true;
     if (b.includes('pimple') && (s.includes('papule') || s.includes('pustule') || s.includes('inflam'))) return true;
@@ -166,7 +175,7 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
   let firstSentence = `You told us that you have ${skinTypeWithSkin}`;
 
   if (!isBreakoutNull) {
-    const isAcneMatch = doesBreakoutMatchScanAcne(profile.breakout_type, profile.scan_acne_type);
+    const isAcneMatch = doesBreakoutMatchScanAcne(profile.breakout_type, scanVal);
     if (isAcneMatch) {
       // S1.a
       firstSentence += ` with signs of ${breakout_display}.`;

@@ -24,7 +24,7 @@ function safeSessionStorageSet(key: string, value: string) {
       });
       // Try setting the item again now that we freed some space
       sessionStorage.setItem(key, value);
-      console.log("[productSort Client] Successfully saved to sessionStorage after freeing space.");
+
     } catch (retryErr) {
       console.warn("[productSort Client] Could not save to sessionStorage even after clearing keys. Proceeding without caching.", retryErr);
     }
@@ -51,7 +51,7 @@ function safeSessionStorageRemove(key: string) {
 }
 
 export function clearProductSortCache() {
-  console.log("%c[productSort Client] Clearing all cached recommendations from sessionStorage...", "color: #ff3b30; font-weight: bold;");
+
   try {
     const keysToRemove: string[] = [];
     for (let i = 0; i < sessionStorage.length; i++) {
@@ -61,15 +61,14 @@ export function clearProductSortCache() {
       }
     }
     keysToRemove.forEach(key => sessionStorage.removeItem(key));
-    console.log(`[productSort Client] Removed ${keysToRemove.length} cache items.`);
+
   } catch (e) {
     console.error("[productSort Client] Failed to clear productsort cache.", e);
   }
 }
 
 export async function productSort(userProfile: any, productType: string, page: number = 1, forceRefresh: boolean = false, cat3: number | null = null) {
-  console.log(`%c[productSort Client] Called for productType: "${productType}" (page: ${page}, forceRefresh: ${forceRefresh}, cat3: ${cat3})`, "color: #ff007f; font-weight: bold;");
-  console.log("[productSort Client] Active User Profile context:", userProfile);
+
 
   // Create a unique key reflecting all user profile attributes that influence recommendation logic
   const skinType = userProfile?.skin_type || 'any';
@@ -86,16 +85,15 @@ export async function productSort(userProfile: any, productType: string, page: n
   const cacheKey = `productsort_${productType}_pg-${page}_cat3-${cat3}_${userProfile?.id || 'anonymous'}_st-${skinType}_br-${barrierRisk}_pr-${pregnant}_mc-${mainConcern}_sc-${scndConcern}_act-${activesUsed}`;
   
   if (forceRefresh) {
-    console.log(`%c[productSort Client] Force refresh requested. Invalidating and removing cache key "${cacheKey}"...`, "color: #ffcc00; font-weight: bold;");
+
     safeSessionStorageRemove(cacheKey);
   } else {
     const cached = safeSessionStorageGet(cacheKey);
     if (cached) {
-      console.log(`%c[productSort Client] CACHE HIT! Loaded cached results from sessionStorage for "${productType}".`, "color: #00aa55; font-weight: bold;");
-      console.log("[productSort Client] Tip: Click the 'Force Refresh' button in the UI or call clearProductSortCache() to bypass this cache.");
+
       try {
         const parsed = JSON.parse(cached);
-        console.log("[productSort Client] Cached products summary:", parsed.products?.map((p: any) => `${p.brand} - ${p.name} (ID: ${p.product_id})`));
+
         return parsed;
       } catch (e) {
         console.error("[productSort Client] Error parsing cached products JSON. Bypassing cache.", e);
@@ -104,11 +102,10 @@ export async function productSort(userProfile: any, productType: string, page: n
     }
   }
 
-  console.log(`%c[productSort Client] CACHE MISS. Fetching fresh recommendation data from backend...`, "color: #ffa500;");
 
   try {
     // Try calling the local Express backend API route first (faster and runs the latest bundled code)
-    console.log("[productSort Client] Pass 1: Requesting local Express endpoint '/api/product-sort'...");
+
     const response = await fetch('/api/product-sort', {
       method: 'POST',
       headers: {
@@ -119,8 +116,7 @@ export async function productSort(userProfile: any, productType: string, page: n
 
     if (response.ok) {
       const data = await response.json();
-      console.log("%c[productSort Client] Local API route responded successfully!", "color: #00aa55; font-weight: bold;");
-      console.log("[productSort Client] Returned payload:", data);
+
       safeSessionStorageSet(cacheKey, JSON.stringify(data));
       return data;
     } else {
@@ -132,13 +128,13 @@ export async function productSort(userProfile: any, productType: string, page: n
 
   try {
     // Fallback: Supabase Edge Function
-    console.log("[productSort Client] Pass 2: Invoking Supabase Edge Function 'product-sort'...");
+
     const { data, error } = await supabase.functions.invoke('product-sort', {
       body: { userProfile, productType, page, cat3 }
     });
 
     if (!error && data) {
-      console.log("%c[productSort Client] Supabase Edge Function responded successfully!", "color: #00aa55; font-weight: bold;");
+
       safeSessionStorageSet(cacheKey, JSON.stringify(data));
       return data;
     }

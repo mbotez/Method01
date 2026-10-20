@@ -93,6 +93,7 @@ CREATE TABLE public.posts (
   post_media text,
   timestamp timestamp with time zone DEFAULT now(),
   is_article boolean DEFAULT false,
+  tags ARRAY DEFAULT '{}'::text[],
   CONSTRAINT posts_pkey PRIMARY KEY (post_id),
   CONSTRAINT posts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
@@ -227,6 +228,7 @@ CREATE TABLE public.blog_videos (
   type text NOT NULL CHECK (type = ANY (ARRAY['tiktok'::text, 'youtube'::text])),
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   title text,
+  tags ARRAY DEFAULT '{}'::text[],
   CONSTRAINT blog_videos_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.video_products (
@@ -287,6 +289,31 @@ CREATE TABLE public.product_scores (
   uv_sensitivity_required boolean DEFAULT false,
   disc character varying DEFAULT 'n'::character varying,
   night boolean DEFAULT false,
+  contains_frag boolean DEFAULT false,
+  oil_free boolean DEFAULT true,
+  sulfate_free boolean DEFAULT true,
   CONSTRAINT product_scores_pkey PRIMARY KEY (product_id),
   CONSTRAINT fk_product_scores_products FOREIGN KEY (product_id) REFERENCES public.products(id)
+);
+CREATE TABLE public.product_user_ratings (
+  product_id text NOT NULL,
+  user_id uuid NOT NULL,
+  dwis smallint CHECK (dwis >= 1 AND dwis <= 5),
+  price_value smallint CHECK (price_value >= 1 AND price_value <= 5),
+  feel smallint CHECK (feel >= 1 AND feel <= 5),
+  layer smallint CHECK (layer >= 1 AND layer <= 5),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT product_user_ratings_pkey PRIMARY KEY (product_id, user_id),
+  CONSTRAINT product_user_ratings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.articles (
+  article_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  title text,
+  article_content text NOT NULL,
+  article_link text,
+  tags ARRAY DEFAULT '{}'::text[],
+  image_url text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT articles_pkey PRIMARY KEY (article_id)
 );

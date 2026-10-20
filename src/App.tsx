@@ -45,24 +45,26 @@ import { supabase } from './lib/supabase';
 import { ProductCardProvider, useProductCard } from './context/ProductCardContext';
 import { Login } from './components/Login';
 import { ProductDetailModalNew } from './components/ProductDetailModalNew';
-import { ProductCard } from './components/ProductCard';
+import { ProductCard, ProductCardContent } from './components/ProductCard';
 import { ProductLink } from './components/ProductLink';
 import { ComparisonModal } from './components/ComparisonModal';
 import { TrackerNewProductModal } from './components/TrackerNewProductModal';
-import { TrackerProductCard } from './components/TrackerProductCard';
 import { Social } from './components/Social';
 import { ChatQuestionnaire } from './components/ChatQuestionnaire';
 import { INVENTORY, Product } from './constants';
+import { InlineTrackerControls } from './components/InlineTrackerControls';
 import { searchProductsFromPhoto, ProductConfirmationModal, MatchedProduct } from './components/photo_search';
-import { evaluateProductCategory } from './utils/productCategoryEvaluator';
 import { productSort } from './utils/productsort';
+import { searchProducts } from "./utils/TextSearch";
+import { TrackerSpreadsheetRow } from './components/TrackerSpreadsheetRow';
+import { checkRoutine, RoutineCheckResult, UserProfile } from './utils/RoutineCheck';
 
 // --- Components ---
 
 // ... (rest of imports)
 
 const GlowingBackground = ({ appState }: { appState: AppState }) => (
-  <div className="fixed inset-0 -z-10 overflow-hidden bg-gradient-to-b from-[#FAF9F6] to-[#F3F2EE]">
+  <div className="fixed inset-0 -z-10 overflow-hidden bg-[#85701d]">
     <div className="absolute top-[-5%] left-[-5%] w-[30%] h-[30%] rounded-full bg-venus-accent/[0.1] blur-[100px]" />
     <div className="absolute top-[20%] right-[10%] w-[20%] h-[20%] rounded-full bg-venus-accent/[0.15] blur-[80px]" />
   </div>
@@ -91,7 +93,8 @@ enum AppState {
   TRACKER,
   SOCIAL,
   PROFILE,
-  PROGRESS
+  PROGRESS,
+  PRODUCT_PAGE
 }
 
 const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
@@ -139,7 +142,10 @@ const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
 };
 
 export default function App() {
-  const [appState, setAppState] = useState<AppState>(AppState.LANDING);
+  const [appState, setAppState] = useState<AppState>(() => {
+    const isWeb = typeof window !== 'undefined' && window.innerWidth >= 640;
+    return isWeb ? AppState.SOCIAL : AppState.LANDING;
+  });
   const { openProductCard } = useProductCard();
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -153,6 +159,7 @@ export default function App() {
   const [progressPhotos, setProgressPhotos] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [userProducts, setUserProducts] = useState<any[]>([]);
+  const [selectedProductForPage, setSelectedProductForPage] = useState<any | null>(null);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<any | null>(null);
   const [selectedProductForUPP, setSelectedProductForUPP] = useState<any | null>(null);
   const [uppCategories, setUppCategories] = useState<string[]>([]);
@@ -166,12 +173,50 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
   const [routineSearchQuery, setRoutineSearchQuery] = useState('');
   const [expandedRoutines, setExpandedRoutines] = useState<number[]>([]);
+  const [routineChecks, setRoutineChecks] = useState<Record<string, RoutineCheckResult>>({});
+
+  const getActiveRoutineProducts = (products: any[], routineTime: string) => {
+    // If trackerData is not loaded yet but we have products, fallback to the raw list to avoid flashing empty lists
+    if (trackerData.length === 0 && loading) {
+      return products || [];
+    }
+    return (products || []).filter((p: any) => {
+      const trackerItem = trackerData.find((item: any) => {
+        const matchesId = p.id && item.product_id && String(item.product_id) === String(p.id);
+        const matchesName = !matchesId && 
+          item.brand?.toLowerCase() === p.brand?.toLowerCase() && 
+          item.product_name?.toLowerCase() === p.name?.toLowerCase();
+        return (matchesId || matchesName) && 
+               (item.routine_time === routineTime || item.routine_time === 'AM/PM');
+      });
+      return trackerItem ? !!trackerItem.in_use : false;
+    });
+  };
 
   const toggleRoutineExpansion = (idx: number) => {
     setExpandedRoutines(prev => 
       prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+    );
+  };
+
+  const [expandedTrackerIds, setExpandedTrackerIds] = useState<string[]>([]);
+
+  const toggleTrackerItemExpanded = (id: string) => {
+    setExpandedTrackerIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const [collapsedTrackerSections, setCollapsedTrackerSections] = useState<string[]>([]);
+
+  const toggleTrackerSection = (sectionName: string) => {
+    setCollapsedTrackerSections(prev =>
+      prev.includes(sectionName)
+        ? prev.filter(s => s !== sectionName)
+        : [...prev, sectionName]
     );
   };
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
@@ -194,7 +239,7 @@ export default function App() {
   const [selectedPhoto, setSelectedPhoto] = useState<any | null>(null);
   const [isFollowsOpen, setIsFollowsOpen] = useState(false);
   const [socialTab, setSocialTab] = useState<'Messages' | 'Friends'>('Friends');
-  const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'community'>('videos');
+  const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'articles' | 'community'>('videos');
   const [latestVideos, setLatestVideos] = useState<any[]>([]);
   const [lastPost, setLastPost] = useState<any>(null);
   const [loadingLatestVideos, setLoadingLatestVideos] = useState(true);
@@ -221,8 +266,6 @@ export default function App() {
   const [landingScanMatched, setLandingScanMatched] = useState<MatchedProduct[]>([]);
   const [isLandingConfirmOpen, setIsLandingConfirmOpen] = useState(false);
   const [cachedLandingProducts, setCachedLandingProducts] = useState<MatchedProduct[]>([]);
-  const [landingEvaluationResults, setLandingEvaluationResults] = useState<any[]>([]);
-  const [isLandingEvaluationOpen, setIsLandingEvaluationOpen] = useState(false);
   const [isLandingEvaluating, setIsLandingEvaluating] = useState(false);
 
   // Inspiration Sorting States
@@ -270,6 +313,7 @@ export default function App() {
         setSortedProductsResult((prev: any) => ({
           ...result,
           products: [...(prev?.products || []), ...(result.products || [])],
+          locked_products: [...(prev?.locked_products || []), ...(result.locked_products || [])],
           prescriptions: [...(prev?.prescriptions || []), ...(result.prescriptions || [])],
         }));
       }
@@ -410,6 +454,13 @@ export default function App() {
     setIsNavConfirmOpen(false);
     if (confirmed.length === 0) return;
 
+    if (!user) {
+        localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
+        setCachedLandingProducts(confirmed);
+        setAppState(AppState.ONBOARDING_DETAILS);
+        return;
+    }
+
     const payload = confirmed.map(prod => ({
       user_id: user?.id,
       brand: prod.brand,
@@ -431,6 +482,13 @@ export default function App() {
   const handleDashboardConfirmScan = async (confirmed: MatchedProduct[]) => {
     setIsDashboardConfirmOpen(false);
     if (confirmed.length === 0) return;
+
+    if (!user) {
+        localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
+        setCachedLandingProducts(confirmed);
+        setAppState(AppState.ONBOARDING_DETAILS);
+        return;
+    }
 
     // For every confirmed product, automatically insert it into the tracker table in Supabase
     const payload = confirmed.map(prod => ({
@@ -577,7 +635,6 @@ export default function App() {
         return;
     }
     
-    console.log('Sharing routine to:', targetUserId);
     
     // 1. Send automated message
     const { error: msgError } = await supabase.from('messages').insert({
@@ -602,7 +659,6 @@ export default function App() {
     if (error) {
         console.error('Error duplicating routine:', error);
     } else {
-        console.log('Routine shared successfully');
         setIsSharingOpen(false);
         setShareRoutine(null);
         setUsernameSearch('');
@@ -691,7 +747,7 @@ export default function App() {
             makeup: answers.makeup || null,
             makeup_remove: answers.makeupRemove || null,
             current_products: answers.currentProducts || [],
-            past_problems: answers.pastProblems || null,
+            past_problems: Array.isArray(answers.pastProblems) ? answers.pastProblems.join(', ') : (answers.pastProblems || null),
             redness: rednessScore,
             redness_score: answers.redness_score !== undefined ? Number(answers.redness_score) : null,
             wrinkles_score: answers.wrinkles_score !== undefined ? Number(answers.wrinkles_score) : null,
@@ -816,42 +872,63 @@ export default function App() {
 
   const searchIdRef = useRef(0);
   const routineSearchIdRef = useRef(0);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  const performSearch = async (query: string, filter: string) => {
+  const resetSearchState = useCallback(() => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setIsSearchDropdownOpen(false);
+    setIsSearching(false);
+  }, []);
+
+  // Listen for route / active page changes and automatically reset search query
+  useEffect(() => {
+    resetSearchState();
+  }, [appState, selectedProductForPage, resetSearchState]);
+
+  // Listen for browser navigation changes (popstate / hashchange)
+  useEffect(() => {
+    const handleLocationChange = () => {
+      resetSearchState();
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
+  }, [resetSearchState]);
+
+  // Reset search state on sign in / sign out / auth state changes
+  useEffect(() => {
+    resetSearchState();
+  }, [user, resetSearchState]);
+
+  // Click outside listener for search bar container
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        setIsSearchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const performSearch = useCallback(async (query: string, filter: string) => {
     const currentId = ++searchIdRef.current;
-    if (!query && filter === 'All') {
+    if (!query || !query.trim()) {
       setSearchResults([]);
       setIsSearching(false);
       return;
     }
     setIsSearching(true);
     try {
-      let supabaseQuery = supabase
-        .from('products')
-        .select('id, brand, name, type, photo_url');
-
-      if (query.trim()) {
-        const formattedQuery = query
-          .trim()
-          .split(/\s+/)
-          .filter(word => word.length > 0)
-          .map(word => `${word}:*`)
-          .join(' & ');
-
-        supabaseQuery = supabaseQuery.textSearch('fts_search', formattedQuery, {
-          config: 'english'
-        });
-      }
-
-      if (filter !== 'All') {
-        supabaseQuery = supabaseQuery.ilike('type', filter);
-      }
-
-      const { data, error } = await supabaseQuery.limit(10);
-      
-      if (error) throw error;
+      const data = await searchProducts(query, filter);
       if (currentId === searchIdRef.current) {
-        setSearchResults(data || []);
+        setSearchResults(data);
       }
     } catch (err) {
       if (currentId === searchIdRef.current) {
@@ -862,7 +939,7 @@ export default function App() {
         setIsSearching(false);
       }
     }
-  };
+  }, []);
 
   const performRoutineSearch = async (query: string) => {
     const currentId = ++routineSearchIdRef.current;
@@ -905,7 +982,7 @@ export default function App() {
 
   useEffect(() => {
     performSearch(debouncedSearchQuery, productFilter);
-  }, [debouncedSearchQuery, productFilter]);
+  }, [debouncedSearchQuery, productFilter, performSearch]);
 
   useEffect(() => {
     performRoutineSearch(debouncedRoutineSearchQuery);
@@ -917,15 +994,12 @@ export default function App() {
       console.warn("handleDeleteRoutine: routineToDelete is null");
       return;
     }
-    console.log("handleDeleteRoutine: Attempting to delete routine:", routineToDelete);
     try {
       const { data, error, status } = await supabase
         .from('routines')
         .delete()
         .eq('id', routineToDelete.id)
         .select();
-
-      console.log("Delete response:", { data, error, status });
 
       if (error) {
         throw error;
@@ -1010,7 +1084,7 @@ export default function App() {
     if (error) console.error('Error updating tracker:', error);
   };
 
-  const handleTrackerProductClick = async (item: any) => {
+  const handleTrackerProductClick = async (item: any, withTrackerItem: boolean = true) => {
     let productId = item.product_id;
     if (!productId) {
       // Try to find it
@@ -1023,7 +1097,7 @@ export default function App() {
       if (data) productId = data.id;
     }
     if (productId) {
-      openProductCard(productId);
+      openProductCard(productId, withTrackerItem ? item : undefined);
     }
   };
 
@@ -1074,57 +1148,55 @@ export default function App() {
                 localStorage.removeItem('pendingQuestionnaireAnswers');
                 setPendingQuestionnaireAnswers(null);
                 await fetchTrackerData(currentUser.id);
-
-                // Save and evaluate cached landing products if they exist right after they signed up
-                const cachedLanding = localStorage.getItem('cachedLandingProducts');
-                if (cachedLanding) {
-                    if (mounted) setIsLandingEvaluating(true);
-                    try {
-                        const productsToEvaluate = JSON.parse(cachedLanding);
-                        
-                        // We do NOT automatically save the scanned photo-captured products to the tracker table here.
-                        // Only products they explicitly declared they are using in the questionnaire are saved to tracker.
-                        await fetchTrackerData(currentUser.id);
-
-                        // Evaluate each product's category for the new skin profile
-                        const evaluations = await Promise.all(
-                            productsToEvaluate.map(async (prod: any) => {
-                                try {
-                                    const result = await evaluateProductCategory(currentUser.id, prod.id);
-                                    return {
-                                        product: prod,
-                                        evaluation: result
-                                    };
-                                } catch (err) {
-                                    console.error(`Error evaluating product ${prod.id}:`, err);
-                                    return {
-                                        product: prod,
-                                        evaluation: {
-                                            category: 'Safe',
-                                            reasons: ['Unable to fetch evaluation results.']
-                                        }
-                                    };
-                                }
-                            })
-                        );
-                        
-                        // Set state to show the evaluation results popup
-                        if (mounted) {
-                            setLandingEvaluationResults(evaluations);
-                            setIsLandingEvaluationOpen(true);
-                        }
-                        
-                        // Clear the cached products
-                        localStorage.removeItem('cachedLandingProducts');
-                    } catch (cacheErr) {
-                        console.error("Error processing cached landing products:", cacheErr);
-                    } finally {
-                        if (mounted) setIsLandingEvaluating(false);
-                    }
-                }
             } catch (e: any) {
                 console.error("Error saving pending profile:", e);
                 setError(`Error saving profile info: ${e.message}`);
+            }
+        }
+
+        // Save cached landing products if they exist (after signup or login)
+        const cachedLanding = localStorage.getItem('cachedLandingProducts');
+        if (cachedLanding) {
+            if (mounted) setIsLandingEvaluating(true);
+            try {
+                const productsToEvaluate = JSON.parse(cachedLanding);
+                await fetchTrackerData(currentUser.id);
+
+                const payload = productsToEvaluate.map((prod: any) => ({
+                  user_id: currentUser.id,
+                  brand: prod.brand,
+                  product_name: prod.name,
+                  product_type: prod.type || 'Treatment',
+                  routine_time: 'AM/PM',
+                  in_use: true,
+                  photo_url: prod.photo_url || null,
+                  product_id: prod.id
+                }));
+
+                const { data: insertedTrackerItems, error: insertError } = await supabase
+                  .from('tracker')
+                  .insert(payload)
+                  .select();
+
+                if (insertError) {
+                  console.error("Error saving scanned products to tracker:", insertError);
+                }
+
+                await fetchTrackerData(currentUser.id);
+
+                // Open the product card for the first scanned product using openProductCard so it displays the exact ProductCard / ProductCardContent
+                if (productsToEvaluate.length > 0) {
+                   const firstProd = productsToEvaluate[0];
+                   const trackerMatch = insertedTrackerItems?.find(item => String(item.product_id) === String(firstProd.id) || (item.brand === firstProd.brand && item.product_name === firstProd.name));
+                   openProductCard(firstProd.id, trackerMatch);
+                }
+
+                // Clear the cached products
+                localStorage.removeItem('cachedLandingProducts');
+            } catch (cacheErr) {
+                console.error("Error processing cached landing products:", cacheErr);
+            } finally {
+                if (mounted) setIsLandingEvaluating(false);
             }
         }
 
@@ -1179,16 +1251,23 @@ export default function App() {
   useEffect(() => {
     if (loading) return;
 
+    const isWeb = typeof window !== 'undefined' && window.innerWidth >= 640;
+
     if (user) {
-      // If we are on landing/auth but logged in, move directly to dashboard
+      // If we are on landing/auth but logged in, move directly to blog (on web) or dashboard (on mobile)
       if (appState === AppState.LANDING || appState === AppState.AUTH) {
-        setAppState(AppState.DASHBOARD);
+        setAppState(isWeb ? AppState.SOCIAL : AppState.DASHBOARD);
       }
     } else {
-      // If logged out, only allow entry points
-      const allowedStates = [AppState.LANDING, AppState.AUTH, AppState.ONBOARDING_DETAILS, AppState.RANK, AppState.LEADERBOARD, AppState.TRACKER];
+      // If logged out on web and currently on landing, redirect to blog (social)
+      if (isWeb && appState === AppState.LANDING) {
+        setAppState(AppState.SOCIAL);
+        return;
+      }
+      // If logged out, only allow entry points and social (blog) page
+      const allowedStates = [AppState.LANDING, AppState.AUTH, AppState.ONBOARDING_DETAILS, AppState.RANK, AppState.LEADERBOARD, AppState.TRACKER, AppState.SOCIAL];
       if (!allowedStates.includes(appState)) {
-        setAppState(AppState.LANDING);
+        setAppState(isWeb ? AppState.SOCIAL : AppState.LANDING);
       }
     }
   }, [user, profile, appState, loading]);
@@ -1236,12 +1315,116 @@ export default function App() {
     if (data) setTrackerData(data);
   }, [user]);
 
+  // Routine compatibility checks using RoutineCheck.ts
+  useEffect(() => {
+    let active = true;
+
+    const runChecks = async () => {
+      // Create a clean mapped user profile from the database profile or fallback
+      const rawProfile = userProfile || {
+        skin_type: profile?.skin_type || 'combination',
+        barrier_risk: 0,
+        burn_risk: 'medium',
+        new_product_reaction: 0,
+        main_concern: 12,
+        scnd_concern: 12,
+        breakout_type: [],
+        pregnant: 'No',
+        age: 25,
+        actives_used: 4,
+        env: 1,
+        redness_score: 0,
+        wrinkles_score: 0,
+        scan_acne_type: []
+      };
+
+      const mappedProfile: UserProfile = {
+        skin_type: (rawProfile.skin_type === 'dry' || rawProfile.skin_type === 'oily' || rawProfile.skin_type === 'combination')
+          ? rawProfile.skin_type
+          : 'combination',
+        barrier_risk: typeof rawProfile.barrier_risk === 'number' ? rawProfile.barrier_risk : 0,
+        burn_risk: (rawProfile.burn_risk === 'low' || rawProfile.burn_risk === 'medium' || rawProfile.burn_risk === 'high')
+          ? rawProfile.burn_risk
+          : 'medium',
+        new_product_reaction: typeof rawProfile.new_product_reaction === 'number' ? rawProfile.new_product_reaction : 0,
+        main_concern: typeof rawProfile.main_concern === 'number' ? rawProfile.main_concern : 12,
+        scnd_concern: typeof rawProfile.scnd_concern === 'number' ? rawProfile.scnd_concern : 12,
+        breakout_type: Array.isArray(rawProfile.breakout_type) ? rawProfile.breakout_type : null,
+        pregnant: (rawProfile.pregnant === 'Yes' || rawProfile.pregnant === 'No') ? rawProfile.pregnant : 'No',
+        age: typeof rawProfile.age === 'number' ? rawProfile.age : (typeof rawProfile.age === 'string' ? parseInt(rawProfile.age) || 25 : 25),
+        actives_used: typeof rawProfile.actives_used === 'number' ? rawProfile.actives_used : 4,
+        env: typeof rawProfile.env === 'number' ? rawProfile.env : 1,
+        redness_score: typeof rawProfile.redness_score === 'number' ? rawProfile.redness_score : 0,
+        wrinkles_score: typeof rawProfile.wrinkles_score === 'number' ? rawProfile.wrinkles_score : 0,
+        scan_acne_type: Array.isArray(rawProfile.scan_acne_type) ? rawProfile.scan_acne_type : []
+      };
+
+      const newChecks: Record<string, RoutineCheckResult> = {};
+
+      for (let rIdx = 0; rIdx < routines.length; rIdx++) {
+        const rt = routines[rIdx];
+        const key = rt.id || String(rIdx);
+        const activeProducts = getActiveRoutineProducts(rt.products, rt.time);
+        const prodIds = activeProducts.map((p: any) => String(p.id)).filter(Boolean);
+        const timing: Record<string, 'AM' | 'PM' | 'both'> = {};
+        activeProducts.forEach((p: any) => {
+          if (p.id) {
+            timing[String(p.id)] = rt.time === 'AM' || rt.time === 'PM' ? rt.time : 'both';
+          }
+        });
+
+        try {
+          const checkResult = await checkRoutine(mappedProfile, prodIds, timing);
+          
+          // Fetch names and brands for recommended additions if they exist
+          if (checkResult.recommended_additions && checkResult.recommended_additions.length > 0) {
+            const recPids = checkResult.recommended_additions.map(ra => Number(ra.product_id)).filter(id => !isNaN(id));
+            if (recPids.length > 0) {
+              const { data: recProds } = await supabase
+                .from('products')
+                .select('id, brand, name, type')
+                .in('id', recPids);
+              if (recProds) {
+                (checkResult as any).resolved_additions = checkResult.recommended_additions.map(ra => {
+                  const found = recProds.find(rp => Number(rp.id) === Number(ra.product_id));
+                  return {
+                    ...ra,
+                    brand: found?.brand || 'Recommended',
+                    name: found?.name || 'Targeted Product',
+                    type: found?.type || 'Treatment'
+                  };
+                });
+              }
+            }
+          }
+
+          newChecks[key] = checkResult;
+        } catch (e) {
+          console.error(`Error running checkRoutine for key ${key}:`, e);
+        }
+      }
+
+      if (active) {
+        setRoutineChecks(newChecks);
+      }
+    };
+
+    if (routines && routines.length > 0) {
+      runChecks();
+    } else {
+      setRoutineChecks({});
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [routines, trackerData, loading, userProfile, profile]);
+
   // Supabase listeners
   useEffect(() => {
     if (!user) return;
 
     const fetchInitialData = async () => {
-      console.log('Fetching initial data for user:', user.id);
       // Routines
       const { data: routinesData, error: routinesError } = await supabase
         .from('routines')
@@ -1249,7 +1432,7 @@ export default function App() {
         .eq('user_id', user.id)
         .order('updated_at', { ascending: true });
       if (routinesError) { console.error('FAILED ROUTINES CALL:', routinesError); }
-      else { console.log('Fetched routines:', routinesData); setRoutines(routinesData || []); }
+      else { setRoutines(routinesData || []); }
 
       // Progress
       const { data: progressData, error: progressError } = await supabase
@@ -1258,7 +1441,7 @@ export default function App() {
         .eq('user_id', user.id)
         .order('timestamp', { ascending: false });
       if (progressError) { console.error('FAILED PROGRESS CALL:', progressError); }
-      else { console.log('Fetched progress:', progressData); setProgressPhotos(progressData || []); }
+      else { setProgressPhotos(progressData || []); }
 
       // Upp
       const { data: uppData, error: uppError } = await supabase
@@ -1275,7 +1458,7 @@ export default function App() {
         .eq('id', user.id)
         .maybeSingle();
       if (profileError) { console.error('FAILED USER_PROFILE CALL:', profileError); }
-      else { console.log('Fetched user_profile:', profileData); setUserProfile(profileData || null); }
+      else { setUserProfile(profileData || null); }
 
       // Tracker
       fetchTrackerData();
@@ -1314,11 +1497,9 @@ export default function App() {
 
     const uppChannel = supabase.channel('upp-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'upp', filter: `user_id=eq.${user.id}` }, async (payload) => {
-        console.log('Realtime change detected in upp table:', payload);
         const { data, error } = await supabase.from('upp').select('*').eq('user_id', user.id);
         if (error) { console.error('FAILED CALL:', { table: 'upp', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
         if (data) {
-          console.log('UPP products updated via realtime:', data.length);
           setUserProducts(data);
         }
       })
@@ -1352,17 +1533,14 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    console.log('Attempting sign out...');
+    resetSearchState();
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Supabase sign out error returned:', error);
-      } else {
-        console.log('Supabase sign out executed successfully.');
       }
       setUser(null);
       setAppState(AppState.AUTH);
-      console.log('Sign out completed, state updated.');
     } catch (error) {
       console.error('Sign out caught error:', error);
       // Even if sign out fails, force clean up local state
@@ -1399,8 +1577,6 @@ export default function App() {
   const handleProgressUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && user) {
-      console.log("Progress upload started for file:", file.name);
-      
       try {
         // Options for compression
         const options = {
@@ -1411,15 +1587,12 @@ export default function App() {
         };
 
         const compressedFile = await imageCompression(file, options);
-        console.log('Compressed file size:', compressedFile.size / 1024, 'KB');
 
         // Define unique path
         const fileExt = 'webp';
         const fileName = `${Date.now()}.${fileExt}`;
         const filePath = `${user.id}/${fileName}`;
 
-        console.log('Attempting upload to Supabase storage:', filePath);
-        
         // Upload to 'progress_pics' bucket
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('progress_pics')
@@ -1436,15 +1609,11 @@ export default function App() {
           }
           throw uploadError;
         }
-        
-        console.log('Upload successful:', uploadData);
 
         // Get Public URL
         const { data: { publicUrl } } = supabase.storage
           .from('progress_pics')
           .getPublicUrl(filePath);
-        
-        console.log('Generated Public URL:', publicUrl);
 
         // Insert into progress table
         const payload = {
@@ -1453,8 +1622,6 @@ export default function App() {
           created_at: new Date().toISOString(),
           timestamp: new Date().toISOString() // Keep timestamp for existing UI compatibility
         };
-
-        console.log('Inserting into progress table with payload:', payload);
 
         const { data: insertedData, error: insertError } = await supabase
           .from('progress')
@@ -1466,8 +1633,6 @@ export default function App() {
           console.error('Database Insert Error:', insertError);
           throw insertError;
         }
-
-        console.log('Database insertion successful:', insertedData);
 
         // Refresh UI
         if (insertedData) {
@@ -1486,7 +1651,6 @@ export default function App() {
   };
 
   const handleDeletePhoto = async (photo: any, e?: React.MouseEvent) => {
-    console.log("Delete button clicked for photo:", photo.id);
     if (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -1500,28 +1664,23 @@ export default function App() {
     try {
       // 1. Extract path from URL - more robust extraction
       let filePath = photo.image_url;
-      console.log("Original image_url:", filePath);
       
       // If it's a full Supabase storage URL, we need the part after the bucket name
       const bucketName = 'progress_pics';
       if (filePath.includes(`/${bucketName}/`)) {
         filePath = filePath.split(`/${bucketName}/`).pop()?.split('?')[0] || filePath;
       }
-      
-      console.log("Extracted filePath for storage deletion:", filePath);
 
       // 2. Delete from Storage
       const { data: storageData, error: storageError } = await supabase.storage
         .from(bucketName)
         .remove([filePath]);
 
-      console.log("Storage removal result:", { storageData, storageError });
       if (storageError) {
         console.warn("Storage deletion warning (might already be gone):", storageError);
       }
 
       // 3. Delete from Database
-      console.log("Attempting database deletion for id:", photo.id);
       const { error: dbError } = await supabase
         .from('progress')
         .delete()
@@ -1531,8 +1690,6 @@ export default function App() {
         console.error("Database deletion error:", dbError);
         throw dbError;
       }
-
-      console.log("Deletion successful");
 
       // Update local state
       setProgressPhotos(prev => prev.filter(p => p.id !== photo.id));
@@ -1553,8 +1710,6 @@ export default function App() {
   ];
 
   const handleQuestionnaireComplete = async (answers: any) => {
-    console.log('Questionnaire answers:', answers);
-    
     if (user) {
         try {
             await saveQuestionnaireToProfile(answers, user.id);
@@ -1591,7 +1746,6 @@ export default function App() {
         onboarding_complete: true,
         created_at: new Date().toISOString()
       };
-      console.log('Attempting to write to users with payload:', payload);
 
       const { error: profileError } = await supabase
         .from('users')
@@ -1624,7 +1778,6 @@ export default function App() {
           photo_url: p.photo_url || null
         }))
       };
-      console.log('Attempting to write to routines with payload:', routinePayload);
 
       const { error: routineError } = await supabase
         .from('routines')
@@ -1644,7 +1797,6 @@ export default function App() {
       if (updatedRoutines) setRoutines(updatedRoutines);
 
       const userPayload = { onboarding_complete: true };
-      console.log('Attempting to write to users with payload:', userPayload);
       const { error: userError } = await supabase
         .from('users')
         .update(userPayload)
@@ -1662,7 +1814,6 @@ export default function App() {
   };
 
   const handleSaveRoutine = async () => {
-    console.log('handleSaveRoutine clicked, user:', !!user);
     setRoutineFormError(null);
     setIsSavingRoutineForm(true);
     if (!user) {
@@ -1673,16 +1824,13 @@ export default function App() {
     }
     
     try {
-      console.log('modalMode:', modalMode);
       let processedProducts: any[] = [];
       if (modalMode === 'reminder') {
-          console.log('Saving reminder for:', reminderRoutine.id);
           const { error } = await supabase.from('routines').update({ reminder: reminderTime }).eq('id', reminderRoutine.id);
           if (error) throw error;
       } else {
-          console.log('Processing products:', routineSelectedProducts);
           processedProducts = await Promise.all(routineSelectedProducts.map(async p => {
-            let productData = {
+            let productData: any = {
               id: p.id,
               brand: p.brand || p.Brand,
               name: p.name || p.ProductName || p.Name,
@@ -1690,8 +1838,28 @@ export default function App() {
               photo_url: p.photo_url || p.PhotoUrl || p.photoUrl || null
             };
 
+            // Fix category mapping based on product_scores.cat2 and cat3
+            const { data: scoreData } = await supabase
+              .from('product_scores')
+              .select('cat2, cat3')
+              .eq('product_id', p.id)
+              .maybeSingle();
+
+            if (scoreData) {
+              if (scoreData.cat2) {
+                productData.cat2 = scoreData.cat2;
+              }
+              if (scoreData.cat3) {
+                const foundMapping = Object.values(CAT3_MAPPING)
+                  .flat()
+                  .find(item => item.id === scoreData.cat3);
+                if (foundMapping) {
+                  productData.type = foundMapping.name;
+                }
+              }
+            }
+
             if (p.tempId) {
-              console.log('Adding new product to supabase:', p.brand, p.name);
               const { data, error } = await supabase
                 .from('products')
                 .insert({
@@ -1736,7 +1904,6 @@ export default function App() {
 
             return productData;
           }));
-          console.log('Processed products:', processedProducts);
 
           const payload = {
             user_id: user.id,
@@ -1746,7 +1913,6 @@ export default function App() {
             notes: routineNotes,
             products: processedProducts
           };
-          console.log('Saving routine:', payload);
           if (modalMode === 'edit') {
             const { error } = await supabase.from('routines').update(payload).eq('id', editingRoutine.id);
             if (error) throw error;
@@ -1755,7 +1921,6 @@ export default function App() {
             if (error) throw error;
           }
       }
-      console.log('Routine saved successfully');
       // ... continue with success logic
 
       // Refresh routines immediately
@@ -1880,9 +2045,7 @@ export default function App() {
   };
 
   const handleSaveUPP = async () => {
-    console.log('handleSaveUPP triggered', { user: !!user, selectedProduct: !!selectedProductForUPP });
     if (!user || !selectedProductForUPP) {
-       console.log('Early return in handleSaveUPP', { user: !!user, selectedProduct: !!selectedProductForUPP });
        return;
     }
 
@@ -1904,14 +2067,11 @@ export default function App() {
         length: uppLength,
         frequency: uppFrequency
       }).select().single();
-      
-      console.log('Insert result from Supabase:', newProductEntry);
 
       if (insertError) throw insertError;
 
       // 2. Refresh userProducts immediately to ensure the latest Supabase calculations are reflected
       const { data: updatedProducts, error: refreshError } = await supabase.from('upp').select('*').eq('user_id', user.id);
-      console.log('Fetched updated products:', updatedProducts);
       
       if (updatedProducts) setUserProducts(updatedProducts);
 
@@ -1946,12 +2106,9 @@ export default function App() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setLoading(false);
-      console.log('Fallback timeout: forced loading to false');
     }, 3000);
     return () => clearTimeout(timer);
   }, []);
-
-  console.log('Current Loading State:', loading);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-b from-[#FAF9F6] to-[#F3F2EE] space-y-4">
@@ -1963,7 +2120,7 @@ export default function App() {
   return (
     <>
       <ProductCard />
-      <div className="min-h-screen font-sans text-venus-warm relative overflow-x-hidden">
+      <div className="min-h-screen font-sans text-venus-warm relative overflow-x-hidden bg-[#FFFFFF]">
         <GlowingBackground appState={appState} />
         {/* Product Detail Modal */}
         {selectedProductForDetail && (
@@ -1987,34 +2144,42 @@ export default function App() {
             </div>
             {/* Navigation items moved from footer */}
             <div className="flex flex-col gap-4">
-              <button onClick={() => { setAppState(AppState.PROGRESS); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.PROGRESS ? 'text-black font-black' : 'text-black/60'}`}>
-                <Newspaper className="w-6 h-6" />
-                <span className="text-sm uppercase tracking-widest font-black">Progress</span>
-              </button>
               <button onClick={() => { setAppState(AppState.DASHBOARD); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.DASHBOARD ? 'text-black font-black' : 'text-black/60'}`}>
                 <FlaskConical className="w-6 h-6" />
                 <span className="text-sm uppercase tracking-widest font-black">Home</span>
               </button>
+              {user && (
+                <button onClick={() => { setAppState(AppState.PROGRESS); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.PROGRESS ? 'text-black font-black' : 'text-black/60'}`}>
+                  <Newspaper className="w-6 h-6" />
+                  <span className="text-sm uppercase tracking-widest font-black">Progress</span>
+                </button>
+              )}
+              {user && (
+                <button onClick={() => { setAppState(AppState.TRACKER); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.TRACKER ? 'text-black font-black' : 'text-black/60'}`}>
+                  <CheckSquare className="w-6 h-6" />
+                  <span className="text-sm uppercase tracking-widest font-black">Tracker</span>
+                </button>
+              )}
               <button onClick={() => { setAppState(AppState.RANK); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.RANK ? 'text-black font-black' : 'text-black/60'}`}>
                 <ShoppingBag className="w-6 h-6" />
                 <span className="text-sm uppercase tracking-widest font-black">Products</span>
               </button>
-              <button onClick={() => { setAppState(AppState.LEADERBOARD); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.LEADERBOARD ? 'text-black font-black' : 'text-black/60'}`}>
-                <Award className="w-6 h-6" />
-                <span className="text-sm uppercase tracking-widest font-black">Rankings</span>
-              </button>
+              {user && (
+                <button onClick={() => { setAppState(AppState.LEADERBOARD); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.LEADERBOARD ? 'text-black font-black' : 'text-black/60'}`}>
+                  <Award className="w-6 h-6" />
+                  <span className="text-sm uppercase tracking-widest font-black">Rankings</span>
+                </button>
+              )}
               <button onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.SOCIAL && !isFollowsOpen ? 'text-black font-black' : 'text-black/60'}`}>
                 <Heart className="w-6 h-6" />
                 <span className="text-sm uppercase tracking-widest font-black">Blog</span>
               </button>
-              <button onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(true); setSocialTab('Messages'); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.SOCIAL && isFollowsOpen ? 'text-black font-black' : 'text-black/60'}`}>
-                <MessageCircle className="w-6 h-6" />
-                <span className="text-sm uppercase tracking-widest font-black">Messages</span>
-              </button>
-              <button onClick={() => { setAppState(AppState.TRACKER); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.TRACKER ? 'text-black font-black' : 'text-black/60'}`}>
-                <CheckSquare className="w-6 h-6" />
-                <span className="text-sm uppercase tracking-widest font-black">Tracker</span>
-              </button>
+              {user && (
+                <button onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(true); setSocialTab('Messages'); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.SOCIAL && isFollowsOpen ? 'text-black font-black' : 'text-black/60'}`}>
+                  <MessageCircle className="w-6 h-6" />
+                  <span className="text-sm uppercase tracking-widest font-black">Messages</span>
+                </button>
+              )}
               {user && (
                 <button onClick={() => { setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.PROFILE ? 'text-black font-black' : 'text-black/60'}`}>
                   <UserIcon className="w-6 h-6" />
@@ -2027,24 +2192,37 @@ export default function App() {
       </AnimatePresence>
       
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-black/5">
-        <div className="flex justify-between items-center px-4 py-1.5 md:py-3 gap-3 md:gap-4">
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-black/5 relative">
+        <div className="flex justify-between items-center px-4 py-1.5 md:py-3 gap-3 md:gap-4 max-w-7xl mx-auto">
           <div className="flex items-center gap-2">
-            <button onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} className="p-1">
+            <button onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} className="p-1 cursor-pointer">
               <Menu className="w-5 h-5 text-black" />
             </button>
           </div>
 
-          <div className="flex-1 max-w-md mx-auto">
+          <div ref={searchContainerRef} className="flex-1 max-w-md mx-auto">
             <div className="relative w-full">
-              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-black/40" />
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-black/40 pointer-events-none" />
               <input 
                 type="text" 
                 placeholder="Search products..."
-                className="w-full bg-white border border-black/10 py-1.5 px-3 pl-8 md:py-2 md:pl-10 rounded-lg text-[10px] md:text-xs font-black uppercase text-black placeholder:text-black/40 outline-none"
+                className="w-full bg-white border border-black/10 py-1.5 px-3 pl-8 pr-8 md:py-2 md:pl-10 md:pr-8 rounded-lg text-[10px] md:text-xs font-black uppercase text-black placeholder:text-black/40 outline-none focus:border-black/30 transition-colors"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (!isSearchDropdownOpen) setIsSearchDropdownOpen(true);
+                }}
+                onFocus={() => setIsSearchDropdownOpen(true)}
               />
+              {searchQuery && (
+                <button 
+                  onClick={() => resetSearchState()}
+                  className="absolute right-2.5 top-1/2 transform -translate-y-1/2 p-0.5 rounded-full hover:bg-black/5 text-black/40 hover:text-black transition-colors cursor-pointer"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -2052,14 +2230,14 @@ export default function App() {
             {!user ? (
               <>
                 <button 
-                  onClick={() => { setIsSignUp(false); setAppState(AppState.AUTH); }}
-                  className="text-xs md:text-sm font-black uppercase tracking-widest text-black/60 hover:text-black transition-colors"
+                  onClick={() => { resetSearchState(); setIsSignUp(false); setAppState(AppState.AUTH); }}
+                  className="text-xs md:text-sm font-black uppercase tracking-widest text-black/60 hover:text-black transition-colors cursor-pointer"
                 >
                   Sign In
                 </button>
                 <button 
-                  onClick={() => { setIsSignUp(true); setAppState(AppState.AUTH); }}
-                  className="bg-black text-white text-xs md:text-sm font-black uppercase tracking-widest px-4 py-2 rounded-lg hover:bg-venus-accent transition-colors"
+                  onClick={() => { resetSearchState(); setIsSignUp(true); setAppState(AppState.AUTH); }}
+                  className="bg-black text-white text-xs md:text-sm font-black uppercase tracking-widest px-4 py-2 rounded-lg hover:bg-venus-accent transition-colors cursor-pointer"
                 >
                   Join
                 </button>
@@ -2067,15 +2245,15 @@ export default function App() {
             ) : (
                <div className="flex items-center gap-2">
                 <button 
-                  onClick={() => setAppState(AppState.DASHBOARD)} 
-                  className={`transition-colors ${appState === AppState.DASHBOARD ? 'text-black' : 'text-black/60 hover:text-black'}`}
+                  onClick={() => { resetSearchState(); setAppState(AppState.DASHBOARD); }} 
+                  className={`transition-colors cursor-pointer ${appState === AppState.DASHBOARD ? 'text-black' : 'text-black/60 hover:text-black'}`}
                   title="Dashboard"
                 >
                   <UserIcon className="w-4 h-4" />
                 </button>
                 <button 
                   onClick={handleSignOut}
-                  className="text-black/60 hover:text-black transition-colors"
+                  className="text-black/60 hover:text-black transition-colors cursor-pointer"
                   title="Sign Out"
                 >
                   <LogOut className="w-4 h-4" />
@@ -2084,6 +2262,69 @@ export default function App() {
             )}
           </div>
         </div>
+
+        {/* Full-width Search Results Dropdown */}
+        {isSearchDropdownOpen && searchQuery.trim() && (
+          <div className="absolute top-full left-0 right-0 w-full bg-white/95 backdrop-blur-md border-b border-black/10 shadow-2xl overflow-hidden z-[100] max-h-[70vh] overflow-y-auto">
+            <div className="max-w-4xl mx-auto px-4 py-3">
+              {isSearching ? (
+                <div className="p-6 text-center text-xs text-black/50 uppercase tracking-widest font-black flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-venus-accent" />
+                  <span>Searching products...</span>
+                </div>
+              ) : searchResults.length > 0 ? (
+                <div className="flex flex-col divide-y divide-black/5">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-black/40 px-3 py-1.5 flex justify-between items-center">
+                    <span>Search Results ({searchResults.length})</span>
+                    <button 
+                      onClick={() => resetSearchState()}
+                      className="hover:text-black transition-colors cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  {searchResults.map(product => (
+                     <button 
+                       key={product.id}
+                       onClick={() => {
+                         resetSearchState();
+                         setSelectedProductForPage(product);
+                         setAppState(AppState.PRODUCT_PAGE);
+                       }}
+                       className="flex items-center p-3.5 hover:bg-black/5 transition-colors text-left gap-4 group cursor-pointer"
+                     >
+                       {product.photo_url ? (
+                         <img src={product.photo_url} alt={product.name} referrerPolicy="no-referrer" className="w-12 h-12 object-cover rounded-xl shrink-0 border border-black/5 group-hover:scale-105 transition-transform" />
+                       ) : (
+                         <div className="w-12 h-12 bg-black/5 rounded-xl flex items-center justify-center shrink-0 border border-black/5">
+                           <ShoppingBag className="w-5 h-5 text-black/20" />
+                         </div>
+                       )}
+                       <div className="flex-1 min-w-0 pr-2">
+                         <div className="text-[10px] md:text-xs font-black uppercase tracking-wider text-venus-accent whitespace-normal break-words">
+                           {product.brand}
+                         </div>
+                         <div className="text-xs md:text-sm font-bold text-black leading-snug whitespace-normal break-words mt-0.5">
+                           {product.name}
+                         </div>
+                         {product.type && (
+                           <div className="text-[10px] text-black/40 font-semibold uppercase tracking-wider mt-1">
+                             {product.type}
+                           </div>
+                         )}
+                       </div>
+                       <ChevronRight className="w-4 h-4 text-black/30 group-hover:text-black group-hover:translate-x-0.5 transition-all shrink-0" />
+                     </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 text-center text-xs text-black/50 uppercase tracking-widest font-black">
+                  No matching products found for "{searchQuery}"
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </header>
       
       <main className={`pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : 'max-w-4xl'}`}>
@@ -2112,6 +2353,20 @@ export default function App() {
                 setSocialTab={setSocialTab}
                 activeMainTab={socialActiveMainTab}
                 setActiveMainTab={setSocialActiveMainTab}
+              />
+            </motion.div>
+          )}
+
+          {appState === AppState.PRODUCT_PAGE && selectedProductForPage && (
+            <motion.div 
+              key="product_page"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex justify-center"
+            >
+              <ProductCardContent 
+                productId={String(selectedProductForPage.id)}
+                onClose={() => setAppState(AppState.DASHBOARD)} 
               />
             </motion.div>
           )}
@@ -2156,6 +2411,12 @@ export default function App() {
                 products={landingScanMatched}
                 onConfirm={handleLandingConfirmScan}
                 onCancel={() => setIsLandingConfirmOpen(false)}
+                user={user}
+                onLogin={(confirmed) => {
+                  localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
+                  setAppState(AppState.AUTH);
+                  setIsLandingConfirmOpen(false);
+                }}
               />
               <input
                 type="file"
@@ -2362,7 +2623,7 @@ export default function App() {
                       Retry Sorting
                     </button>
                   </div>
-                ) : (!sortedProductsResult?.products?.length && !sortedProductsResult?.prescriptions?.length) ? (
+                ) : (!sortedProductsResult?.products?.length && !sortedProductsResult?.locked_products?.length && !sortedProductsResult?.prescriptions?.length) ? (
                   <div className="py-12 text-center bg-white/50 rounded-2xl border border-black/5 flex flex-col items-center justify-center gap-3">
                     <ShoppingBag className="w-10 h-10 text-black/10" />
                     <p className="text-black/40 text-xs font-black uppercase tracking-widest">No compatible products found in this category.</p>
@@ -2408,6 +2669,56 @@ export default function App() {
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+
+                        {/* SECTION 2 — locked products */}
+                        {sortedProductsResult.locked_products && sortedProductsResult.locked_products.length > 0 && (
+                          <div className="space-y-6">
+                            <div className="mt-8 pt-6 border-t border-black/5 text-left">
+                              <h3 className="text-xs font-black uppercase tracking-tight text-black italic">
+                                Unlocked Once Barrier Recovers
+                              </h3>
+                              <p className="text-[10px] text-black/50 font-medium mt-1">
+                                These target your concerns but contain actives paused while your skin barrier heals.
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                              {sortedProductsResult.locked_products.map((p: any) => {
+                                const product = p;
+                                return (
+                                  <div
+                                    key={product.product_id}
+                                    onClick={() => openProductCard(String(product.product_id))}
+                                    className="relative cursor-pointer clean-card p-2 border border-black/5 bg-white hover:border-black transition-all flex flex-col items-center gap-1 shadow-sm group text-center opacity-70 hover:opacity-100 grayscale hover:grayscale-0"
+                                  >
+                                    <span className="absolute top-1 left-1 text-[8px] font-black bg-gray-200 text-gray-700 px-1 py-0.5 rounded uppercase tracking-wider z-10 flex items-center gap-0.5">
+                                      <Shield className="w-2.5 h-2.5" /> Locked
+                                    </span>
+                                    {product.photo_url ? (
+                                      <img
+                                        src={product.photo_url}
+                                        alt={product.name}
+                                        referrerPolicy="no-referrer"
+                                        className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-lg border border-black/5 flex-shrink-0 group-hover:scale-105 transition-transform duration-300"
+                                      />
+                                    ) : (
+                                      <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black/5 rounded-lg border border-black/5 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40 text-center font-mono leading-tight">
+                                        No Image
+                                      </div>
+                                    )}
+                                    <div className="min-w-0 w-full">
+                                      <span className="text-[8px] uppercase font-black tracking-widest text-venus-accent block mb-0.5">
+                                        {product.brand || 'Unknown'}
+                                      </span>
+                                      <h4 className="text-[10px] md:text-xs font-bold text-black uppercase leading-tight line-clamp-2">
+                                        {product.name || 'Unnamed'}
+                                      </h4>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
 
@@ -2509,24 +2820,19 @@ export default function App() {
                   
                   <div className="flex gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth snap-x snap-mandatory">
                     {/* Column 1 */}
-                    <div className="flex flex-col gap-2 shrink-0">
+                    <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
                       {/* Moisturisers Card */}
                       <motion.div
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Moisturiser')}
-                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/moisturiser.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
                       >
-                        <div className="flex items-center gap-1.5 w-full h-full">
-                          <div className="p-2 bg-blue-100/60 text-blue-600 rounded-lg shrink-0">
-                            <Droplet className="w-4 h-4" />
+                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
+                          <div className="flex items-center justify-center gap-1 w-full">
+                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Moisturisers</h4>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Moisturisers</h4>
-                            </div>
-                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Quench your skin</p>
-                          </div>
+                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Quench your skin</p>
                         </div>
                       </motion.div>
 
@@ -2535,41 +2841,31 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Treatment')}
-                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/serum.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
                       >
-                        <div className="flex items-center gap-1.5 w-full h-full">
-                          <div className="p-2 bg-purple-100/60 text-purple-600 rounded-lg shrink-0">
-                            <FlaskConical className="w-4 h-4" />
+                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
+                          <div className="flex items-center justify-center gap-1 w-full">
+                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Serums & Treatments</h4>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Serums & Treatments</h4>
-                            </div>
-                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Targeted active formulas</p>
-                          </div>
+                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Targeted active formulas</p>
                         </div>
                       </motion.div>
                     </div>
 
                     {/* Column 2 */}
-                    <div className="flex flex-col gap-2 shrink-0">
+                    <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
                       {/* Cleansers Card */}
                       <motion.div
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Cleanser')}
-                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/cleanse.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
                       >
-                        <div className="flex items-center gap-1.5 w-full h-full">
-                          <div className="p-2 bg-emerald-100/60 text-emerald-600 rounded-lg shrink-0">
-                            <Sparkles className="w-4 h-4" />
+                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
+                          <div className="flex items-center justify-center gap-1 w-full">
+                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Cleansers</h4>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Cleansers</h4>
-                            </div>
-                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Gentle purify</p>
-                          </div>
+                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Gentle purify</p>
                         </div>
                       </motion.div>
 
@@ -2578,41 +2874,31 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('SPF')}
-                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sunscreen.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
                       >
-                        <div className="flex items-center gap-1.5 w-full h-full">
-                          <div className="p-2 bg-amber-100/60 text-amber-600 rounded-lg shrink-0">
-                            <Sun className="w-4 h-4" />
+                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
+                          <div className="flex items-center justify-center gap-1 w-full">
+                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Sunscreen (SPF)</h4>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Sunscreen (SPF)</h4>
-                            </div>
-                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Essential daily UV protection</p>
-                          </div>
+                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Essential daily UV protection</p>
                         </div>
                       </motion.div>
                     </div>
 
                     {/* Column 3 */}
-                    <div className="flex flex-col gap-2 shrink-0">
+                    <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
                       {/* Glass Skin Card */}
                       <motion.div
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Glass skin essentials')}
-                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/glass.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
                       >
-                        <div className="flex items-center gap-1.5 w-full h-full">
-                          <div className="p-2 bg-cyan-100/60 text-cyan-600 rounded-lg shrink-0">
-                            <Sparkles className="w-4 h-4" />
+                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
+                          <div className="flex items-center justify-center gap-1 w-full">
+                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Glass skin essentials</h4>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Glass skin essentials</h4>
-                            </div>
-                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Radiant & translucent</p>
-                          </div>
+                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Radiant & translucent</p>
                         </div>
                       </motion.div>
 
@@ -2621,41 +2907,31 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Soothe sensitive skin')}
-                        className="snap-start shrink-0 w-[180px] p-1.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sensitive.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
                       >
-                        <div className="flex items-center gap-1.5 w-full h-full">
-                          <div className="p-2 bg-rose-100/60 text-rose-600 rounded-lg shrink-0">
-                            <Heart className="w-4 h-4" />
+                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
+                          <div className="flex items-center justify-center gap-1 w-full">
+                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Soothe sensitive skin</h4>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Soothe sensitive skin</h4>
-                            </div>
-                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Calming & gentle care</p>
-                          </div>
+                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Calming & gentle care</p>
                         </div>
                       </motion.div>
                     </div>
 
                     {/* Column 4 */}
-                    <div className="flex flex-col gap-2 shrink-0">
+                    <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
                       {/* Barrier Repair Card */}
                       <motion.div
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Barrier repair')}
-                        className="snap-start shrink-0 w-[180px] p-2.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/barrier.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
                       >
-                        <div className="flex items-center gap-3 w-full h-full">
-                          <div className="p-2 bg-indigo-100/60 text-indigo-600 rounded-lg shrink-0">
-                            <Shield className="w-4 h-4" />
+                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
+                          <div className="flex items-center justify-center gap-1 w-full">
+                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Barrier repair</h4>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Barrier repair</h4>
-                            </div>
-                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Strengthen & protect</p>
-                          </div>
+                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Strengthen & protect</p>
                         </div>
                       </motion.div>
 
@@ -2664,18 +2940,13 @@ export default function App() {
                         whileHover={{ y: -1, scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         onClick={() => handleSelectInspiration('Anti-aging')}
-                        className="snap-start shrink-0 w-[180px] p-2.5 rounded-xl border border-venus-accent/15 bg-venus-accent/[0.06] hover:border-venus-accent/30 hover:bg-venus-accent/[0.12] transition-all flex items-center cursor-pointer shadow-sm min-h-[100px] max-h-[100px]"
+                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/age.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden"
                       >
-                        <div className="flex items-center gap-3 w-full h-full">
-                          <div className="p-2 bg-slate-100/60 text-slate-600 rounded-lg shrink-0">
-                            <History className="w-4 h-4" />
+                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
+                          <div className="flex items-center justify-center gap-1 w-full">
+                            <h4 className="text-[15.6px] font-bold text-white uppercase tracking-tight">Anti-aging</h4>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-center">
-                            <div className="flex items-center justify-between gap-1">
-                              <h4 className="text-xs font-black text-black uppercase tracking-tight truncate">Anti-aging</h4>
-                            </div>
-                            <p className="text-[10px] text-black/50 font-semibold mt-0.5 leading-tight line-clamp-2">Youthful rejuvenation</p>
-                          </div>
+                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Youthful rejuvenation</p>
                         </div>
                       </motion.div>
                     </div>
@@ -2733,7 +3004,9 @@ export default function App() {
                       routines.map((rt: any, rIdx: number) => (
                         <div key={rIdx} className="clean-card p-4 border-2 border-black/5 bg-venus-accent/[0.06] relative group flex flex-col gap-2">
                           {/* Header row: Number, Routine Name + Actions - Clickable to toggle */}
-                          <div className="flex items-start gap-4 cursor-pointer" onClick={() => toggleRoutineExpansion(rIdx)}>
+                          <div className="flex items-start gap-4 cursor-pointer" onClick={() => {
+                              toggleRoutineExpansion(rIdx);
+                            }}>
                               {/* Routine Name and Metadata */}
                               <div className="flex-1 min-w-0">
                                   {rt.routine_name && (
@@ -2744,7 +3017,19 @@ export default function App() {
                                           {rt.routine_name}
                                         </h4>
                                       </div>
-                                      <span className="text-[9px] font-black bg-black/5 text-black px-1.5 py-0.5 rounded uppercase shrink-0">0/100</span>
+                                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded uppercase shrink-0 ${
+                                        (() => {
+                                          const score = routineChecks[rt.id || String(rIdx)]?.routine_score;
+                                          if (score === undefined) return 'bg-black/5 text-black/50 animate-pulse';
+                                          if (score >= 80) return 'bg-green-100 text-green-800 border border-green-200';
+                                          if (score >= 50) return 'bg-amber-100 text-amber-800 border border-amber-200';
+                                          return 'bg-red-100 text-red-800 border border-red-200';
+                                        })()
+                                      }`}>
+                                        {routineChecks[rt.id || String(rIdx)] !== undefined 
+                                          ? `${routineChecks[rt.id || String(rIdx)].routine_score}/100` 
+                                          : '...'}
+                                      </span>
                                     </div>
                                   )}
                                   {/* Day */}
@@ -2757,7 +3042,7 @@ export default function App() {
                           {/* Products */}
                           {expandedRoutines.includes(rIdx) && (
                             <div className="space-y-2 pt-2 border-t border-black/5">
-                                {(rt.products || []).map((p: any, i: number) => (
+                                {getActiveRoutineProducts(rt.products, rt.time).map((p: any, i: number) => (
                                     <div key={i} className="flex flex-col gap-0.5 text-xs border-b border-black/5 pb-1">
                                         <div className="flex items-center gap-2">
                                             <span className="uppercase font-black tracking-widest text-venus-accent">{p.type}</span>
@@ -2770,6 +3055,179 @@ export default function App() {
                                          />
                                     </div>
                                 ))}
+
+                                {/* Routine Check Analysis Section */}
+                                {(() => {
+                                  const check = routineChecks[rt.id || String(rIdx)];
+                                  if (!check) {
+                                    return (
+                                      <div className="mt-4 p-4 rounded-2xl bg-black/[0.01] border border-dashed border-black/5 flex items-center justify-center text-xs text-black/40 font-bold uppercase tracking-wider animate-pulse">
+                                        Calculating compatibility metrics...
+                                      </div>
+                                    );
+                                  }
+
+                                  const amSequence = check.recommendations?.find(r => r.startsWith("Recommended AM Layering Sequence:"));
+                                  const pmSequence = check.recommendations?.find(r => r.startsWith("Recommended PM Layering Sequence:"));
+                                  const otherRecommendations = (check.recommendations || []).filter(r => 
+                                    !r.startsWith("Recommended AM Layering Sequence:") && 
+                                    !r.startsWith("Recommended PM Layering Sequence:")
+                                  );
+
+                                  return (
+                                    <div className="mt-4 p-4 rounded-2xl bg-black/[0.02] border border-black/5 space-y-4">
+                                      {/* Title / Header */}
+                                      <div className="flex items-center justify-between border-b border-black/5 pb-2">
+                                        <div className="flex items-center gap-2">
+                                          <Sparkles className="w-4 h-4 text-venus-accent animate-pulse" />
+                                          <span className="text-xs font-black uppercase tracking-wider text-black">Routine Analysis</span>
+                                        </div>
+                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase border ${
+                                          check.routine_score >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
+                                          check.routine_score >= 50 ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                                          'bg-red-100 text-red-800 border-red-200'
+                                        }`}>
+                                          Score: {check.routine_score}/100
+                                        </span>
+                                      </div>
+
+                                      {/* Mini Dashboard */}
+                                      {check.debug && (
+                                        <div className="grid grid-cols-2 gap-3 bg-white border border-black/5 p-3 rounded-xl shadow-sm">
+                                          <div className="space-y-0.5 text-left">
+                                            <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Skin Barrier Risk</span>
+                                            <span className={`text-xs font-black uppercase ${
+                                              check.debug.user_irritation_threshold === 'high' ? 'text-red-600' :
+                                              check.debug.user_irritation_threshold === 'medium' ? 'text-amber-600' : 'text-green-600'
+                                            }`}>
+                                              {check.debug.user_irritation_threshold} Risk
+                                            </span>
+                                          </div>
+                                          <div className="space-y-0.5 text-left">
+                                            <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Actives Budget</span>
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-xs font-black text-black">
+                                                {check.debug.active_count} / {check.debug.active_budget} limit
+                                              </span>
+                                            </div>
+                                            <div className="w-full bg-black/5 h-1.5 rounded-full overflow-hidden mt-1">
+                                              <div 
+                                                className={`h-full rounded-full transition-all duration-500 ${check.debug.active_count > check.debug.active_budget ? 'bg-red-500 animate-pulse' : 'bg-venus-accent'}`}
+                                                style={{ width: `${Math.min(100, (check.debug.active_count / (check.debug.active_budget || 1)) * 100)}%` }}
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* TIMELINE / LAYERING FLOW */}
+                                      {amSequence && (
+                                        <div className="bg-white border border-black/5 rounded-xl p-3 shadow-sm space-y-2 text-left">
+                                          <div className="flex items-center gap-1.5 text-black">
+                                            <Sun className="w-3.5 h-3.5 text-amber-500" />
+                                            <span className="text-[10px] font-black uppercase tracking-wider">Recommended AM Layering</span>
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                            {amSequence.replace("Recommended AM Layering Sequence:", "").trim().split(" → ").map((step, sIdx) => (
+                                              <React.Fragment key={sIdx}>
+                                                {sIdx > 0 && <span className="text-black/30 text-xs">→</span>}
+                                                <span className="bg-amber-50 text-[10px] font-bold text-amber-900 border border-amber-200/50 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1">
+                                                  <span className="w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center font-black text-[8px]">{sIdx + 1}</span>
+                                                  {step}
+                                                </span>
+                                              </React.Fragment>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {pmSequence && (
+                                        <div className="bg-white border border-black/5 rounded-xl p-3 shadow-sm space-y-2 text-left">
+                                          <div className="flex items-center gap-1.5 text-black">
+                                            <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                                            <span className="text-[10px] font-black uppercase tracking-wider">Recommended PM Layering</span>
+                                          </div>
+                                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                            {pmSequence.replace("Recommended PM Layering Sequence:", "").trim().split(" → ").map((step, sIdx) => (
+                                              <React.Fragment key={sIdx}>
+                                                {sIdx > 0 && <span className="text-black/30 text-xs">→</span>}
+                                                <span className="bg-indigo-50 text-[10px] font-bold text-indigo-900 border border-indigo-200/50 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1">
+                                                  <span className="w-3.5 h-3.5 rounded-full bg-indigo-500 text-white flex items-center justify-center font-black text-[8px]">{sIdx + 1}</span>
+                                                  {step}
+                                                </span>
+                                              </React.Fragment>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* INSIGHTS & WARNINGS */}
+                                      {otherRecommendations.length > 0 && (
+                                        <div className="space-y-1.5 text-left">
+                                          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block px-1">Insights & Warnings</span>
+                                          <div className="space-y-1">
+                                            {otherRecommendations.map((rec, rIdx) => {
+                                              const isWarning = rec.toLowerCase().includes("warning") || 
+                                                                rec.toLowerCase().includes("alert") || 
+                                                                rec.toLowerCase().includes("gap") || 
+                                                                rec.toLowerCase().includes("shortfall") ||
+                                                                rec.toLowerCase().includes("danger") ||
+                                                                rec.toLowerCase().includes("risk");
+                                              return (
+                                                <div 
+                                                  key={rIdx} 
+                                                  className={`p-2.5 rounded-xl border flex items-start gap-2.5 text-xs shadow-sm ${
+                                                    isWarning 
+                                                      ? 'bg-red-50/50 border-red-500/15 text-red-900' 
+                                                      : 'bg-white border-black/5 text-black/80'
+                                                  }`}
+                                                >
+                                                  {isWarning ? (
+                                                    <Shield className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                                                  ) : (
+                                                    <CheckCircle2 className="w-4 h-4 text-venus-accent shrink-0 mt-0.5" />
+                                                  )}
+                                                  <span className="font-medium leading-relaxed whitespace-pre-wrap">{rec}</span>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* RECOMMENDED ADDITIONS */}
+                                      {check.resolved_additions && check.resolved_additions.length > 0 && (
+                                        <div className="space-y-2 text-left">
+                                          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block px-1">Recommended Additions</span>
+                                          <div className="grid grid-cols-1 gap-2">
+                                            {check.resolved_additions.map((item: any, itemIdx: number) => (
+                                              <div key={itemIdx} className="bg-white border-2 border-dashed border-black/5 p-3 rounded-xl flex items-start justify-between gap-3 shadow-sm hover:border-venus-accent/20 transition-colors">
+                                                <div className="space-y-1 min-w-0 flex-1">
+                                                  <div className="flex items-center gap-1.5">
+                                                    <span className="bg-venus-accent/10 text-venus-accent text-[8px] font-black px-1.5 py-0.5 rounded uppercase">{item.type || 'Treatment'}</span>
+                                                    <span className="font-bold text-black/80 text-xs truncate">{item.brand}</span>
+                                                  </div>
+                                                  <ProductLink 
+                                                    productId={String(item.product_id)} 
+                                                    productName={item.name} 
+                                                    className="text-black/60 hover:text-venus-accent transition-colors text-[11px] block truncate font-black" 
+                                                  />
+                                                  <p className="text-[10px] text-black/50 leading-relaxed font-medium">{item.reason}</p>
+                                                </div>
+                                                <button 
+                                                  onClick={() => openProductCard(Number(item.product_id))}
+                                                  className="text-[9px] font-black uppercase tracking-widest bg-black text-white px-2.5 py-1.5 rounded-lg hover:bg-black/80 transition-all shrink-0 shadow-sm"
+                                                >
+                                                  Add
+                                                </button>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                             </div>
                           )}
                           
@@ -3031,7 +3489,6 @@ export default function App() {
                             <button 
                               type="button"
                               onClick={(e) => {
-                                console.log("X button element clicked direct");
                                 handleDeletePhoto(photo, e);
                               }}
                               className="absolute top-1 right-1 z-[60] w-6 h-6 flex items-center justify-center bg-black/5 hover:bg-black/20 backdrop-blur-md rounded-full text-black opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all border border-black/5 cursor-pointer"
@@ -3444,32 +3901,144 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="space-y-10">
-                      {sortedGroupKeys.map(groupKey => (
-                        <div key={groupKey} className="space-y-4">
-                          {/* Section Header */}
-                          <div className="flex items-center gap-3 border-b-2 border-black/15 pb-2">
-                            <h3 className="text-xs font-black uppercase tracking-widest text-black bg-black/5 px-3 py-1 rounded-lg">
-                              {groupKey}
-                            </h3>
-                            <span className="text-[10px] font-mono text-black/40 font-bold">
-                              ({groupedTracker[groupKey].length} {groupedTracker[groupKey].length === 1 ? 'product' : 'products'})
-                            </span>
+                      {/* Mobile View: Grid of compact Product Cards grouped by type */}
+                      <div className="space-y-10 md:hidden">
+                        {sortedGroupKeys.map(groupKey => (
+                          <div key={groupKey} className="space-y-4">
+                            {/* Section Header */}
+                            <div className="flex items-center gap-3 border-b-2 border-black/15 pb-2">
+                              <h3 className="text-xs font-black uppercase tracking-widest text-black bg-black/5 px-3 py-1 rounded-lg">
+                                {groupKey}
+                              </h3>
+                              <span className="text-[10px] font-mono text-black/40 font-bold">
+                                ({groupedTracker[groupKey].length} {groupedTracker[groupKey].length === 1 ? 'product' : 'products'})
+                              </span>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 gap-4">
+                              {groupedTracker[groupKey].map((item, idx) => {
+                                const isExpanded = expandedTrackerIds.includes(item.id);
+                                return (
+                                  <div
+                                    key={`${item.id}-${idx}`}
+                                    className="bg-white rounded-2xl border-2 border-black/10 shadow-sm transition-all flex flex-col p-3 relative"
+                                  >
+                                    <div className="flex justify-between items-start gap-2">
+                                      <div
+                                        onClick={() => handleTrackerProductClick(item, false)}
+                                        className="flex items-center gap-3 min-w-0 flex-1 group cursor-pointer"
+                                      >
+                                        {item.photo_url ? (
+                                          <img 
+                                            src={item.photo_url} 
+                                            alt={item.product_name} 
+                                            referrerPolicy="no-referrer"
+                                            className="w-12 h-12 object-cover rounded-xl border border-black/10 flex-shrink-0 group-hover:scale-105 transition-transform"
+                                          />
+                                        ) : (
+                                          <div className="w-12 h-12 bg-black/5 rounded-xl border border-black/10 flex items-center justify-center flex-shrink-0 text-[10px] text-black/40 font-bold">
+                                            N/A
+                                          </div>
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                          <h4 className="text-sm font-black uppercase tracking-tight break-words group-hover:text-venus-accent transition-colors">
+                                            {item.brand || '-'}
+                                          </h4>
+                                          <p className="text-xs text-black/60 font-semibold normal-case break-words mt-0.5">
+                                            {item.product_name || '-'}
+                                          </p>
+                                          {/* Simplified Badge */}
+                                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                            <span className="bg-gray-50 text-gray-800 border border-gray-200/50 rounded-lg px-2 py-0.5 text-[9px] font-black uppercase flex items-center gap-1">
+                                              {item.routine_time || 'AM/PM'} Routine
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Down Arrow / Chevron Toggle */}
+                                      <button
+                                        onClick={() => toggleTrackerItemExpanded(item.id)}
+                                        className="p-1 text-black/50 hover:text-black hover:bg-black/5 rounded-lg transition-colors flex-shrink-0 mt-0.5"
+                                        aria-label="Toggle tracker details"
+                                      >
+                                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                      </button>
+                                    </div>
+
+                                    {/* Inline Tracker Controls displayed below */}
+                                    {isExpanded && (
+                                      <div className="mt-3 border-t border-black/5 pt-3">
+                                        <InlineTrackerControls 
+                                          item={item} 
+                                          onRefresh={fetchTrackerData} 
+                                          onDelete={() => handleDeleteFromTracker(item.id)} 
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                          
-                          {/* Grid of Product Cards */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-8">
-                            {groupedTracker[groupKey].map((item, idx) => (
-                              <TrackerProductCard
-                                key={`${item.id}-${idx}`}
-                                item={item}
-                                onUpdate={handleUpdateTracker}
-                                onDelete={handleDeleteFromTracker}
-                                onClick={handleTrackerProductClick}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+
+                      {/* Desktop/Website View: Spreadsheet layout with all fields in ONE table */}
+                      <div className="hidden md:block overflow-x-auto border-2 border-black/10 rounded-2xl bg-white shadow-sm">
+                        <table className="w-full min-w-[1050px] border-collapse text-left">
+                          <thead>
+                            <tr className="bg-black/5 border-b border-black/10">
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60">Product</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 w-32">Routine</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 text-center w-20">In Use</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 text-center w-20">Liked</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 text-center w-24">Buy Again</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 w-28">Size</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 min-w-[200px]">Notes</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 w-36">Open Date</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 w-36">Best By</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 w-24">POA</th>
+                              <th className="p-3 text-[10px] font-black uppercase tracking-wider text-black/60 text-center w-16">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-black/5">
+                            {sortedGroupKeys.map(groupKey => {
+                              const isSectionCollapsed = collapsedTrackerSections.includes(groupKey);
+                              return (
+                                <React.Fragment key={groupKey}>
+                                  {/* Section Header Row */}
+                                  <tr 
+                                    className="bg-black/[0.03] border-y border-black/10 cursor-pointer select-none hover:bg-black/[0.06] transition-colors"
+                                    onClick={() => toggleTrackerSection(groupKey)}
+                                  >
+                                    <td colSpan={11} className="p-3 font-black text-xs uppercase tracking-wider text-black">
+                                      <div className="flex items-center gap-2">
+                                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed ? '-rotate-90' : ''}`} />
+                                        <span>{groupKey}</span>
+                                        <span className="text-[10px] font-mono text-black/40 font-bold ml-1">
+                                          ({groupedTracker[groupKey].length} {groupedTracker[groupKey].length === 1 ? 'product' : 'products'})
+                                        </span>
+                                      </div>
+                                    </td>
+                                  </tr>
+
+                                  {/* Product Rows */}
+                                  {!isSectionCollapsed && groupedTracker[groupKey].map((item) => (
+                                    <TrackerSpreadsheetRow
+                                      key={item.id}
+                                      item={item}
+                                      onUpdate={handleUpdateTracker}
+                                      onDelete={handleDeleteFromTracker}
+                                      onClickProduct={handleTrackerProductClick}
+                                    />
+                                  ))}
+                                </React.Fragment>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3729,7 +4298,6 @@ export default function App() {
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log("Delete button clicked in expanded view");
                     handleDeletePhoto(selectedPhoto, e);
                   }}
                   className="w-10 h-10 rounded-full bg-red-500/20 hover:bg-red-500 text-white transition-all flex items-center justify-center backdrop-blur-md border border-white/10"
@@ -4151,7 +4719,6 @@ export default function App() {
             // 3. Forced refresh after ranking update
             const { data: refreshedProducts } = await supabase.from('upp').select('*').eq('user_id', user?.id);
             if (refreshedProducts) {
-                console.log('UI refreshed after ranking update:', refreshedProducts.length);
                 setUserProducts(refreshedProducts);
             }
           }
@@ -4194,12 +4761,24 @@ export default function App() {
         products={dashboardScanMatched}
         onConfirm={handleDashboardConfirmScan}
         onCancel={() => setIsDashboardConfirmOpen(false)}
+        user={user}
+        onLogin={(confirmed) => {
+          localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
+          setAppState(AppState.AUTH);
+          setIsDashboardConfirmOpen(false);
+        }}
       />
       <ProductConfirmationModal
         isOpen={isNavConfirmOpen}
         products={navScanMatched}
         onConfirm={handleNavConfirmScan}
         onCancel={() => setIsNavConfirmOpen(false)}
+        user={user}
+        onLogin={(confirmed) => {
+          localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
+          setAppState(AppState.AUTH);
+          setIsNavConfirmOpen(false);
+        }}
       />
 
       {/* Global Analysis/Scanning Backdrop Loader */}
@@ -4219,119 +4798,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Landing Evaluation Results Pop-up Modal */}
-      {isLandingEvaluationOpen && landingEvaluationResults.length > 0 && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/60 backdrop-blur-md">
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-white p-4 sm:p-6 md:p-8 rounded-3xl w-full max-w-xl shadow-2xl max-h-[92vh] md:max-h-[85vh] overflow-y-auto flex flex-col gap-6 border-2 border-black/5"
-          >
-            <div className="flex justify-between items-center pb-4 border-b border-black/5">
-              <div>
-                <h3 className="text-2xl font-black uppercase tracking-tight text-black flex items-center gap-2">
-                  <Sparkles className="w-6 h-6 text-venus-accent fill-venus-accent/20 animate-pulse" />
-                  Skin Match Results
-                </h3>
-                <p className="text-xs text-black/50 mt-1">
-                  How your products match your skin profile
-                </p>
-              </div>
-              <button 
-                onClick={() => setIsLandingEvaluationOpen(false)}
-                className="p-1 hover:bg-black/5 rounded-full transition-colors"
-              >
-                <X className="w-5 h-5 text-black/60" />
-              </button>
-            </div>
 
-            <div className="space-y-4 flex-1 overflow-y-auto pr-1">
-              {landingEvaluationResults.map((item: any, idx: number) => {
-                const prod = item.product;
-                const evalResult = item.evaluation;
-                const isAvoid = evalResult.category === 'Avoid';
-                const isCaution = evalResult.category === 'Caution';
-                const isRecommended = evalResult.category === 'Recommended';
-                const isSafe = evalResult.category === 'Safe';
-
-                let badgeBg = 'bg-gray-100 text-gray-800 border-gray-200';
-                if (isAvoid) badgeBg = 'bg-red-50 text-red-700 border-red-200';
-                if (isCaution) badgeBg = 'bg-amber-50 text-amber-700 border-amber-200';
-                if (isRecommended) badgeBg = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                if (isSafe) badgeBg = 'bg-blue-50 text-blue-700 border-blue-200';
-
-                return (
-                  <div key={idx} className="p-4 rounded-2xl bg-black/[0.02] border border-black/5 flex flex-col gap-3">
-                    <div className="flex gap-4 items-start">
-                      {prod.photo_url ? (
-                        <img 
-                          src={prod.photo_url} 
-                          alt={prod.name} 
-                          referrerPolicy="no-referrer"
-                          className="w-16 h-16 object-cover rounded-xl border border-black/10 flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 bg-black/5 rounded-xl border border-black/10 flex items-center justify-center flex-shrink-0 text-[10px] text-black/40 text-center leading-tight">
-                          No Image
-                        </div>
-                      )}
-                      
-                      <div className="min-w-0 flex-1">
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="min-w-0 flex-1">
-                            <span className="text-[9px] uppercase font-black tracking-widest text-venus-accent block">
-                              {prod.brand}
-                            </span>
-                            <h4 className="text-sm font-bold text-black break-words leading-snug">
-                              {prod.name}
-                            </h4>
-                            <span className="text-[10px] text-black/40 font-mono">
-                              {prod.type}
-                            </span>
-                          </div>
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase border tracking-wider shrink-0 ${badgeBg}`}>
-                            {evalResult.category}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-xs space-y-1 bg-white p-3 rounded-xl border border-black/[0.03]">
-                      <span className="font-extrabold text-black/60 block uppercase text-[9px] tracking-wider mb-1">
-                        Analysis Details:
-                      </span>
-                      {evalResult.reasons && evalResult.reasons.map((reason: string, rIdx: number) => (
-                        <p key={rIdx} className="text-black/70 leading-relaxed pl-2 border-l border-black/10 font-medium">
-                          {reason}
-                        </p>
-                      ))}
-                      {evalResult.warnings?.fungalAcneWarning && (
-                        <div className="mt-2 p-2 bg-amber-50 text-amber-900 rounded-lg text-[11px] leading-relaxed border border-amber-200">
-                          <span className="font-bold">Fungal Acne Trigger: </span>
-                          Contains ingredients known to trigger fungal acne.
-                        </div>
-                      )}
-                      {evalResult.warnings?.highIrritationWarning && (
-                        <div className="mt-2 p-2 bg-rose-50 text-rose-900 rounded-lg text-[11px] leading-relaxed border border-rose-200">
-                          <span className="font-bold">High Irritation Risk: </span>
-                          May cause irritation given your current barrier state.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={() => setIsLandingEvaluationOpen(false)}
-              className="w-full py-3.5 bg-black text-white hover:bg-black/90 rounded-2xl font-black uppercase tracking-widest text-xs transition-all active:scale-[0.98]"
-            >
-              Done, Go to Dashboard
-            </button>
-          </motion.div>
-        </div>
-      )}
 
       <input
         type="file"

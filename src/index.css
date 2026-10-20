@@ -16,7 +16,14 @@
 
 @layer base {
   body {
-    @apply bg-gradient-to-b from-[#FAF9F6] to-[#F3F2EE] min-h-screen text-venus-dark selection:bg-venus-accent/30;
+    @apply bg-[#85701d] min-h-screen text-venus-dark selection:bg-venus-accent/30;
+  }
+  * {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  *::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
   }
 }
 

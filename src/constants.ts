@@ -52,7 +52,7 @@ export const INVENTORY: Product[] = [
     type: 'Serum',
     brand: 'Venus Radiance',
     name: 'Blemish Control Drop',
-    description: 'Targeted acne treatment with Niacinamide.',
+    description: 'Targeted clarifying serum with Niacinamide for blemish-prone skin.',
     ingredients: ['Niacinamide', 'Zinc'],
     price: 32
   },

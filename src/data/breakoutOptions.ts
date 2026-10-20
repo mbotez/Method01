@@ -1,44 +1,50 @@
 export const BREAKOUT_PHOTO_OPTIONS = [
   {
     value: 'whiteheads',
-    title: 'Whiteheads',
-    fullTitle: 'Blocked pores on the surface of the skin, white head',
+    title: 'Surface Whiteheads',
+    fullTitle: 'Blocked pores with closed white heads on the surface',
     img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Whiteheads2.png'
   },
   {
     value: 'blackheads',
-    title: 'Blackheads',
-    fullTitle: 'Blocked pores on the surface of the skin, black head',
+    title: 'Surface Blackheads',
+    fullTitle: 'Blocked pores with open dark heads on the surface',
     img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Blackheads.webp'
   },
   {
     value: 'pie',
-    title: 'PIE',
-    fullTitle: 'Pink/red marks left after acne heals',
+    title: 'Post-Blemish Red Marks',
+    fullTitle: 'Pink or red marks left after blemishes heal',
     img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/PIE.png'
   },
   {
     value: 'pih',
-    title: 'PIH',
-    fullTitle: 'Dark marks left after acne heals',
+    title: 'Post-Blemish Dark Spots',
+    fullTitle: 'Dark spots left after blemishes heal',
     img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/PIH.png'
   },
   {
     value: 'papules',
-    title: 'Papules',
-    fullTitle: 'Small, tender red bumps without pus',
+    title: 'Surface Bumps',
+    fullTitle: 'Small surface bumps without visible heads',
     img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Papules.png'
   },
   {
-    value: 'conglo',
-    title: 'Conglobate',
-    fullTitle: 'Interconnected clusters of deep, painful acne',
+    value: 'congestion',
+    title: 'General Congestion',
+    fullTitle: 'Textured or clogged skin areas',
     img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Conglobate.png'
   },
   {
     value: 'pustules',
-    title: 'Pustules',
-    fullTitle: 'Red bumps with a visible white head',
+    title: 'Surface Blemishes',
+    fullTitle: 'Blemishes with visible surface heads',
     img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Pustules2.png'
+  },
+  {
+    value: 'severe_painful',
+    title: 'Deep & Tender Bumps',
+    fullTitle: 'Deep, tender, or painful skin congestion requiring medical review',
+    img: ''
   }
 ];

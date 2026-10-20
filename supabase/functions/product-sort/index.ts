@@ -30,7 +30,11 @@ serve(async (req) => {
     const secondary_concern = userProfile.scnd_concern || null;
     
     const breakout_type = Array.isArray(userProfile.breakout_type) ? userProfile.breakout_type : [];
-    const scan_acne_type = Array.isArray(userProfile.scan_acne_type) ? userProfile.scan_acne_type : [];
+    const scan_acne_type = Array.isArray(userProfile.scan_acne_type) 
+      ? userProfile.scan_acne_type 
+      : (Array.isArray(userProfile.blemish_assessment) 
+        ? userProfile.blemish_assessment 
+        : (userProfile.blemish_assessment ? [userProfile.blemish_assessment] : (Array.isArray(userProfile.scan_acne_type) ? userProfile.scan_acne_type : [])));
     const pregnant = userProfile.pregnant === 'Yes' ? 'Yes' : 'No';
     
     // Initialize Supabase Client
@@ -39,28 +43,68 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log('[product-sort API] --- STARTING RPC PRODUCT SORT ---');
-    console.log('[product-sort API] Input Profile:', { skin_type, main_concern, secondary_concern, barrier_level, productType, cat3, page });
+
 
     // EXECUTE RPC CALL
-    let rawProducts = null;
-    let rpcError = null;
+    let rawProducts: any[] | null = null;
+    let rawLockedProducts: any[] | null = null;
+    let rpcError: any = null;
     try {
-      const { data, error } = await supabase.rpc('get_meli_product_sort', {
-        p_barrier_risk: userProfile.barrier_risk || 0,
-        p_breakout_type: breakout_type,
-        p_main_concern: main_concern,
-        p_new_product_reaction: userProfile.new_product_reaction || 0,
-        p_pregnant: pregnant,
-        p_product_type: productType,
-        p_scan_acne_type: scan_acne_type,
-        p_scnd_concern: secondary_concern,
-        p_skin_type: skin_type,
-        p_limit: 30,
-        p_offset: (page - 1) * 30,
-        p_cat3: cat3
-      });
-      rawProducts = data;
-      rpcError = error;
+      if (barrier_level === 'high') {
+        const { data: safeData, error: safeError } = await supabase.rpc('get_meli_product_sort', {
+          p_barrier_risk: userProfile.barrier_risk || 0,
+          p_breakout_type: breakout_type,
+          p_main_concern: main_concern,
+          p_new_product_reaction: userProfile.new_product_reaction || 0,
+          p_pregnant: pregnant,
+          p_product_type: productType,
+          p_scan_acne_type: scan_acne_type,
+          p_scnd_concern: secondary_concern,
+          p_skin_type: skin_type,
+          p_limit: 30,
+          p_offset: (page - 1) * 30,
+          p_cat3: cat3
+        });
+        if (safeError) throw safeError;
+        rawProducts = safeData;
+
+        const { data: lockedData, error: lockedError } = await supabase.rpc('get_meli_product_sort', {
+          p_barrier_risk: 3,
+          p_breakout_type: breakout_type,
+          p_main_concern: main_concern,
+          p_new_product_reaction: 0,
+          p_pregnant: pregnant,
+          p_product_type: productType,
+          p_scan_acne_type: scan_acne_type,
+          p_scnd_concern: secondary_concern,
+          p_skin_type: skin_type,
+          p_limit: 30,
+          p_offset: (page - 1) * 30,
+          p_cat3: cat3
+        });
+        if (lockedError) throw lockedError;
+        
+        const safeIds = new Set((rawProducts || []).map((p: any) => p.product_id));
+        rawLockedProducts = (lockedData || []).filter((p: any) => !safeIds.has(p.product_id));
+      } else {
+        const { data, error } = await supabase.rpc('get_meli_product_sort', {
+          p_barrier_risk: userProfile.barrier_risk || 0,
+          p_breakout_type: breakout_type,
+          p_main_concern: main_concern,
+          p_new_product_reaction: userProfile.new_product_reaction || 0,
+          p_pregnant: pregnant,
+          p_product_type: productType,
+          p_scan_acne_type: scan_acne_type,
+          p_scnd_concern: secondary_concern,
+          p_skin_type: skin_type,
+          p_limit: 30,
+          p_offset: (page - 1) * 30,
+          p_cat3: cat3
+        });
+        if (error) throw error;
+        rawProducts = data;
+        rawLockedProducts = [];
+      }
     } catch (e) {
       rpcError = e;
     }
@@ -75,7 +119,7 @@ serve(async (req) => {
 
       console.error('Error fetching products:', rpcError);
       return new Response(
-        JSON.stringify({ route, barrier_level, products: [], prescriptions: [], alerts: ['Error fetching products: ' + rpcError.message] }),
+        JSON.stringify({ route, barrier_level, products: [], locked_products: [], prescriptions: [], alerts: ['Error fetching products: ' + rpcError.message] }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           status: 200,
@@ -84,7 +128,8 @@ serve(async (req) => {
     }
 
     const filteredProducts = rawProducts || [];
-    console.log(`[product-sort API] RPC returned ${filteredProducts.length} products.`);
+    const lockedProductsList = rawLockedProducts || [];
+    console.log(`[product-sort API] RPC returned ${filteredProducts.length} products and ${lockedProductsList.length} locked products.`);
 
     // PARSE INTO PRODUCTS & PRESCRIPTIONS
     const standardProducts = filteredProducts.filter((p: any) => !p.is_prescription);
@@ -101,8 +146,13 @@ serve(async (req) => {
         route,
         barrier_level,
         products: standardProducts.slice(0, 50),
+        locked_products: lockedProductsList.slice(0, 50),
         prescriptions: prescriptionProducts.slice(0, 10),
-        alerts
+        alerts,
+        meta: {
+          currentPage: page,
+          itemsReturned: filteredProducts.length
+        }
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

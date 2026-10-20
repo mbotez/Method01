@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { X, Search, Camera, Loader2 } from 'lucide-react';
 import { searchProductsFromPhoto, ProductConfirmationModal, MatchedProduct } from './photo_search';
-import { evaluateProductCategory } from '../utils/productCategoryEvaluator';
+import { searchProducts } from '../utils/TextSearch';
 
 interface TrackerNewProductModalProps {
   isOpen: boolean;
@@ -99,25 +99,9 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
   }, [isOpen]);
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setProducts([]);
-      return;
-    }
     const search = async () => {
-      const formattedQuery = searchQuery
-        .trim()
-        .split(/\s+/)
-        .filter(word => word.length > 0)
-        .map(word => `${word}:*`)
-        .join(' & ');
-
-      const { data } = await supabase
-        .from('products')
-        .select('id, brand, name, type, photo_url')
-        .textSearch('fts_search', formattedQuery, { config: 'english' })
-        .limit(10);
-      
-      if (data) setProducts(data);
+      const products = await searchProducts(searchQuery);
+      setProducts(products);
     };
     search();
   }, [searchQuery]);
@@ -132,24 +116,26 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
       let breakoutReasons: string[] = [];
       try {
         if (selectedProduct.id && userId) {
-          console.log(`[TrackerNewProductModal] Evaluating product verdict for user: ${userId}, product: ${selectedProduct.id}`);
+          console.log(`[TrackerNewProductModal] Evaluating product via new RPC for user: ${userId}, product: ${selectedProduct.id}`);
           
-          const evalResult = await evaluateProductCategory(userId, selectedProduct.id.toString());
-          if (evalResult && evalResult.category) {
-            productVerdict = evalResult.category;
-            hasBreakoutRisk = !!(evalResult.warnings?.fungalAcneWarning || evalResult.warnings?.highIrritationWarning);
+          const { data, error } = await supabase.rpc('evaluate_product_compatibility', {
+            p_user_id: userId,
+            p_product_id: selectedProduct.id.toString()
+          });
+
+          if (!error && data?.compatibility) {
+            const comp = data.compatibility;
+            hasBreakoutRisk = comp.safetyConcerns && comp.safetyConcerns.length > 0;
             
-            if (evalResult.warnings?.fungalAcneWarning) {
-              breakoutReasons.push('Fungal acne trigger');
+            if (hasBreakoutRisk) {
+              breakoutReasons = comp.safetyConcerns;
             }
-            if (evalResult.warnings?.highIrritationWarning) {
-              breakoutReasons.push('High irritation risk');
-            }
-            console.log(`[TrackerNewProductModal] Evaluation successful. Category: ${productVerdict}, potentialBreakoutRisk: ${hasBreakoutRisk}`);
+            productVerdict = comp.skinTypeFit === 'Bad Fit' ? 'Avoid' : comp.skinTypeFit === 'Good Fit' ? 'Recommended' : 'Caution';
+            console.log(`[TrackerNewProductModal] RPC Evaluation successful. Verdict: ${productVerdict}, breakoutRisk: ${hasBreakoutRisk}`);
           }
         }
       } catch (err) {
-        console.error('[TrackerNewProductModal] Exception during evaluateProductCategory flow:', err);
+        console.error('[TrackerNewProductModal] Exception during RPC evaluation flow:', err);
       }
 
       const payload = {

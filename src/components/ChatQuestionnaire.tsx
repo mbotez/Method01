@@ -14,6 +14,7 @@ interface Message {
   scanResults?: any;
   timestamp: number;
   showBack?: boolean;
+  tooltip?: string;
 }
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -21,11 +22,12 @@ const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2
 interface Step {
   id: string;
   title: string;
-  type: 'single' | 'multiple' | 'age' | 'tone' | 'text' | 'search_products';
+  type: 'single' | 'multiple' | 'age' | 'tone' | 'text' | 'search_products' | 'search_ingredients';
   key: string;
   options?: string[];
   condition?: (answers: any) => boolean;
   part: number;
+  tooltip?: string;
 }
 
 const ALL_STEPS: Step[] = [
@@ -66,7 +68,7 @@ const ALL_STEPS: Step[] = [
     title: "What's the main skin concern you're looking to tackle?",
     type: 'single',
     key: 'mainConcern',
-    options: ['Acne and scars', 'Redness', 'Dark Spots', 'Dullness', 'Dryness', 'Oily skin', 'Wrinkles & fine lines', 'Large pores & texture', 'Sensitivity', 'Eczema', 'Fungal acne', 'Not sure'],
+    options: ['Blemishes & post-blemish marks', 'Redness', 'Dark Spots', 'Dullness', 'Dryness', 'Oily skin', 'Wrinkles & fine lines', 'Large pores & texture', 'Sensitivity', 'Not sure'],
     part: 3
   },
   {
@@ -74,35 +76,27 @@ const ALL_STEPS: Step[] = [
     title: "Any other concerns we should keep in mind?",
     type: 'single',
     key: 'scndConcern',
-    options: ['Acne and scars', 'Redness', 'Dark Spots', 'Dullness', 'Dryness', 'Oily skin', 'Wrinkles & fine lines', 'Large pores & texture', 'Sensitivity', 'Eczema', 'Fungal acne', 'Not sure'],
+    options: ['Blemishes & post-blemish marks', 'Redness', 'Dark Spots', 'Dullness', 'Dryness', 'Oily skin', 'Wrinkles & fine lines', 'Large pores & texture', 'Sensitivity', 'Not sure'],
     condition: (ans) => ans.mainConcern,
     part: 3
   },
   {
     id: 'breakoutType',
-    title: "If you get breakouts, what do they usually look like?",
+    title: "If you get blemishes or breakouts, what do they usually look like?",
     type: 'single',
     key: 'breakoutType',
-    options: ['whiteheads', 'blackheads', 'pie', 'pih', 'papules', 'conglo', 'pustules', 'nodules', 'cystic', 'none'],
-    condition: (ans) => ans.mainConcern === 'Acne and scars' || ans.scndConcern === 'Acne and scars',
+    options: ['whiteheads', 'blackheads', 'pie', 'pih', 'papules', 'congestion', 'pustules', 'severe_painful', 'none'],
+    condition: (ans) => ans.mainConcern === 'Blemishes & post-blemish marks' || ans.scndConcern === 'Blemishes & post-blemish marks',
     part: 3
   },
   {
     id: 'breakoutWhere',
-    title: "And where do those breakouts tend to pop up?",
+    title: "And where do those blemishes or congestion tend to pop up?",
     type: 'single',
     key: 'breakoutWhere',
     options: ['Forehead', 'Nose', 'Chin/jawline', 'Cheeks', 'Chest/back'],
-    condition: (ans) => ans.mainConcern === 'Acne and scars' || ans.scndConcern === 'Acne and scars',
+    condition: (ans) => ans.mainConcern === 'Blemishes & post-blemish marks' || ans.scndConcern === 'Blemishes & post-blemish marks',
     part: 3
-  },
-  {
-    id: 'env',
-    title: "What's the climate like where you live?",
-    type: 'single',
-    key: 'env',
-    options: ['Hot & humid', 'Hot & dry', 'Cold & dry', 'Mild'],
-    part: 4
   },
   {
     id: 'sunscreen',
@@ -122,7 +116,7 @@ const ALL_STEPS: Step[] = [
   },
   {
     id: 'activesUsed',
-    title: "Are you using any active treatments right now? Select all that apply.",
+    title: "Are you using any active skincare ingredients right now? Select all that apply.",
     type: 'multiple',
     key: 'activesUsed',
     options: [
@@ -131,6 +125,15 @@ const ALL_STEPS: Step[] = [
       'Exfoliating acids (salicylic, glycolic etc)',
       "None/ I'm not sure"
     ],
+    part: 4
+  },
+  {
+    id: 'pregnant',
+    title: "Are you currently pregnant or breastfeeding?",
+    type: 'single',
+    key: 'pregnant',
+    options: ['Yes', 'No', 'Prefer not to say'],
+    tooltip: 'If pregnant certain skin products should better be avoided.',
     part: 4
   },
   {
@@ -143,9 +146,18 @@ const ALL_STEPS: Step[] = [
   {
     id: 'pastProblems',
     title: "Any specific ingredients you'd like to avoid because of past issues?",
-    type: 'text',
+    type: 'search_ingredients',
     key: 'pastProblems',
     part: 4
+  },
+  {
+    id: 'sex',
+    title: "What is your gender?",
+    type: 'single',
+    key: 'sex',
+    options: ['Male', 'Female'],
+    tooltip: 'This can make a difference for choosing the best skin care ingredients. Please put in your current gender, not the one assigned at birth',
+    part: 5
   },
   {
     id: 'age',
@@ -166,8 +178,11 @@ export const ChatQuestionnaire = ({
     scndConcern: null,
     sensitivity: [],
     currentProducts: [],
+    pastProblems: [],
     breakoutType: [],
-    activesUsed: []
+    activesUsed: [],
+    pregnant: null,
+    sex: null
   });
   const [stepIndex, setStepIndex] = useState(0);
 
@@ -184,7 +199,9 @@ export const ChatQuestionnaire = ({
     if (stepIndex < activeSteps.length - 1) {
       setStepIndex(stepIndex + 1);
     } else {
-      setIsScanningFace(true);
+      if (onComplete) {
+        onComplete(answers);
+      }
     }
   };
 
@@ -209,9 +226,43 @@ export const ChatQuestionnaire = ({
   const [debouncedProductSearchQuery, setDebouncedProductSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const [activeTooltipId, setActiveTooltipId] = useState<string | null>(null);
+  const [ingredientSearchQuery, setIngredientSearchQuery] = useState('');
+  const [debouncedIngredientSearchQuery, setDebouncedIngredientSearchQuery] = useState('');
+  const [ingredientSearchResults, setIngredientSearchResults] = useState<any[]>([]);
+  const [isIngredientDropdownOpen, setIsIngredientDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = setTimeout(() => { setDebouncedIngredientSearchQuery(ingredientSearchQuery); }, 250);
+    return () => clearTimeout(handler);
+  }, [ingredientSearchQuery]);
+
+  useEffect(() => {
+    if (debouncedIngredientSearchQuery && currentStep.type === 'search_ingredients') {
+      const fetchIngredients = async () => {
+        const { data } = await supabase
+          .from('ingredient_scores')
+          .select('ingredient')
+          .ilike('ingredient', `%${debouncedIngredientSearchQuery}%`)
+          .limit(10);
+        if (data) {
+          const unique = Array.from(new Set(data.map((d: any) => d.ingredient).filter(Boolean)));
+          setIngredientSearchResults(unique);
+          setIsIngredientDropdownOpen(true);
+        }
+      };
+      fetchIngredients();
+    } else {
+      setIngredientSearchResults([]);
+      setIsIngredientDropdownOpen(false);
+    }
+  }, [debouncedIngredientSearchQuery, currentStep.type]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastStepIdRef = useRef<string | null>(null);
   const [isScanningFace, setIsScanningFace] = useState(false);
+  const [isHardGated, setIsHardGated] = useState(false);
 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [scanFlow, setScanFlow] = useState<'front' | 'closeup' | 'analysis'>('front');
@@ -430,8 +481,12 @@ export const ChatQuestionnaire = ({
           return;
         }
 
-        if (data.face_too_small) {
+        if (data.scan_face_too_small || data.blemish_assessment === 'Deep & Tender Bumps') {
           setIsScanning(false);
+          if (data.blemish_assessment === 'Deep & Tender Bumps') {
+            setIsHardGated(true);
+            return;
+          }
           setPhotoVerificationError(data.explanation || "The identified face is too small. Please position the camera closer to ensure high accuracy analysis.");
           setFrontPhoto(null);
           return;
@@ -448,14 +503,14 @@ export const ChatQuestionnaire = ({
           redness_main_area: data.redness_main_area,
           wrinkles_score: data.wrinkles_score,
           wrinkles_main_area: data.wrinkels_main_area,
-          scan_acne_type: data.scan_acne_type
+          blemish_assessment: data.blemish_assessment
         });
 
         setRednessScore(data.redness_score);
         setWrinklesScore(data.wrinkles_score);
         setRednessMainArea(data.redness_main_area);
         setWrinklesMainArea(data.wrinkels_main_area);
-        setScanAcneType(data.scan_acne_type);
+        setScanAcneType(data.blemish_assessment);
 
         const finalAnswers = {
           ...answers,
@@ -463,7 +518,8 @@ export const ChatQuestionnaire = ({
           wrinkles_score: data.wrinkles_score,
           redness_main_area: data.redness_main_area,
           wrinkels_main_area: data.wrinkels_main_area,
-          scan_acne_type: data.scan_acne_type,
+          blemish_assessment: data.blemish_assessment,
+          scan_acne_type: data.blemish_assessment,
           front_photo: photoToUse,
           close_up_photo: closeUpPhoto,
         };
@@ -488,7 +544,7 @@ export const ChatQuestionnaire = ({
       setMessages([{
         id: generateId(),
         sender: 'bot',
-        text: "Hi there, I'm going to ask you a few questions about your skin and lifestyle, after which we will do a face scan :).",
+        text: "Hi there, I'm going to ask you a few questions about your skin and lifestyle to build your custom routine.",
         timestamp: Date.now(),
         showBack: false
       }]);
@@ -512,7 +568,8 @@ export const ChatQuestionnaire = ({
       options: step.options,
       scanResults: scanResults,
       timestamp: Date.now(),
-      showBack: step.id !== 'feel'
+      showBack: step.id !== 'feel',
+      tooltip: step.tooltip
     };
     setMessages((prev) => {
         if (step.id === 'feel' && prev.some(m => m.text.includes("Hi there"))) {
@@ -550,23 +607,29 @@ export const ChatQuestionnaire = ({
   }, [debouncedProductSearchQuery, currentStep.type]);
 
   const handleOptionClick = (option: string) => {
-    // Find the title for the user message
+    if (currentStep.id === 'breakoutType' && option === 'severe_painful') {
+      setIsHardGated(true);
+      return;
+    }
     let displayText = option;
     if (currentStep.id === 'breakoutType') {
       const opt = [...BREAKOUT_PHOTO_OPTIONS, { value: 'dont_know', fullTitle: 'I don\'t know.' }].find(o => o.value === option);
       if (opt) displayText = opt.fullTitle;
     }
-    
+  
     if (currentStep.type === 'multiple') {
-        const currentList = answers[currentStep.key] || [];
-        const newList = currentList.includes(option)
-          ? currentList.filter((item: string) => item !== option)
-          : [...currentList, option];
-        updateAnswer(currentStep.key, newList);
+      const currentList = answers[currentStep.key] || [];
+      const newList = currentList.includes(option)
+        ? currentList.filter((item: string) => item !== option)
+        : [...currentList, option];
+      updateAnswer(currentStep.key, newList);
     } else {
-        updateAnswer(currentStep.key, option);
-        addUserMessage(displayText);
-        setTimeout(handleNext, 300);
+    // If it's breakoutType, store it as a single-element array [option]
+      const valueToStore = currentStep.id === 'breakoutType' ? [option] : option;
+    
+      updateAnswer(currentStep.key, valueToStore);
+      addUserMessage(displayText);
+      setTimeout(handleNext, 300);
     }
   };
 
@@ -1069,6 +1132,40 @@ export const ChatQuestionnaire = ({
     );
   }
 
+  if (isHardGated) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-neutral-50 p-6 text-center animate-fadeIn max-w-lg mx-auto">
+        <div className="p-4 bg-amber-50 rounded-full text-amber-600 mb-4">
+          <Info className="w-10 h-10" />
+        </div>
+        <h2 className="text-xl md:text-2xl font-sans font-black uppercase text-neutral-900 mb-3 tracking-tight">
+          Medical Evaluation Recommended
+        </h2>
+        <p className="text-xs md:text-sm text-neutral-600 leading-relaxed mb-6">
+          Based on your selection of deep, tender, or painful skin congestion, this application cannot recommend cosmetic products or routines. Please consult a board-certified dermatologist or general practitioner for proper medical evaluation and care.
+        </p>
+        <button
+          onClick={() => {
+            setIsHardGated(false);
+            setAnswers({
+              mainConcern: null,
+              scndConcern: null,
+              sensitivity: [],
+              currentProducts: [],
+              breakoutType: [],
+              activesUsed: []
+            });
+            setStepIndex(0);
+            setMessages([]);
+          }}
+          className="py-3 px-8 bg-neutral-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-neutral-800 transition-all active:scale-95"
+        >
+          Start Over
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-neutral-50">
       <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
@@ -1087,13 +1184,30 @@ export const ChatQuestionnaire = ({
               }`}
             >
               {msg.text}
+              {msg.tooltip && (
+                <div className="mt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTooltipId(activeTooltipId === msg.id ? null : msg.id)}
+                    className="text-xs text-amber-700 font-bold flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/80 w-fit hover:bg-amber-100 transition-colors shadow-sm"
+                  >
+                    <Info className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>{activeTooltipId === msg.id ? 'Hide note' : 'Question note'}</span>
+                  </button>
+                  {activeTooltipId === msg.id && (
+                    <p className="mt-2 text-xs md:text-sm text-neutral-600 bg-neutral-50 p-3 rounded-xl border border-neutral-200 leading-relaxed font-normal animate-fadeIn">
+                      {msg.tooltip}
+                    </p>
+                  )}
+                </div>
+              )}
               {msg.type === 'scan_results' && msg.scanResults && (
                 <div className="mt-3 p-3 bg-white rounded-lg border border-emerald-100 shadow-sm text-neutral-800">
                     <p className="font-semibold text-xs mb-2">Dermal Scan Report</p>
                     <div className="grid grid-cols-2 gap-2 text-[10px]">
                         <p>Redness: <span className="font-medium text-emerald-600">{msg.scanResults.redness_score}/10</span></p>
                         <p>Wrinkles: <span className="font-medium text-emerald-600">{msg.scanResults.wrinkles_score}/10</span></p>
-                        <p className="col-span-2">Acne type: <span className="font-medium text-emerald-600">{msg.scanResults.scan_acne_type}</span></p>
+                        <p className="col-span-2">Acne type: <span className="font-medium text-emerald-600">{msg.scanResults.blemish_assessment || msg.scanResults.scan_acne_type}</span></p>
                     </div>
                 </div>
               )}
@@ -1172,14 +1286,73 @@ export const ChatQuestionnaire = ({
                     <Send className="w-5 h-5" />
                 </button>
             </div>
-            {currentStep.id === 'pastProblems' && (
-                <button onClick={() => {
-                    addUserMessage("Skip");
-                    handleNext();
-                }} className="text-neutral-500 hover:text-neutral-700 text-[15px] md:text-lg py-2 font-medium">
-                    Skip
+        </div>
+      )}
+
+      {currentStep.type === 'search_ingredients' && (
+        <div className="p-4 pt-0 relative">
+          {(answers[currentStep.key] || []).length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {(answers[currentStep.key] || []).map((ing: string, i: number) => (
+                <div key={i} className="flex items-center gap-1.5 bg-amber-100 text-neutral-900 px-3 py-1.5 rounded-full text-[15px] md:text-lg font-medium">
+                  <span>{ing}</span>
+                  <button onClick={() => updateAnswer(currentStep.key, (answers[currentStep.key] || []).filter((_: any, index: number) => index !== i))}>
+                    <X className="w-3.5 h-3.5 text-neutral-600 hover:text-neutral-900" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {isIngredientDropdownOpen && ingredientSearchResults.length > 0 && (
+            <div className="absolute bottom-full mb-2 left-4 right-4 bg-white border border-neutral-200 rounded-xl shadow-lg max-h-40 overflow-y-auto z-50">
+              {ingredientSearchResults.map((ingName: string, idx: number) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    const currentList = answers[currentStep.key] || [];
+                    if (!currentList.includes(ingName)) {
+                      updateAnswer(currentStep.key, [...currentList, ingName]);
+                    }
+                    setIngredientSearchQuery('');
+                    setIsIngredientDropdownOpen(false);
+                  }}
+                  className="block w-full text-left p-3 hover:bg-neutral-100 text-[15px] md:text-lg text-neutral-800 border-b border-neutral-100 last:border-b-0 font-medium"
+                >
+                  {ingName}
                 </button>
-            )}
+              ))}
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={ingredientSearchQuery}
+                onChange={(e) => setIngredientSearchQuery(e.target.value)}
+                placeholder="Search ingredients to avoid (e.g., fragrance, alcohol)..."
+                className="flex-1 p-3 rounded-xl border border-neutral-300 focus:outline-none focus:border-amber-500 text-[15px] md:text-lg bg-white"
+              />
+              <button 
+                onClick={() => {
+                  const ans = answers[currentStep.key] || [];
+                  addUserMessage(ans.length > 0 ? ans.join(", ") : "None");
+                  handleNext();
+                }} 
+                className="bg-amber-300 text-neutral-900 px-4 py-2 rounded-xl text-[15px] md:text-lg font-bold hover:bg-amber-400 transition-colors"
+              >
+                Done
+              </button>
+            </div>
+            <button 
+              onClick={() => {
+                addUserMessage("Skip");
+                handleNext();
+              }} 
+              className="text-neutral-500 hover:text-neutral-700 text-[15px] md:text-lg py-2 font-medium w-full text-center"
+            >
+              Skip
+            </button>
+          </div>
         </div>
       )}
 

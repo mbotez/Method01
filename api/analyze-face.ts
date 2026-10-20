@@ -27,27 +27,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const ai = getAi();
     const systemInstruction =
-      "You are a professional board-certified clinical dermatologist assistant and medical facial recognition scanner. Your first priority is verifying that a human face is present and of adequate size, then performing objective redness, wrinkles, and comedonal/papular acne classification.";
+      "You are an AI cosmetic and skin aesthetic assistant analyzing surface texture, pore congestion, excess oiliness, and tone variation for cosmetic product matching.";
 
-    const promptText = `Analyze the provided front-facing photo (and close-up photo if provided) for clinical face verification AND dermal features.
+    const promptText = `Analyze the provided front-facing photo (and close-up photo if provided) for face verification AND cosmetic skin features.
 
 Verify the following:
 1. Is a human face identified/present in the front-facing photo? Set "face_detected" to true/false.
 2. Is the face too small for a high-accuracy aesthetic analysis? (e.g. if the face/facial contour occupies less than about 35%-40% of the width or height of the total photo). Set "face_too_small" to true/false. Note: for professional stock/model demo URLs, this is always false.
 
-If a human face is NOT present, or is too small, provide a helpful dermatologist instruction in "explanation" describing what the user should do (e.g. center the face, brighten lighting, move closer) and return default/placeholder values (0 for scores, "None" for areas/acne).
-Otherwise, set "face_detected": true, "face_too_small": false, "explanation": "" and perform full skin assessment using the following context:
+If a human face is NOT present, or is too small, provide a helpful guidance instruction in "explanation" describing what the user should do (e.g. center the face, brighten lighting, move closer) and return default/placeholder values (0 for scores, "None" for areas).
+Otherwise, set "face_detected": true, "face_too_small": false, "explanation": "" and perform full cosmetic skin assessment using the following context:
 - Age: ${age}
 - Sensitivity & Redness logs: ${JSON.stringify(sensitivity)}
 - Goals: ${JSON.stringify(goals)}
-- Breakout types noted: ${JSON.stringify(breakoutType)}
+- Blemish / Congestion notes: ${JSON.stringify(breakoutType)}
 
 Determine parameters:
-1. Redness Intensity: Rating from 0 (completely calm) to 100 (intense redness/erythema/inflammation/rosacea). Ground this in actual redness visible in the photo.
-2. Wrinkle Density: Rating from 0 (perfectly smooth) to 100 (severe deep lines). Frame this realistically based on visible wrinkles, or age group if normal.
+1. Redness Intensity: Rating from 0 (completely calm) to 100 (intense surface redness/sensitivity). Ground this in actual redness visible in the photo.
+2. Wrinkle Density: Rating from 0 (perfectly smooth) to 100 (prominent expression lines). Frame this realistically based on visible surface lines.
 3. Primary Redness Area: Which zone has the most intense redness? Must choose exactly one of: 'Cheeks', 'Forehead', 'T-zone', 'Chin', 'None'.
-4. Primary Wrinkle Area: Which zone shows the most wrinkles? Must choose exactly one of: 'Periorbital', 'Forehead', 'Nasolabial', 'None'.
-5. Acne Classification: Diagnose current comedonal or inflammatory acne patterns. Must choose exactly one of: 'None', 'Open Comedones', 'Closed Comedones', 'Post-Inflammatory Erythema', 'Post-Inflammatory Hyperpigmentation', 'Papules', 'Cluster of red bumps (Conglobate / Acne Rash)', 'Pustules', 'Nodules', 'Cystic Acne'.
+4. Primary Wrinkle Area: Which zone shows the most surface lines? Must choose exactly one of: 'Periorbital', 'Forehead', 'Nasolabial', 'None'.
+5. Congestion & Blemish Assessment: Evaluate surface pore congestion, blackheads/whiteheads, post-blemish dark/red marks, and surface bumps. Must choose exactly one of: 'None', 'Open Surface Pores', 'Closed Surface Pores', 'Post-Blemish Red Marks', 'Post-Blemish Dark Spots', 'Surface Bumps', 'General Congestion', 'Deep & Tender Bumps'.
 
 Return ONLY a JSON response conforming to this exact schema (no markdown wrapping, no backticks, no "json" label):
 {
@@ -58,7 +58,7 @@ Return ONLY a JSON response conforming to this exact schema (no markdown wrappin
   "wrinkles_score": number, // integer 0-100
   "redness_main_area": "Cheeks" | "Forehead" | "T-zone" | "Chin" | "None",
   "wrinkels_main_area": "Periorbital" | "Forehead" | "Nasolabial" | "None",
-  "scan_acne_type": "None" | "Open Comedones" | "Closed Comedones" | "Post-Inflammatory Erythema" | "Post-Inflammatory Hyperpigmentation" | "Papules" | "Cluster of red bumps (Conglobate / Acne Rash)" | "Pustules" | "Nodules" | "Cystic Acne"
+  "blemish_assessment": "None" | "Open Surface Pores" | "Closed Surface Pores" | "Post-Blemish Red Marks" | "Post-Blemish Dark Spots" | "Surface Bumps" | "General Congestion" | "Deep & Tender Bumps"
 }`;
 
     const contentsParts: any[] = [];
