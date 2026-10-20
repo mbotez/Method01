@@ -175,7 +175,7 @@ export function computeIrritationThreshold(userProfile: UserProfile): 'low' | 'm
   if (userProfile.new_product_reaction === 3) {
     riskTier = 'high';
   }
-  if ([2, 9, 10].includes(userProfile.main_concern) || [2, 9, 10].includes(userProfile.scnd_concern)) {
+  if ([9, 10].includes(userProfile.main_concern) || [9, 10].includes(userProfile.scnd_concern)) {
     riskTier = 'high';
   }
 
@@ -605,6 +605,9 @@ export async function checkRoutine(
       return pos <= 5 && scores && isTrueVal(scores.High_Irritation_Risk);
     });
     if (isProductActive || isIngredientActive) {
+      if ((effectiveRiskTier === 'low' || effectiveRiskTier === 'medium') && product.cat2 === 'Cleanser') {
+        continue;
+      }
       activeRecords.push({
         product_id: prodIdStr,
         isProductActive,
@@ -629,7 +632,7 @@ export async function checkRoutine(
     let irritationScore = 0;
     if (prod) {
       if (isTrueVal(prod.has_high_irritation)) irritationScore += 10;
-      if (isTrueVal(prod.contains_frag)) irritationScore += 5;
+      if (!(effectiveRiskTier === 'low' || effectiveRiskTier === 'medium') && isTrueVal(prod.contains_frag)) irritationScore += 5;
       if (prod.barrier_states_to_avoid === 1 || prod.barrier_states_to_avoid === 2) irritationScore += 8;
       if (prod.active_antagonistic_group && prod.active_antagonistic_group !== 'None') irritationScore += 3;
     }
@@ -678,17 +681,24 @@ export async function checkRoutine(
     }
   }
 
-  // Loop 3: High Risk Fragrance Check
-  for (const { record: r, prod: p } of scoredActives) {
-    if (effectiveRiskTier === 'high' && p && isTrueVal(p.contains_frag)) {
-      detrimental.push({
-        product_id: r.product_id,
-        reason: `Compromised Skin Warning: Fragrant Active Warning: ${getDisplayName(p)} contains fragrance, which can be extra sensitizing for a vulnerable barrier.`,
-        severity: 'high'
-      });
+  // Loop 3: Fragrance & Concern Checks
+  for (const product of routineProducts) {
+    if (isTrueVal(product.contains_frag)) {
+      const isSensitivityOrEczema = [9, 10].includes(userProfile.main_concern) || [9, 10].includes(userProfile.scnd_concern);
+      const isRedness = userProfile.main_concern === 2 || userProfile.scnd_concern === 2;
+      const concernNum = [9, 10].includes(userProfile.main_concern) ? userProfile.main_concern : ([9, 10].includes(userProfile.scnd_concern) ? userProfile.scnd_concern : (userProfile.main_concern === 2 ? userProfile.main_concern : userProfile.scnd_concern));
+      const concernLabel = concernLabels[concernNum] || 'concern';
 
-      // Updated phrasing as requested
-      addNote(r.product_id, `Contains fragrance, which can irritate more than usual given your barrier risk.`);
+      if (isSensitivityOrEczema || effectiveRiskTier === 'high') {
+        detrimental.push({
+          product_id: String(product.product_id),
+          reason: `Compromised Skin Warning: Fragrant Product Warning: ${getDisplayName(product)} contains fragrance.`,
+          severity: 'high'
+        });
+        addNote(product.product_id, `You mentioned ${concernLabel} as a concern. This product contains fragrance, using it is strongly discouraged.`);
+      } else if (isRedness) {
+        addNote(product.product_id, `You mentioned redness as a concern. This product contains fragrance, using it may trigger flushing.`);
+      }
     }
   }
 

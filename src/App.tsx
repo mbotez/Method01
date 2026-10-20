@@ -881,10 +881,14 @@ export default function App() {
     setIsSearching(false);
   }, []);
 
-  // Listen for route / active page changes and automatically reset search query
+  // Listen for open-quiz-or-login event from product card unauthenticated banner
   useEffect(() => {
-    resetSearchState();
-  }, [appState, selectedProductForPage, resetSearchState]);
+    const handleOpenQuizOrLogin = () => {
+      setAppState(AppState.ONBOARDING_DETAILS);
+    };
+    window.addEventListener('open-quiz-or-login', handleOpenQuizOrLogin);
+    return () => window.removeEventListener('open-quiz-or-login', handleOpenQuizOrLogin);
+  }, []);
 
   // Listen for browser navigation changes (popstate / hashchange)
   useEffect(() => {
@@ -2287,11 +2291,13 @@ export default function App() {
                      <button 
                        key={product.id}
                        onClick={() => {
-                         resetSearchState();
-                         setSelectedProductForPage(product);
-                         setAppState(AppState.PRODUCT_PAGE);
+                         const prodId = String(product.id);
+                         openProductCard(prodId);
+                         setTimeout(() => {
+                           resetSearchState();
+                         }, 50);
                        }}
-                       className="flex items-center p-3.5 hover:bg-black/5 transition-colors text-left gap-4 group cursor-pointer"
+                       className="flex items-center p-3.5 hover:bg-black/5 transition-colors text-left gap-4 group cursor-pointer w-full"
                      >
                        {product.photo_url ? (
                          <img src={product.photo_url} alt={product.name} referrerPolicy="no-referrer" className="w-12 h-12 object-cover rounded-xl shrink-0 border border-black/5 group-hover:scale-105 transition-transform" />
@@ -2524,8 +2530,8 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black">
                       {selectedInspirationCategory === 'Moisturiser' ? 'Moisturisers' : 
-                                   selectedInspirationCategory === 'Treatment' ? 'Serums & Treatments' : 
-                                   selectedInspirationCategory === 'Cleanser' ? 'Cleansers' : 'Sunscreens (SPF)'}
+                                   selectedInspirationCategory === 'Treatment' ? 'Serums' : 
+                                   selectedInspirationCategory === 'Cleanser' ? 'Cleansers' : 'Sunscreens'}
                     </h2>
                     <button
                       onClick={() => setSelectedInspirationCategory(null)}
@@ -2807,10 +2813,10 @@ export default function App() {
                 className="space-y-2 text-[80%]"
               >
               
-                {/* For you Section (formerly Inspiration) */}
+                {/* For you Section */}
                 <div className="space-y-4 text-left mb-10 mt-2">
                   <div>
-                    <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight text-black">
+                    <h3 className="text-xl md:text-2xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
                       For you
                     </h3>
                     <p className="text-xs text-black/50 font-medium mt-1">
@@ -2819,137 +2825,32 @@ export default function App() {
                   </div>
                   
                   <div className="flex gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth snap-x snap-mandatory">
-                     {/* Column 1 */}
-                    <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
-                      {/* Moisturisers Card */}
+                    {[
+                      { key: 'Moisturiser', title: 'Moisturisers', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/moisturiser.jpg' },
+                      { key: 'Treatment', title: 'Serums', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/serum.jpg' },
+                      { key: 'Cleanser', title: 'Cleansers', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/cleanse.jpg' },
+                      { key: 'SPF', title: 'Sunscreen', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sunscreen.jpg' },
+                      { key: 'Glass skin essentials', title: 'Glass skin', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/glass.jpg' },
+                      { key: 'Soothe sensitive skin', title: 'Sensitivity', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sensitive.jpg' },
+                      { key: 'Barrier repair', title: 'Barrier repair', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/barrier.jpg' },
+                      { key: 'Anti-aging', title: 'Anti-aging', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/age.jpg' },
+                    ].map((cat, idx) => (
                       <motion.div
-                        whileHover={{ y: -1, scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => handleSelectInspiration('Moisturiser')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/moisturiser.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
+                        key={idx}
+                        whileHover={{ y: -2, scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => handleSelectInspiration(cat.key)}
+                        className="snap-start shrink-0 flex flex-col items-center cursor-pointer group w-[calc(25%-12px)] min-w-[90px] sm:min-w-[110px] md:min-w-[140px]"
                       >
-                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
-                          <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Moisturisers</h4>
-                          </div>
-                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Quench your skin</p>
-                        </div>
+                        <div 
+                          className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full bg-cover bg-center border-2 border-black/10 group-hover:border-black transition-all shadow-sm overflow-hidden"
+                          style={{ backgroundImage: `url('${cat.img}')` }}
+                        />
+                        <span className="text-[10px] md:text-xs font-black text-black uppercase tracking-tight mt-2 text-center whitespace-normal leading-tight px-0.5 w-full">
+                          {cat.title}
+                        </span>
                       </motion.div>
-
-                      {/* Serums Card */}
-                      <motion.div
-                        whileHover={{ y: -1, scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => handleSelectInspiration('Treatment')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/serum.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
-                      >
-                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
-                          <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Serums & Treatments</h4>
-                          </div>
-                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Targeted active formulas</p>
-                        </div>
-                      </motion.div>
-                    </div>
-
-                    {/* Column 2 */}
-                    <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
-                      {/* Cleansers Card */}
-                      <motion.div
-                        whileHover={{ y: -1, scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => handleSelectInspiration('Cleanser')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/cleanse.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
-                      >
-                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
-                          <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Cleansers</h4>
-                          </div>
-                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Gentle purify</p>
-                        </div>
-                      </motion.div>
-
-                      {/* SPF Card */}
-                      <motion.div
-                        whileHover={{ y: -1, scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => handleSelectInspiration('SPF')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sunscreen.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
-                      >
-                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
-                          <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Sunscreen (SPF)</h4>
-                          </div>
-                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Essential daily UV protection</p>
-                        </div>
-                      </motion.div>
-                    </div>
-
-                    {/* Column 3 */}
-                    <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
-                      {/* Glass Skin Card */}
-                      <motion.div
-                        whileHover={{ y: -1, scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => handleSelectInspiration('Glass skin essentials')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/glass.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
-                      >
-                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
-                          <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Glass skin essentials</h4>
-                          </div>
-                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Radiant & translucent</p>
-                        </div>
-                      </motion.div>
-
-                      {/* Sensitive Skin Card */}
-                      <motion.div
-                        whileHover={{ y: -1, scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => handleSelectInspiration('Soothe sensitive skin')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sensitive.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
-                      >
-                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
-                          <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Soothe sensitive skin</h4>
-                          </div>
-                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Calming & gentle care</p>
-                        </div>
-                      </motion.div>
-                    </div>
-
-                    {/* Column 4 */}
-                    <div className="flex flex-col gap-2 shrink-0 w-[calc(50vw-24px)] sm:w-[220px]">
-                      {/* Barrier Repair Card */}
-                      <motion.div
-                        whileHover={{ y: -1, scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => handleSelectInspiration('Barrier repair')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/barrier.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
-                      >
-                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
-                          <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Barrier repair</h4>
-                          </div>
-                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Strengthen & protect</p>
-                        </div>
-                      </motion.div>
-
-                      {/* Anti-aging Card */}
-                      <motion.div
-                        whileHover={{ y: -1, scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        onClick={() => handleSelectInspiration('Anti-aging')}
-                        className="snap-start shrink-0 w-full rounded-xl border border-black/10 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/age.jpg')] bg-cover bg-center hover:border-black/30 transition-all cursor-pointer shadow-sm min-h-[100px] max-h-[100px] overflow-hidden opacity-90"
-                      >
-                        <div className="w-full h-full p-2.5 bg-transparent flex flex-col justify-center items-center text-center">
-                          <div className="flex items-center justify-center gap-1 w-full">
-                            <h4 className="text-[15.6px] font-black text-black uppercase tracking-tight">Anti-aging</h4>
-                          </div>
-                          <p className="text-[10px] text-white/90 font-semibold mt-0.5 leading-tight line-clamp-2">Youthful rejuvenation</p>
-                        </div>
-                      </motion.div>
-                    </div>
+                    ))}
                   </div>
                 </div>
 
@@ -2957,7 +2858,7 @@ export default function App() {
                 <div className="space-y-4 md:space-y-6">
                   <div className="flex items-center justify-between md:border-0 md:pb-0">
                     <div className="flex items-center gap-2 text-black">
-                      <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight">My routines</h3>
+                      <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>My routines</h3>
                     </div>
                     <div className="flex items-center gap-4">
                       <button 
@@ -3261,7 +3162,7 @@ export default function App() {
                 {/* Trending Section */}
                 <div className="space-y-4 mt-12 text-left">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight text-black">
+                    <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
                       Trending
                     </h3>
                     <button
@@ -3333,7 +3234,7 @@ export default function App() {
                 {/* Chatter Section */}
                 <div className="space-y-4 mt-12 text-left">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight text-black">
+                    <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
                       Chatter
                     </h3>
                     <button
@@ -3655,7 +3556,7 @@ export default function App() {
               {/* Right Column: Leaderboard - Only show on mobile if AppState.LEADERBOARD */}
               <div className={`space-y-4 ${appState === AppState.RANK ? 'hidden md:block' : 'block'}`}>
                 <div className="pb-4">
-                  <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase tracking-tight">Rankings</h2>
+                  <h2 className="text-lg md:text-xl text-black uppercase tracking-tight" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>Rankings</h2>
                   <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar pb-2">
                     {['All', 'Cleanser', 'SPF', 'Cream', 'Serum', 'Toner', 'Retinol', 'Moisturizer'].map((type) => (
                       <button
@@ -3777,7 +3678,7 @@ export default function App() {
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-black pb-4 px-4 gap-4">
                   <div>
-                    <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase tracking-tight">Tracker</h2>
+                    <h2 className="text-lg md:text-xl text-black uppercase tracking-tight" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>Tracker</h2>
                     <p className="text-venus-accent font-black text-[8px] md:text-[10px] uppercase tracking-widest mt-1">Keep track of your products and set alerts.</p>
                   </div>
 
@@ -4377,9 +4278,9 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
             >
-              <div className="p-10 space-y-8 max-h-[90vh] overflow-y-auto">
+              <div className="p-6 md:p-10 space-y-6 overflow-y-auto flex-1 touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
                 <div className="flex justify-between items-center mb-6">
                    <h2 className="text-xl font-black uppercase tracking-tight">
                      {modalMode === 'edit' ? 'Edit routine' : modalMode === 'reminder' ? 'Set yourself a reminder' : 'New routine'}
@@ -4529,7 +4430,7 @@ export default function App() {
                        {isSearchingRoutine && <div className="text-[10px] font-black uppercase tracking-widest text-venus-accent animate-pulse mb-2">Searching...</div>}
                        
                        {routineSearchResults.length > 0 && (
-                         <div className="max-h-40 overflow-y-auto clean-card mb-4 bg-white p-2 border-2 border-black/5">
+                         <div className="max-h-60 overflow-y-auto touch-pan-y clean-card mb-4 bg-white p-2 border-2 border-black/5">
                            {routineSearchResults
                              .map(p => (
                                <div key={p.id} className="p-3 hover:bg-black/5 rounded-lg flex justify-between items-center cursor-pointer transition-colors" onClick={() => {
@@ -4668,10 +4569,6 @@ export default function App() {
             <div className="w-px h-4 bg-black/10 hidden md:block" />
             <Award className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.LEADERBOARD ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.LEADERBOARD)} />
             <div className="w-px h-4 bg-black/10 hidden md:block" />
-            <CheckSquare className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.TRACKER ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.TRACKER)} />
-            <div className="w-px h-4 bg-black/10 hidden md:block" />
-            <Heart className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.SOCIAL ? '' : 'opacity-30'}`} onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); }} />
-            <div className="w-px h-4 bg-black/10 hidden md:block" />
             <button
               onClick={() => navFileInputRef.current?.click()}
               disabled={isNavScanning}
@@ -4683,6 +4580,10 @@ export default function App() {
                 <Camera className="w-6 h-6 opacity-30 hover:opacity-100 text-black" />
               )}
             </button>
+            <div className="w-px h-4 bg-black/10 hidden md:block" />
+            <CheckSquare className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.TRACKER ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.TRACKER)} />
+            <div className="w-px h-4 bg-black/10 hidden md:block" />
+            <Heart className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.SOCIAL ? '' : 'opacity-30'}`} onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); }} />
           </div>
         </div>
       )}

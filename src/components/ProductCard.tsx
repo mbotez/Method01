@@ -179,12 +179,40 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
         const { data: { session } } = await supabase.auth.getSession();
         if (!active) return;
         
-        setIsAuthenticated(!!session?.user?.id);
+        const isAuthed = !!session?.user?.id;
+        setIsAuthenticated(isAuthed);
 
-        // Always invoke database engine calculation via a clean RPC function call
-        // For unauthenticated users, the RPC will safely return base product info
+        if (!isAuthed) {
+          const { data: productData, error: productError } = await supabase
+            .from('products')
+            .select('*')
+            .eq('id', productId)
+            .maybeSingle();
+
+          if (productError) {
+            console.error('[ProductCard] Failed to fetch product for unauthenticated user:', productError);
+            setRpcErrorObj({ error: productError.message, code: productError.code, stuck_at_step: 'Products Table Fetch' });
+          } else if (productData) {
+            setProduct(productData);
+            setScores(null);
+            setUserProfile(null);
+            setComp({
+              skinTypeFit: 'Take quiz to check fit',
+              conflicts: [],
+              benefits: ['Balances skin & maintains health'],
+              safetyConcerns: []
+            });
+            setRpcErrorObj(null);
+          } else {
+            setProduct(null);
+          }
+          setLoading(false);
+          return;
+        }
+
+        // Always invoke database engine calculation via a clean RPC function call for authenticated users
         const { data, error } = await supabase.rpc('evaluate_product_compatibility', {
-          p_user_id: session?.user?.id || '00000000-0000-0000-0000-000000000000',
+          p_user_id: session.user.id,
           p_product_id: productId
         });
 
@@ -384,6 +412,26 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
         <X className="w-5 h-5"/>
       </button>
       
+      {/* Unauthenticated banner prompt */}
+      {!isAuthenticated && (
+        <div className="mb-4 bg-gradient-to-r from-purple-50 via-pink-50 to-purple-50 border border-purple-200 p-3.5 rounded-xl text-center shadow-xs">
+          <p className="text-xs font-black text-purple-900 tracking-wide uppercase leading-snug">
+            Take the skin quiz or log in to see if it's a good fit :)
+          </p>
+          <div className="mt-2.5 flex items-center justify-center gap-2">
+            <button 
+              onClick={() => {
+                onClose();
+                window.dispatchEvent(new CustomEvent('open-quiz-or-login'));
+              }}
+              className="text-[10px] font-black uppercase tracking-widest bg-black text-white px-3.5 py-1.5 rounded-lg hover:bg-venus-accent transition-colors cursor-pointer shadow-sm"
+            >
+              Take Quiz / Log In
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Product Metadata Header */}
       <p className="text-[10px] font-black uppercase tracking-widest text-purple-600 mb-1">{product.brand || 'Unknown Brand'}</p>
       <h2 className="text-xl font-black mb-1 text-black">{product.name || 'Unnamed Product'}</h2>

@@ -635,8 +635,10 @@ export const ChatQuestionnaire = ({
 
   const handleTextSubmit = () => {
     if (!inputText.trim()) return;
-    addUserMessage(inputText);
-    updateAnswer(currentStep.key, inputText);
+    const val = currentStep.type === 'age' ? inputText.replace(/\D/g, '') : inputText;
+    if (currentStep.type === 'age' && !val) return;
+    addUserMessage(val);
+    updateAnswer(currentStep.key, val);
     setInputText('');
     setTimeout(handleNext, 300);
   };
@@ -1276,9 +1278,18 @@ export const ChatQuestionnaire = ({
             <div className="flex gap-2">
                 <input 
                     type="text"
+                    inputMode={currentStep.type === 'age' ? 'numeric' : 'text'}
+                    pattern={currentStep.type === 'age' ? '[0-9]*' : undefined}
                     value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder="Type your answer..."
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        if (currentStep.type === 'age') {
+                            setInputText(val.replace(/\D/g, ''));
+                        } else {
+                            setInputText(val);
+                        }
+                    }}
+                    placeholder={currentStep.type === 'age' ? "Enter your age (numbers only)..." : "Type your answer..."}
                     className="flex-1 p-3 rounded-xl border border-neutral-300 focus:outline-none focus:border-emerald-500 text-[15px] md:text-lg"
                     onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
                 />

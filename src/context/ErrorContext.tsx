@@ -23,15 +23,36 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     let code = statusCode || 500;
     let tech = details || '';
 
-    if (typeof err === 'string') {
+    if (typeof err === 'string' && err.trim()) {
       message = err;
     } else if (err instanceof Error) {
-      message = err.message;
+      message = err.message || 'An error occurred';
       tech = err.stack || details || '';
     } else if (err && typeof err === 'object') {
-      message = err.message || err.error || JSON.stringify(err);
+      message = err.message || err.error || (Object.keys(err).length > 0 ? JSON.stringify(err) : 'An unknown database or network error occurred.');
       code = err.status || err.code || statusCode || 500;
       tech = err.details || err.hint || details || '';
+    } else if (err !== undefined && err !== null && String(err).trim() !== '') {
+      message = String(err);
+    }
+
+    if (!message || message === '{}' || message === '[object Object]') {
+      message = 'An unexpected system error occurred.';
+    }
+
+    // Ignore websocket, HMR, or connection refused errors so they never pop up an error modal
+    const lowerMsg = message.toLowerCase();
+    if (
+      lowerMsg.includes('websocket') ||
+      lowerMsg.includes('ws://') ||
+      lowerMsg.includes('wss://') ||
+      lowerMsg.includes('hmr') ||
+      lowerMsg.includes('vite') ||
+      lowerMsg.includes('connection refused') ||
+      lowerMsg.includes('socket')
+    ) {
+      console.warn('[Ignored Dev/WebSocket Error]:', message);
+      return;
     }
 
     console.error('[Global Error Caught]:', { message, code, tech, err });
@@ -42,11 +63,39 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   useEffect(() => {
     const handleGlobalError = (event: ErrorEvent) => {
-      showError(event.error || event.message, 500, event.filename ? `at ${event.filename}:${event.lineno}` : undefined);
+      const msg = (event.message || '').toLowerCase();
+      if (
+        msg.includes('websocket') ||
+        msg.includes('ws://') ||
+        msg.includes('wss://') ||
+        msg.includes('hmr') ||
+        msg.includes('vite') ||
+        msg.includes('connection refused') ||
+        msg.includes('socket')
+      ) {
+        return; // Ignore dev server websocket / HMR errors
+      }
+      if (event.error || event.message) {
+        showError(event.error || event.message, 500, event.filename ? `at ${event.filename}:${event.lineno}` : undefined);
+      }
     };
 
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      showError(event.reason || 'Unhandled Promise Rejection', 500);
+      const reasonStr = String(event.reason || '').toLowerCase();
+      if (
+        reasonStr.includes('websocket') ||
+        reasonStr.includes('ws://') ||
+        reasonStr.includes('wss://') ||
+        reasonStr.includes('hmr') ||
+        reasonStr.includes('vite') ||
+        reasonStr.includes('connection refused') ||
+        reasonStr.includes('socket')
+      ) {
+        return; // Ignore dev server websocket / HMR errors
+      }
+      if (event.reason) {
+        showError(event.reason, 500);
+      }
     };
 
     window.addEventListener('error', handleGlobalError);
@@ -62,7 +111,7 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     <ErrorContext.Provider value={{ error, showError, clearError }}>
       {children}
       {error && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-lg w-full border border-red-100 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
