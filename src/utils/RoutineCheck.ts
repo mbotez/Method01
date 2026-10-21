@@ -77,12 +77,14 @@ function getIngScores(ing: any): any {
  * Checks if two antagonistic active groups form a conflict.
  * Retinoid/AHA_BHA_Exfoliant/Direct_Vitamin_C/Copper_peptide/None
  */
-function isConflictingPair(g1: string, g2: string): boolean {
+function isConflictingPair(g1: string, g2: string, cat1?: string, cat2?: string): boolean {
+  if (cat1 === 'Cleanser' || cat2 === 'Cleanser') return false;
   const p1 = [g1, g2].sort().join('+');
   const conflictPairs = [
     'AHA_BHA_Exfoliant+Retinoid',
     'Direct_Vitamin_C+Retinoid',
     'Copper_peptide+Direct_Vitamin_C',
+    'AHA_BHA_Exfoliant+Benzoyl_Peroxide',
     'AHA_BHA_Exfoliant+Direct_Vitamin_C'
   ];
   return conflictPairs.includes(p1);
@@ -632,7 +634,7 @@ export async function checkRoutine(
     let irritationScore = 0;
     if (prod) {
       if (isTrueVal(prod.has_high_irritation)) irritationScore += 10;
-      if (!(effectiveRiskTier === 'low' || effectiveRiskTier === 'medium') && isTrueVal(prod.contains_frag)) irritationScore += 5;
+      if (!(effectiveRiskTier === 'low' || effectiveRiskTier === 'medium') && isTrueVal(prod.has_fragrance_top50)) irritationScore += 5;
       if (prod.barrier_states_to_avoid === 1 || prod.barrier_states_to_avoid === 2) irritationScore += 8;
       if (prod.active_antagonistic_group && prod.active_antagonistic_group !== 'None') irritationScore += 3;
     }
@@ -683,7 +685,7 @@ export async function checkRoutine(
 
   // Loop 3: Fragrance & Concern Checks
   for (const product of routineProducts) {
-    if (isTrueVal(product.contains_frag)) {
+    if (isTrueVal(product.has_fragrance_top50)) {
       const isSensitivityOrEczema = [9, 10].includes(userProfile.main_concern) || [9, 10].includes(userProfile.scnd_concern);
       const isRedness = userProfile.main_concern === 2 || userProfile.scnd_concern === 2;
       const concernNum = [9, 10].includes(userProfile.main_concern) ? userProfile.main_concern : ([9, 10].includes(userProfile.scnd_concern) ? userProfile.scnd_concern : (userProfile.main_concern === 2 ? userProfile.main_concern : userProfile.scnd_concern));
@@ -711,6 +713,7 @@ export async function checkRoutine(
     group: string;
     timing: 'AM' | 'PM' | 'both';
     displayName: string;
+    cat2?: string;
   }
 
   const layerItems: LayerActiveItem[] = routineProducts
@@ -719,7 +722,8 @@ export async function checkRoutine(
       product_id: String(p.product_id),
       group: p.active_antagonistic_group,
       timing: productTimings[String(p.product_id)],
-      displayName: getDisplayName(p)
+      displayName: getDisplayName(p),
+      cat2: p.cat2
     }));
 
   // Map to store conflicts per base product: 
@@ -735,7 +739,7 @@ export async function checkRoutine(
       const item1 = layerItems[i];
       const item2 = layerItems[j];
 
-      if (isConflictingPair(item1.group, item2.group)) {
+      if (isConflictingPair(item1.group, item2.group, item1.cat2, item2.cat2)) {
         const sharesTiming = item1.timing === 'both' ||
           item2.timing === 'both' || item1.timing === item2.timing;
 

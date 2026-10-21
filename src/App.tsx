@@ -2980,7 +2980,7 @@ export default function App() {
                                       {/* Title / Header */}
                                       <div className="flex items-center justify-between border-b border-black/5 pb-2">
                                         <div className="flex items-center gap-2">
-                                          <Sparkles className="w-4 h-4 text-venus-accent animate-pulse" />
+                                          
                                           <span className="text-xs font-black uppercase tracking-wider text-black">Routine Analysis</span>
                                         </div>
                                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase border ${
@@ -3097,7 +3097,7 @@ export default function App() {
                                       )}
 
                                       {/* RECOMMENDED ADDITIONS */}
-                                      {check.resolved_additions && check.resolved_additions.length > 0 && (
+                                      {false && check.resolved_additions && check.resolved_additions.length > 0 && (
                                         <div className="space-y-2 text-left">
                                           <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block px-1">Recommended Additions</span>
                                           <div className="grid grid-cols-1 gap-2">
