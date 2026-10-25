@@ -58,6 +58,8 @@ import { productSort } from './utils/productsort';
 import { searchProducts } from "./utils/TextSearch";
 import { TrackerSpreadsheetRow } from './components/TrackerSpreadsheetRow';
 import { checkRoutine, RoutineCheckResult, UserProfile } from './utils/RoutineCheck';
+import { BREAKOUT_PHOTO_OPTIONS, getBreakoutTitle, breakoutTypeStringToId } from './data/breakoutOptions';
+import { setupCapacitorDeepLinkAuth, handleWebAuthCallback } from './utils/auth';
 
 // --- Components ---
 
@@ -89,7 +91,6 @@ enum AppState {
   CURATED_SELECTION,
   DASHBOARD,
   RANK,
-  LEADERBOARD,
   TRACKER,
   SOCIAL,
   PROFILE,
@@ -168,15 +169,84 @@ export default function App() {
   const [uppLength, setUppLength] = useState('');
   const [uppFrequency, setUppFrequency] = useState('');
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
+  const [primaryFilter, setPrimaryFilter] = useState<string>('By Type');
+  const [subFilter, setSubFilter] = useState<string>('All');
   const [trackerFilter, setTrackerFilter] = useState<{ category: string; subOption?: string }>({ category: 'All' });
   const [isTrackerFilterOpen, setIsTrackerFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
+  const [headerSearchQuery, setHeaderSearchQuery] = useState('');
+  const [headerSearchResults, setHeaderSearchResults] = useState<any[]>([]);
+  const [isHeaderSearching, setIsHeaderSearching] = useState(false);
+  const [isHeaderSearchDropdownOpen, setIsHeaderSearchDropdownOpen] = useState(false);
+  const headerSearchContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!headerSearchQuery.trim()) {
+      setHeaderSearchResults([]);
+      setIsHeaderSearching(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsHeaderSearching(true);
+      const query = headerSearchQuery.trim();
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .or(`name.ilike.%${query}%,brand.ilike.%${query}%,type.ilike.%${query}%`)
+        .limit(10);
+      if (!error && data) {
+        setHeaderSearchResults(data);
+      } else {
+        setHeaderSearchResults([]);
+      }
+      setIsHeaderSearching(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [headerSearchQuery]);
+
+  const resetHeaderSearchState = () => {
+    setHeaderSearchQuery('');
+    setHeaderSearchResults([]);
+    setIsHeaderSearchDropdownOpen(false);
+  };
   const [routineSearchQuery, setRoutineSearchQuery] = useState('');
   const [expandedRoutines, setExpandedRoutines] = useState<number[]>([]);
   const [routineChecks, setRoutineChecks] = useState<Record<string, RoutineCheckResult>>({});
+  const [routineProductScores, setRoutineProductScores] = useState<Record<string, any>>({});
+
+  const getBenefitsForProduct = (p: any, s: any) => {
+    const benefits: string[] = [];
+    const name = (p.name || p.product_name || '').toLowerCase();
+    const desc = (p.description || '').toLowerCase();
+    if (s?.calm_redness_dry_skin > 0 || s?.calm_redness_oily_skin > 0 || s?.calm_redness_combi_skin > 0 || name.includes('redness') || desc.includes('redness')) {
+      benefits.push('Calms facial redness');
+    }
+    if (s?.barrier_repair_dry_skin > 0 || s?.barrier_repair_oily_skin > 0 || s?.barrier_repair_combi_skin > 0 || name.includes('barrier') || desc.includes('barrier')) {
+      benefits.push('Repairs skin barrier');
+    }
+    if (s?.hydration_dry_skin > 0 || s?.hydration_oily_skin > 0 || s?.hydration_combi_skin > 0) {
+      benefits.push('Deep hydration');
+    }
+    if (s?.reduce_wrinkles > 0) {
+      benefits.push('Smooths fine lines & wrinkles');
+    }
+    if (s?.has_brightening_ingredient || s?.fade_pie > 0 || s?.fade_pih > 0 || s?.dark_spots > 0) {
+      benefits.push('Brightens skin tone & fades dark spots');
+    }
+    if (s?.clear_blackheads > 0 || s?.clear_surface_breakouts > 0 || s?.clear_whiteheads > 0 || s?.soothe_deep_breakouts > 0) {
+      benefits.push('Clears pores & blemishes');
+    }
+    if (s?.oil_control > 0) {
+      benefits.push('Oil control');
+    }
+    if (benefits.length === 0) {
+      benefits.push('Balances skin & maintains health');
+    }
+    return benefits;
+  };
 
   const getActiveRoutineProducts = (products: any[], routineTime: string) => {
     // If trackerData is not loaded yet but we have products, fallback to the raw list to avoid flashing empty lists
@@ -231,6 +301,7 @@ export default function App() {
   const [pendingQuestionnaireAnswers, setPendingQuestionnaireAnswers] = useState<any>(null); // NEW
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
   const [isTrackerModalOpen, setIsTrackerModalOpen] = useState(false);
+  const [authPromptModalOpen, setAuthPromptModalOpen] = useState(false);
   const [isSharingOpen, setIsSharingOpen] = useState(false);
   const [shareRoutine, setShareRoutine] = useState<any>(null);
   const [usernameSearch, setUsernameSearch] = useState('');
@@ -294,15 +365,15 @@ export default function App() {
         age: '25',
         skin_tone: 1,
         burn_risk: 'medium',
-        symptoms: 0,
+        skin_characteristics: 0,
         new_product_reaction: 0,
-        barrier_risk: 0,
+        barrier_status: 0,
         sensitivity: [],
         main_concern: 12, // general/not sure fallback
         scnd_concern: null,
         breakout_type: [],
         pregnant: 'No',
-        scan_acne_type: []
+        scan_breakout_type: []
       };
 
       const result = await productSort(activeProfile, category, page, forceRefresh, activeCat3);
@@ -331,7 +402,7 @@ export default function App() {
 
   const handleAddProductToTracker = async (p: any) => {
     if (!user) {
-      setError("Please sign in or join to add products to your tracker!");
+      setAuthPromptModalOpen(true);
       return;
     }
     try {
@@ -543,8 +614,7 @@ export default function App() {
           .select(`
             *,
             users (
-              username,
-              skin_type
+              username
             )
           `)
           .order('timestamp', { ascending: false })
@@ -584,8 +654,7 @@ export default function App() {
           .select(`
             *,
             users (
-              username,
-              skin_type
+              username
             )
           `)
           .order('timestamp', { ascending: false })
@@ -684,7 +753,10 @@ export default function App() {
             'Almost everything irritates my skin': 3
         };
         const concernMap: Record<string, number> = {
-            'Acne and scars': 1,
+            'Breakouts & post-breakout marks': 1,
+            'Blemishes & post-blemish marks': 1,
+            'Breakouts and scars': 1,
+            'Breakouts & scars': 1,
             'Redness': 2,
             'Dark Spots': 3,
             'Dullness': 4,
@@ -693,8 +765,8 @@ export default function App() {
             'Wrinkles & fine lines': 7,
             'Large pores & texture': 8,
             'Sensitivity': 9,
-            'Eczema': 10,
-            'Fungal acne': 11,
+            'Extremely dry flaky skin': 10,
+            'Yeast-reactive skin': 11,
             'Not sure': 12
         };
         const activesMap: Record<string, number> = {
@@ -731,16 +803,24 @@ export default function App() {
         const profilePayload: any = {
             id: userId,
             skin_type: String(feelMap[answers.feel] || 'normal'),
-            age: String(answers.age || '0'),
-            skin_tone: parseInt(answers.skinTone) || 0,
+            age: answers.age ? String(answers.age) : '0',
             burn_risk: String(sunMap[answers.sun] || 'medium'),
-            symptoms: symptomsScore,
+            skin_characteristics: symptomsScore,
             new_product_reaction: reactionScore,
-            barrier_risk: symptomsScore + reactionScore,
+            barrier_status: symptomsScore + reactionScore,
             sensitivity: answers.sensitivity || [],
             main_concern: concernMap[mainConcern] || null,
             scnd_concern: concernMap[scndConcern] || null,
-            breakout_type: answers.breakoutType || [],
+            breakout_type: (() => {
+              const raw = answers.breakoutType;
+              const list = Array.isArray(raw) ? raw : (raw !== undefined && raw !== null ? [raw] : []);
+              return list.map((b: any) => {
+                if (typeof b === 'number') return b;
+                const parsed = parseInt(String(b), 10);
+                if (!isNaN(parsed) && parsed >= 1 && parsed <= 8) return parsed;
+                return breakoutTypeStringToId[String(b).toLowerCase().trim()] || 0;
+              }).filter((n: number) => n >= 1 && n <= 8);
+            })(),
             breakout_where: answers.breakoutWhere || null,
             env: answers.env || null,
             sunscreen: answers.sunscreen || null,
@@ -753,7 +833,7 @@ export default function App() {
             wrinkles_score: answers.wrinkles_score !== undefined ? Number(answers.wrinkles_score) : null,
             redness_main_area: answers.redness_main_area || null,
             wrinkels_main_area: answers.wrinkels_main_area || null,
-            scan_acne_type: answers.scan_acne_type || null,
+            scan_breakout_type: answers.scan_breakout_type || answers.blemish_assessment || null,
             sex: answers.sex || null,
             pregnant: answers.pregnant || null,
             actives_used: (answers.activesUsed || []).map((a: string) => activesMap[a] || 0)
@@ -767,7 +847,7 @@ export default function App() {
         if (profileError && (profileError.message.toLowerCase().includes('column') || profileError.code === '42703')) {
             console.warn('Supabase profile table structure does not match, removing extended columns and retrying...');
             const { 
-              redness, redness_score, wrinkles_score, redness_main_area, wrinkels_main_area, scan_acne_type,
+              redness, redness_score, wrinkles_score, redness_main_area, wrinkels_main_area, scan_breakout_type,
               sex, pregnant, actives_used,
               ...fallbackPayload 
             } = profilePayload;
@@ -1122,21 +1202,54 @@ export default function App() {
     setError("Database Protocol Error: " + (err.message || "Unknown error"));
   };
 
+  // Capacitor Deep Link & Web OAuth Callback Handler
+  useEffect(() => {
+    // 4. Set up deep link token handling for Capacitor (using App.addListener('appUrlOpen', ...))
+    // so that when the app opens via the custom deep link scheme ("com.daybreak.canonic://auth-callback"),
+    // it parses the access_token and refresh_token from the URL hash fragment, calls supabase.auth.setSession({ access_token, refresh_token }),
+    // and navigates the user to the dashboard.
+    const cleanupDeepLink = setupCapacitorDeepLinkAuth(
+      () => {
+        setAppState(AppState.DASHBOARD);
+      },
+      (errorMessage) => {
+        setError(`Authentication error: ${errorMessage}`);
+      }
+    );
+
+    // Also handle web OAuth callback if redirected to /auth/callback or hash tokens
+    handleWebAuthCallback(
+      () => {
+        setAppState(AppState.DASHBOARD);
+      },
+      (errorMessage) => {
+        setError(`Authentication error: ${errorMessage}`);
+      }
+    );
+
+    return () => {
+      cleanupDeepLink();
+    };
+  }, []);
+
   // Auth Listener
   useEffect(() => {
     let mounted = true;
     
     // Quick initialize check
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-       if (error) {
-           console.error("Session fetching error (ignoring and clearing):", error);
-           supabase.auth.signOut().catch(console.error);
-       }
-       // If no session, we aren't waiting for a profile fetch
-       if (!session && mounted) {
-           setLoading(false);
-       }
-    });
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (error) {
+          supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+        }
+        if (!data?.session && mounted) {
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+        if (mounted) setLoading(false);
+      });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const currentUser = session?.user ?? null;
@@ -1269,7 +1382,7 @@ export default function App() {
         return;
       }
       // If logged out, only allow entry points and social (blog) page
-      const allowedStates = [AppState.LANDING, AppState.AUTH, AppState.ONBOARDING_DETAILS, AppState.RANK, AppState.LEADERBOARD, AppState.TRACKER, AppState.SOCIAL];
+      const allowedStates = [AppState.LANDING, AppState.AUTH, AppState.ONBOARDING_DETAILS, AppState.RANK, AppState.TRACKER, AppState.SOCIAL];
       if (!allowedStates.includes(appState)) {
         setAppState(isWeb ? AppState.SOCIAL : AppState.LANDING);
       }
@@ -1284,20 +1397,109 @@ export default function App() {
   }, [userProfile?.id]);
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      const { data: productsData, error } = await supabase
-        .from('products')
-        .select('id, brand, name, type, photo_url')
-        .limit(10);
-      if (error) { console.error('FAILED CALL:', { table: 'products', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
-      if (productsData) setProducts(productsData);
+    const buildProductQuery = () => {
+      if (primaryFilter === 'Pregnancy-safe') {
+        let q = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(preg_safe), product_scores(cat2, cat3)')
+          .eq('products_filter.preg_safe', true)
+          .limit(100);
+
+        if (subFilter && subFilter !== 'All' && subFilter !== 'all') {
+          q = q.ilike('type', `%${subFilter}%`);
+        }
+        return q;
+      } else if (primaryFilter === 'Trending') {
+        const sub = (subFilter || '').toLowerCase();
+        if (sub === 'k-beauty') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(k_beauty), product_scores(cat2, cat3)')
+            .eq('products_filter.k_beauty', true)
+            .limit(100);
+        } else if (sub === 'j-beauty') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(j_beauty), product_scores(cat2, cat3)')
+            .eq('products_filter.j_beauty', true)
+            .limit(100);
+        } else if (sub === 'glass skin') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(glass), product_scores(cat2, cat3)')
+            .eq('products_filter.glass', true)
+            .limit(100);
+        } else if (sub === 'pdrn') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(c_pdrn), product_scores(cat2, cat3)')
+            .eq('products_filter.c_pdrn', true)
+            .limit(100);
+        } else if (sub === 'natural') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(natural), product_scores(cat2, cat3)')
+            .eq('products_filter.natural', true)
+            .limit(100);
+        } else {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, natural, red, dry, aging, blem_prone), product_scores(cat2, cat3)')
+            .limit(500);
+        }
+      } else if (primaryFilter === 'By Concern') {
+        const sub = (subFilter || '').toLowerCase();
+        if (sub === 'redness') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(red), product_scores(cat2, cat3)')
+            .eq('products_filter.red', true)
+            .limit(100);
+        } else if (sub === 'dry skin') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(dry), product_scores(cat2, cat3)')
+            .eq('products_filter.dry', true)
+            .limit(100);
+        } else if (sub === 'aging skin') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(aging), product_scores(cat2, cat3)')
+            .eq('products_filter.aging', true)
+            .limit(100);
+        } else if (sub === 'blemish-prone skin') {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter!inner(blem_prone), product_scores(cat2, cat3)')
+            .eq('products_filter.blem_prone', true)
+            .limit(100);
+        } else {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter(red, dry, aging, blem_prone), product_scores(cat2, cat3)')
+            .limit(500);
+        }
+      } else {
+        return supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, natural, red, dry, aging, blem_prone), product_scores(cat2, cat3)')
+          .limit(500);
+      }
     };
 
-    fetchProducts();
+    const fetchFilteredProducts = async () => {
+      const query = buildProductQuery();
+      const { data, error } = await query;
+      if (error) { console.error('FAILED CALL:', { table: 'products', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
+      if (data) setProducts(data);
+    };
+
+    fetchFilteredProducts();
 
     const productsChannel = supabase.channel('products-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async () => {
-        const { data, error } = await supabase.from('products').select('id, brand, name, type, photo_url').limit(10);
+        const query = buildProductQuery();
+        const { data, error } = await query;
         if (error) { console.error('FAILED CALL:', { table: 'products', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
         if (data) setProducts(data);
       })
@@ -1306,7 +1508,7 @@ export default function App() {
     return () => {
       supabase.removeChannel(productsChannel);
     };
-  }, []);
+  }, [primaryFilter, subFilter]);
 
   const fetchTrackerData = useCallback(async (customUserId?: string) => {
     const uid = customUserId || user?.id;
@@ -1327,7 +1529,7 @@ export default function App() {
       // Create a clean mapped user profile from the database profile or fallback
       const rawProfile = userProfile || {
         skin_type: profile?.skin_type || 'combination',
-        barrier_risk: 0,
+        barrier_status: 0,
         burn_risk: 'medium',
         new_product_reaction: 0,
         main_concern: 12,
@@ -1339,28 +1541,34 @@ export default function App() {
         env: 1,
         redness_score: 0,
         wrinkles_score: 0,
-        scan_acne_type: []
+        scan_breakout_type: []
       };
 
       const mappedProfile: UserProfile = {
         skin_type: (rawProfile.skin_type === 'dry' || rawProfile.skin_type === 'oily' || rawProfile.skin_type === 'combination')
           ? rawProfile.skin_type
           : 'combination',
-        barrier_risk: typeof rawProfile.barrier_risk === 'number' ? rawProfile.barrier_risk : 0,
+        barrier_status: typeof rawProfile.barrier_status === 'number' ? rawProfile.barrier_status : 0,
         burn_risk: (rawProfile.burn_risk === 'low' || rawProfile.burn_risk === 'medium' || rawProfile.burn_risk === 'high')
           ? rawProfile.burn_risk
           : 'medium',
         new_product_reaction: typeof rawProfile.new_product_reaction === 'number' ? rawProfile.new_product_reaction : 0,
         main_concern: typeof rawProfile.main_concern === 'number' ? rawProfile.main_concern : 12,
         scnd_concern: typeof rawProfile.scnd_concern === 'number' ? rawProfile.scnd_concern : 12,
-        breakout_type: Array.isArray(rawProfile.breakout_type) ? rawProfile.breakout_type : null,
+        breakout_type: Array.isArray(rawProfile.breakout_type)
+          ? rawProfile.breakout_type.map((b: any) => {
+              if (typeof b === 'number') return b;
+              const p = parseInt(String(b), 10);
+              return !isNaN(p) && p >= 1 && p <= 8 ? p : b;
+            })
+          : null,
         pregnant: (rawProfile.pregnant === 'Yes' || rawProfile.pregnant === 'No') ? rawProfile.pregnant : 'No',
         age: typeof rawProfile.age === 'number' ? rawProfile.age : (typeof rawProfile.age === 'string' ? parseInt(rawProfile.age) || 25 : 25),
         actives_used: typeof rawProfile.actives_used === 'number' ? rawProfile.actives_used : 4,
         env: typeof rawProfile.env === 'number' ? rawProfile.env : 1,
         redness_score: typeof rawProfile.redness_score === 'number' ? rawProfile.redness_score : 0,
         wrinkles_score: typeof rawProfile.wrinkles_score === 'number' ? rawProfile.wrinkles_score : 0,
-        scan_acne_type: Array.isArray(rawProfile.scan_acne_type) ? rawProfile.scan_acne_type : []
+        scan_breakout_type: Array.isArray(rawProfile.scan_breakout_type) ? rawProfile.scan_breakout_type : []
       };
 
       const newChecks: Record<string, RoutineCheckResult> = {};
@@ -1423,6 +1631,40 @@ export default function App() {
       active = false;
     };
   }, [routines, trackerData, loading, userProfile, profile]);
+
+  useEffect(() => {
+    const fetchScoresForRoutines = async () => {
+      const allProductIds = new Set<string>();
+      routines.forEach((rt: any) => {
+        const activeProds = getActiveRoutineProducts(rt.products, rt.time);
+        activeProds.forEach((p: any) => {
+          if (p.id) allProductIds.add(String(p.id));
+        });
+      });
+
+      const ids = Array.from(allProductIds);
+      if (ids.length === 0) return;
+
+      const { data, error } = await supabase
+        .from('product_scores')
+        .select('*')
+        .in('product_id', ids);
+
+      if (error) {
+        console.error("Error fetching routine product scores:", error);
+      } else if (data) {
+        const map: Record<string, any> = {};
+        data.forEach((row: any) => {
+          map[String(row.product_id)] = row;
+        });
+        setRoutineProductScores(map);
+      }
+    };
+
+    if (routines.length > 0) {
+      fetchScoresForRoutines();
+    }
+  }, [routines, trackerData]);
 
   // Supabase listeners
   useEffect(() => {
@@ -1539,18 +1781,15 @@ export default function App() {
   const handleSignOut = async () => {
     resetSearchState();
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Supabase sign out error returned:', error);
-      }
+      await supabase.auth.signOut().catch(async () => {
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+      });
       setUser(null);
       setAppState(AppState.AUTH);
-    } catch (error) {
-      console.error('Sign out caught error:', error);
-      // Even if sign out fails, force clean up local state
+    } catch {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       setUser(null);
       setAppState(AppState.AUTH);
-      alert('Sign out encountered an error.');
     }
   };
 
@@ -1742,11 +1981,8 @@ export default function App() {
     
     try {
       // Save initial profile info
-      const payload = {
+      const payload: any = {
         id: user.id,
-        email: user.email,
-        skin_type: skinType,
-        primary_issue: concern,
         onboarding_complete: true,
         created_at: new Date().toISOString()
       };
@@ -2143,7 +2379,7 @@ export default function App() {
             className="fixed inset-y-0 left-0 w-64 bg-white z-[60] shadow-2xl p-6 flex flex-col gap-6"
           >
             <div className="flex justify-between items-center">
-                <span className="font-bubble text-3xl text-black font-medium cursor-pointer" onClick={() => { setAppState(AppState.LANDING); setIsMobileNavOpen(false); }}>Méli</span>
+                <span className="font-bubble text-3xl text-black font-medium cursor-pointer" onClick={() => { setAppState(AppState.LANDING); setIsMobileNavOpen(false); }}>Canonic</span>
                 <button onClick={() => setIsMobileNavOpen(false)}><X /></button>
             </div>
             {/* Navigation items moved from footer */}
@@ -2168,12 +2404,7 @@ export default function App() {
                 <ShoppingBag className="w-6 h-6" />
                 <span className="text-sm uppercase tracking-widest font-black">Products</span>
               </button>
-              {user && (
-                <button onClick={() => { setAppState(AppState.LEADERBOARD); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.LEADERBOARD ? 'text-black font-black' : 'text-black/60'}`}>
-                  <Award className="w-6 h-6" />
-                  <span className="text-sm uppercase tracking-widest font-black">Rankings</span>
-                </button>
-              )}
+
               <button onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.SOCIAL && !isFollowsOpen ? 'text-black font-black' : 'text-black/60'}`}>
                 <Heart className="w-6 h-6" />
                 <span className="text-sm uppercase tracking-widest font-black">Blog</span>
@@ -2204,23 +2435,23 @@ export default function App() {
             </button>
           </div>
 
-          <div ref={searchContainerRef} className="flex-1 max-w-md mx-auto">
+          <div ref={headerSearchContainerRef} className="flex-1 max-w-md mx-auto">
             <div className="relative w-full">
               <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-black/40 pointer-events-none" />
               <input 
                 type="text" 
                 placeholder="Search products..."
                 className="w-full bg-white border border-black/10 py-1.5 px-3 pl-8 pr-8 md:py-2 md:pl-10 md:pr-8 rounded-lg text-[10px] md:text-xs font-black uppercase text-black placeholder:text-black/40 outline-none focus:border-black/30 transition-colors"
-                value={searchQuery}
+                value={headerSearchQuery}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  if (!isSearchDropdownOpen) setIsSearchDropdownOpen(true);
+                  setHeaderSearchQuery(e.target.value);
+                  if (!isHeaderSearchDropdownOpen) setIsHeaderSearchDropdownOpen(true);
                 }}
-                onFocus={() => setIsSearchDropdownOpen(true)}
+                onFocus={() => setIsHeaderSearchDropdownOpen(true)}
               />
-              {searchQuery && (
+              {headerSearchQuery && (
                 <button 
-                  onClick={() => resetSearchState()}
+                  onClick={() => resetHeaderSearchState()}
                   className="absolute right-2.5 top-1/2 transform -translate-y-1/2 p-0.5 rounded-full hover:bg-black/5 text-black/40 hover:text-black transition-colors cursor-pointer"
                   title="Clear search"
                 >
@@ -2234,67 +2465,52 @@ export default function App() {
             {!user ? (
               <>
                 <button 
-                  onClick={() => { resetSearchState(); setIsSignUp(false); setAppState(AppState.AUTH); }}
+                  onClick={() => { resetHeaderSearchState(); setIsSignUp(false); setAppState(AppState.AUTH); }}
                   className="text-xs md:text-sm font-black uppercase tracking-widest text-black/60 hover:text-black transition-colors cursor-pointer"
                 >
                   Sign In
                 </button>
                 <button 
-                  onClick={() => { resetSearchState(); setIsSignUp(true); setAppState(AppState.AUTH); }}
+                  onClick={() => { resetHeaderSearchState(); setIsSignUp(true); setAppState(AppState.AUTH); }}
                   className="bg-black text-white text-xs md:text-sm font-black uppercase tracking-widest px-4 py-2 rounded-lg hover:bg-venus-accent transition-colors cursor-pointer"
                 >
                   Join
                 </button>
               </>
             ) : (
-               <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => { resetSearchState(); setAppState(AppState.DASHBOARD); }} 
-                  className={`transition-colors cursor-pointer ${appState === AppState.DASHBOARD ? 'text-black' : 'text-black/60 hover:text-black'}`}
-                  title="Dashboard"
-                >
-                  <UserIcon className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={handleSignOut}
-                  className="text-black/60 hover:text-black transition-colors cursor-pointer"
-                  title="Sign Out"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
+               null
             )}
           </div>
         </div>
 
         {/* Full-width Search Results Dropdown */}
-        {isSearchDropdownOpen && searchQuery.trim() && (
+        {isHeaderSearchDropdownOpen && headerSearchQuery.trim() && (
           <div className="absolute top-full left-0 right-0 w-full bg-white/95 backdrop-blur-md border-b border-black/10 shadow-2xl overflow-hidden z-[100] max-h-[70vh] overflow-y-auto">
             <div className="max-w-4xl mx-auto px-4 py-3">
-              {isSearching ? (
+              {isHeaderSearching ? (
                 <div className="p-6 text-center text-xs text-black/50 uppercase tracking-widest font-black flex items-center justify-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-venus-accent" />
                   <span>Searching products...</span>
                 </div>
-              ) : searchResults.length > 0 ? (
+              ) : headerSearchResults.length > 0 ? (
                 <div className="flex flex-col divide-y divide-black/5">
                   <div className="text-[10px] font-black uppercase tracking-widest text-black/40 px-3 py-1.5 flex justify-between items-center">
-                    <span>Search Results ({searchResults.length})</span>
+                    <span>Search Results ({headerSearchResults.length})</span>
                     <button 
-                      onClick={() => resetSearchState()}
+                      onClick={() => resetHeaderSearchState()}
                       className="hover:text-black transition-colors cursor-pointer"
                     >
                       Close
                     </button>
                   </div>
-                  {searchResults.map(product => (
+                  {headerSearchResults.map(product => (
                      <button 
                        key={product.id}
                        onClick={() => {
                          const prodId = String(product.id);
                          openProductCard(prodId);
                          setTimeout(() => {
-                           resetSearchState();
+                           resetHeaderSearchState();
                          }, 50);
                        }}
                        className="flex items-center p-3.5 hover:bg-black/5 transition-colors text-left gap-4 group cursor-pointer w-full"
@@ -2325,7 +2541,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="p-6 text-center text-xs text-black/50 uppercase tracking-widest font-black">
-                  No matching products found for "{searchQuery}"
+                  No matching products found for "{headerSearchQuery}"
                 </div>
               )}
             </div>
@@ -2387,10 +2603,13 @@ export default function App() {
               // className="text-center flex flex-col items-center justify-center h-screen w-screen fixed inset-0 z-0 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Screenshot%202026-06-22%20131144.png')] bg-cover bg-center px-6"
               className="text-center flex flex-col items-center justify-center h-screen w-screen fixed inset-0 z-0 bg-[url('https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Screenshot%202026-06-22%20131144.png')] bg-cover bg-center md:bg-top md:bg-white/40 md:bg-blend-overlay px-6"
             >
-              <div className="flex items-center gap-4 mb-2 relative -top-32 md:-top-24">
+              <div className="flex flex-col items-center gap-2 mb-2 relative -top-32 md:-top-24">
                 <h1 className="text-6xl md:text-8xl font-cursive font-bold leading-[0.8] text-venus-pink tracking-normal">
-                  Méli
+                  Canonic
                 </h1>
+                <p className="text-2xl md:text-3xl font-cursive font-bold text-venus-pink tracking-normal">
+                  Beauty, Smarter
+                </p>
               </div>
               <button 
                 onClick={() => setAppState(AppState.ONBOARDING_DETAILS)}
@@ -2593,13 +2812,13 @@ export default function App() {
                 {/* Alerts/Warnings generated by productSort */}
                 {sortedProductsResult?.alerts && sortedProductsResult.alerts.filter((alert: string) => 
                   !alert.includes('night due to UV sensitivity') && 
-                  !alert.includes('trigger fungal acne')
+                  !alert.includes('trigger yeast sensitivity')
                 ).length > 0 && (
                   <div className="space-y-2">
                     {sortedProductsResult.alerts
                       .filter((alert: string) => 
                         !alert.includes('night due to UV sensitivity') && 
-                        !alert.includes('trigger fungal acne')
+                        !alert.includes('trigger yeast sensitivity')
                       )
                       .map((alert: string, idx: number) => (
                         <div key={idx} className="p-3 bg-rose-50 text-rose-700 rounded-xl text-[10px] font-black uppercase tracking-wider border border-rose-100 flex items-center gap-2 animate-pulse text-left">
@@ -2824,7 +3043,7 @@ export default function App() {
                     </p>
                   </div>
                   
-                  <div className="flex gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth snap-x snap-mandatory">
+                  <div className="flex flex-nowrap gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth snap-x snap-mandatory">
                     {[
                       { key: 'Moisturiser', title: 'Moisturisers', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/moisturiser.jpg' },
                       { key: 'Treatment', title: 'Serums', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/serum.jpg' },
@@ -2840,7 +3059,7 @@ export default function App() {
                         whileHover={{ y: -2, scale: 1.03 }}
                         whileTap={{ scale: 0.97 }}
                         onClick={() => handleSelectInspiration(cat.key)}
-                        className="snap-start shrink-0 flex flex-col items-center cursor-pointer group w-[calc(25%-12px)] min-w-[90px] sm:min-w-[110px] md:min-w-[140px]"
+                        className="snap-start shrink-0 flex flex-col items-center cursor-pointer group w-24 sm:w-28 md:w-32"
                       >
                         <div 
                           className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full bg-cover bg-center border-2 border-black/10 group-hover:border-black transition-all shadow-sm overflow-hidden"
@@ -2940,7 +3159,7 @@ export default function App() {
                               </div>
                           </div>
 
-                          {/* Products */}
+                          {/* Products - Routine Items */}
                           {expandedRoutines.includes(rIdx) && (
                             <div className="space-y-2 pt-2 border-t border-black/5">
                                 {getActiveRoutineProducts(rt.products, rt.time).map((p: any, i: number) => (
@@ -3100,7 +3319,7 @@ export default function App() {
                                       {false && check.resolved_additions && check.resolved_additions.length > 0 && (
                                         <div className="space-y-2 text-left">
                                           <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block px-1">Recommended Additions</span>
-                                          <div className="grid grid-cols-1 gap-2">
+                                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                             {check.resolved_additions.map((item: any, itemIdx: number) => (
                                               <div key={itemIdx} className="bg-white border-2 border-dashed border-black/5 p-3 rounded-xl flex items-start justify-between gap-3 shadow-sm hover:border-venus-accent/20 transition-colors">
                                                 <div className="space-y-1 min-w-0 flex-1">
@@ -3411,51 +3630,124 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* RANK / LEADERBOARD */}
-          {(appState === AppState.RANK || appState === AppState.LEADERBOARD) && (
+          {appState === AppState.RANK && (
             <motion.div 
-              key={appState}
+              key="rank"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-6"
+              className="pt-1 md:pt-2 max-w-4xl mx-auto space-y-3"
             >
-              {/* Left Column: Existing Products/Search - Only show on mobile if AppState.RANK */}
-              <div className={`space-y-4 md:pl-2 ${appState === AppState.LEADERBOARD ? 'hidden md:block' : 'block'}`}>
-                <div className="flex flex-col gap-4 border-b-2 border-black pb-4">
-                  <h2 className="text-lg md:text-xl font-sans font-black text-black uppercase tracking-tight">Products</h2>
+              {/* Products column */}
+              <div className="space-y-4 md:pl-2">
+                <div className="flex flex-col gap-3 border-b-2 border-black pb-3">
+                  <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
+                    Browse Products
+                  </h2>
                   
-                  {/* Tabs */}
-                  <div className="flex gap-2">
-                      {[
-                        { name: 'Used', color: 'bg-blue-100' },
-                        { name: 'Wishlist', color: 'bg-green-100' },
-                        { name: 'Avoid', color: 'bg-amber-100' }
-                      ].map(t => (
-                          <button key={t.name} onClick={() => setFilterCategory(t.name === filterCategory ? null : t.name)} className={`text-[10px] font-black uppercase px-3 py-1 rounded-lg ${t.color} ${filterCategory === t.name ? 'ring-2 ring-black' : ''}`}>
-                              {t.name}
-                          </button>
-                      ))}
-                  </div>
+                                     {/* Primary Filter Bubbles (Circular Photo Bubbles like reference image) */}
+                   <div className="flex flex-nowrap gap-3 md:gap-2.5 overflow-x-auto no-scrollbar scroll-smooth py-2 px-1 snap-x snap-mandatory">
+                     {[
+                       { name: 'Type', image: 'https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=300&q=80', filterKey: 'By Type' },
+                       { name: 'Ingredient', image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=300&q=80', filterKey: 'By Ingredient' },
+                       { name: 'Concern', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=300&q=80', filterKey: 'By Concern' },
+                       { name: 'Trending', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=300&q=80', filterKey: 'Trending' },
+                       { name: 'Pregnancy-safe', image: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=300&q=80', filterKey: 'Pregnancy-safe' }
+                     ].map(item => {
+                       const isActive = (primaryFilter === 'By Type' && (subFilter === item.filterKey || (item.filterKey === 'By Type' && subFilter === 'All'))) || primaryFilter === item.filterKey;
+                       return (
+                         <button
+                           key={item.name}
+                           onClick={() => {
+                             if (item.filterKey === 'By Type') {
+                               setPrimaryFilter('By Type');
+                               setSubFilter('All');
+                             } else {
+                               setPrimaryFilter(item.filterKey);
+                               setSubFilter('all');
+                             }
+                           }}
+                           className="flex flex-col items-center gap-1.5 shrink-0 snap-start group cursor-pointer w-20 sm:w-24 md:w-28"
+                         >
+                           <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-md mx-auto ${
+                             isActive ? 'border-black scale-105 shadow-lg ring-2 ring-black/20' : 'border-black/10 group-hover:border-black/40'
+                           }`}>
+                             <img src={item.image} alt={item.name} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                           </div>
+                           <span className={`text-[9px] md:text-xs font-black uppercase tracking-wider text-center w-full whitespace-normal leading-tight ${
+                             isActive ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/70 group-hover:text-black'
+                           }`}>
+                             {item.name}
+                           </span>
+                         </button>
+                       );
+                     })}
+                   </div>
 
-                  {/* Product Filter Tabs */}
-                  <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
-                    {['All', 'Cleanser', 'SPF', 'Cream', 'Serum', 'Toner', 'Retinol', 'Moisturizer'].map((type) => (
+                  {/* Sub-bar Filter based on Primary Filter */}
+                  {(primaryFilter === 'By Type' || primaryFilter === 'Pregnancy-safe') && (
+                    <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+                      {['All', 'Cleanser', 'SPF', 'Cream', 'Serum', 'Toner', 'Retinol', 'Moisturizer'].map((type) => (
                         <button
-                            key={type}
-                            onClick={() => setProductFilter(type)}
-                            className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${productFilter === type ? 'text-black' : 'text-black/40 hover:text-black'}`}
+                          key={type}
+                          onClick={() => setSubFilter(type)}
+                          className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${subFilter.toLowerCase() === type.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
                         >
-                            {type}
+                          {type}
                         </button>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {primaryFilter === 'By Ingredient' && (
+                    <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+                      {['all', 'Retinols', 'Hyaluronic Acid', 'PDRN', 'Collagen', 'Niacinamide', 'Salicylic Acid', 'Vitamin C', 'Vitamin E', 'Glycolic Acid', 'Peptides', 'Ceramides', 'AHA/BHA'].map((ing) => (
+                        <button
+                          key={ing}
+                          onClick={() => setSubFilter(ing)}
+                          className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${subFilter.toLowerCase() === ing.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
+                        >
+                          {ing}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {primaryFilter === 'By Concern' && (
+                    <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+                      {['all', 'Blemish-prone skin', 'Redness', 'Dry Skin', 'Aging skin'].map((concern) => (
+                        <button
+                          key={concern}
+                          onClick={() => setSubFilter(concern)}
+                          className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${subFilter.toLowerCase() === concern.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
+                        >
+                          {concern}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {primaryFilter === 'Trending' && (
+                    <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+                      {['all', 'K-Beauty', 'J-Beauty', 'Glass Skin', 'PDRN', 'Natural', 'Winter Care'].map((trend) => (
+                        <button
+                          key={trend}
+                          onClick={() => setSubFilter(trend)}
+                          className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${subFilter.toLowerCase() === trend.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
+                        >
+                          {trend}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <input 
-                    type="text"
-                    placeholder="Search by brand or name..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="hidden md:block w-full bg-transparent border-t border-black/10 pt-4 text-xs font-black uppercase text-black placeholder:text-black/40 outline-none"
-                  />
+                     type="text"
+                     placeholder="Search by brand or name..."
+                     value={searchQuery}
+                     onChange={(e) => setSearchQuery(e.target.value)}
+                     style={{ display: "none" }}
+                     className="w-full bg-transparent border-t border-black/10 pt-3 text-xs font-black uppercase text-black placeholder:text-black/40 outline-none hidden"
+                   />
                   {isSearching && <div className="text-[9px] font-black uppercase text-venus-accent animate-pulse">Searching...</div>}
                 </div>
 
@@ -3493,103 +3785,118 @@ export default function App() {
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-2">
-                    {(searchQuery || productFilter !== 'All' ? searchResults : products)
-                      .filter(p => !filterCategory || userProducts.some(up => (up?.product_name === (p.name || p.Name || p.ProductName || p['Product Name'])) && (up?.category?.includes(filterCategory) ?? false)))
-                      .map((p: any) => {
-                        const userProd = userProducts.find(up => (up?.product_name === (p.name || p.Name || p.ProductName || p['Product Name'])));
-                        const cat = userProd?.category || '';
-                        const isUsed = cat.includes('Used');
-                        const isAvoid = cat.includes('Avoid');
-                        
-                        let bgClass = 'bg-white';
-                        if (isUsed && isAvoid) bgClass = 'bg-gradient-to-r from-blue-100 to-amber-100';
-                        else if (isUsed) bgClass = 'bg-blue-100';
-                        else if (cat.includes('Wishlist')) bgClass = 'bg-green-100';
-                        else if (isAvoid) bgClass = 'bg-amber-100';
+                  <div className="grid grid-cols-2 gap-3">
+                    {(() => {
+                      const baseList = searchQuery ? searchResults : products;
+                      const filtered = baseList.filter(p => {
+                        const pType = (p.type || p.Type || '').toLowerCase();
+                        const pName = (p.name || p.Name || p.ProductName || p['Product Name'] || '').toLowerCase();
+                        const pBrand = (p.brand || p.Brand || '').toLowerCase();
+                        const pDesc = (p.description || '').toLowerCase();
+                        const pIngs = Array.isArray(p.ingredients) ? p.ingredients.map((i: string) => i.toLowerCase()) : [];
 
+                        const cat2 = (p.product_scores?.cat2 || '').toLowerCase();
+                        const isMen = p.products_filter?.men === true;
+                        const pregSafe = p.products_filter?.preg_safe === true;
+
+                        if (primaryFilter === 'By Type') {
+                          if (subFilter === 'All' || subFilter === 'all') return true;
+                          return cat2 === subFilter.toLowerCase() || pType.includes(subFilter.toLowerCase()) || pName.includes(subFilter.toLowerCase());
+                        }
+                        
+                        if (primaryFilter === 'Pregnancy-safe') {
+                          if (!pregSafe) return false;
+                          if (subFilter === 'All' || subFilter === 'all') return true;
+                          return cat2 === subFilter.toLowerCase() || pType.includes(subFilter.toLowerCase()) || pName.includes(subFilter.toLowerCase());
+                        }
+                        if (primaryFilter === 'By Ingredient') {
+                          if (subFilter === 'all' || subFilter === 'All') return true;
+                          const target = subFilter.toLowerCase();
+                          return pIngs.some(i => i.includes(target)) || pDesc.includes(target) || pName.includes(target);
+                        }
+                        if (primaryFilter === 'By Concern') {
+                          if (subFilter === 'all' || subFilter === 'All') return true;
+                          const target = subFilter.toLowerCase();
+                          if (target === 'blemish-prone skin') return p.products_filter?.blem_prone === true;
+                          if (target === 'redness') return p.products_filter?.red === true;
+                          if (target === 'dry skin') return p.products_filter?.dry === true;
+                          if (target === 'aging skin') return p.products_filter?.aging === true;
+                          return pDesc.includes(target) || pName.includes(target);
+                        }
+                        if (primaryFilter === 'Trending') {
+                          if (subFilter === 'all' || subFilter === 'All') return true;
+                          const target = subFilter.toLowerCase();
+                          if (target === 'k-beauty') return p.products_filter?.k_beauty === true;
+                          if (target === 'j-beauty') return p.products_filter?.j_beauty === true;
+                          if (target === 'glass skin') return p.products_filter?.glass === true;
+                          if (target === 'pdrn') return p.products_filter?.c_pdrn === true;
+                          if (target === 'natural') return p.products_filter?.natural === true;
+                          return pDesc.includes(target) || pName.includes(target) || pBrand.includes(target) || pIngs.some(i => i.includes(target));
+                        }
+                        return true;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="col-span-2 py-12 text-center text-black/40 text-xs uppercase font-black tracking-widest clean-card bg-white/50">
+                            No products match this filter.
+                          </div>
+                        );
+                      }
+
+                      return filtered.map((p: any) => {
+                        const userProd = userProducts.find(up => (up?.product_name === (p.name || p.Name || p.ProductName || p['Product Name'])));
                         return (
                           <div 
                             key={p.id} 
-                            onClick={() => setSelectedProductForDetail(p)} 
-                            className={`cursor-pointer clean-card p-3 border-2 ${bgClass} border-black/5 hover:border-black transition-all flex items-center justify-between gap-3`}
+                            onClick={() => openProductCard(String(p.id))} 
+                            className="cursor-pointer clean-card p-3 border-2 bg-white border-black/5 hover:border-black transition-all flex flex-col items-center text-center gap-2 relative group"
                             data-product-id={p.id}
                           >
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                              {p.photo_url ? (
-                                <img 
-                                  src={p.photo_url} 
-                                  alt={p.name || p.Name || p.ProductName || p['Product Name'] || 'Product'} 
-                                  referrerPolicy="no-referrer"
-                                  className="w-10 h-10 object-cover rounded-lg border border-black/10 flex-shrink-0" 
-                                />
-                              ) : (
-                                <div className="w-10 h-10 bg-black/5 rounded-lg border border-black/10 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40">
-                                  No Image
-                                </div>
-                              )}
-                              <div className="truncate flex-1">
-                                <div className="text-[9px] font-black uppercase tracking-widest text-venus-accent mb-0.5 truncate">
-                                  {p.brand || p.Brand || 'Unknown'}
-                                </div>
-                                <h3 className="text-[10px] font-black text-black uppercase leading-tight truncate">
-                                  {p.name || p.Name || p.ProductName || p['Product Name'] || 'Unnamed'}
-                                </h3>
-                                <div className="text-[8px] text-black/40 font-mono mt-0.5">ID: {p.id}</div>
-                              </div>
-                            </div>
-                            {userProd ? (
-                              <button onClick={(e) => { e.stopPropagation(); handleDeleteUPP(userProd.id); }} className="p-1 hover:bg-black/10 rounded-full shrink-0">
-                                <Trash2 className="w-3 h-3 text-black/70"/>
-                              </button>
+                            {p.photo_url ? (
+                              <img 
+                                src={p.photo_url} 
+                                alt={p.name || p.Name || p.ProductName || p['Product Name'] || 'Product'} 
+                                referrerPolicy="no-referrer"
+                                className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-black/10 flex-shrink-0 group-hover:scale-105 transition-transform" 
+                              />
                             ) : (
-                              <button onClick={(e) => { e.stopPropagation(); setSelectedProductForUPP(p); }} className="p-1 hover:bg-black/5 rounded-full shrink-0">
-                                <Plus className="w-3 h-3 text-black/50"/>
-                              </button>
+                              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black/5 rounded-xl border border-black/10 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40">
+                                No Image
+                              </div>
                             )}
+                            <div className="w-full min-w-0">
+                              <div className="text-[9px] font-black uppercase tracking-widest text-venus-accent mb-0.5 whitespace-normal break-words">
+                                {p.brand || p.Brand || 'Unknown'}
+                              </div>
+                              <h3 className="text-[10px] md:text-xs font-black text-black uppercase leading-tight whitespace-normal break-words">
+                                {p.name || p.Name || p.ProductName || p['Product Name'] || 'Unnamed'}
+                              </h3>
+                            </div>
+                            <div className="absolute top-2 right-2">
+                              {userProd ? (
+                                <button onClick={(e) => { e.stopPropagation(); handleDeleteUPP(userProd.id); }} className="p-1 hover:bg-black/10 rounded-full shrink-0">
+                                  <Trash2 className="w-3 h-3 text-black/70"/>
+                                </button>
+                              ) : (
+                                <button onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  if (!user) {
+                                    setAuthPromptModalOpen(true);
+                                    return;
+                                  }
+                                  setSelectedProductForUPP(p); 
+                                }} className="p-1 hover:bg-black/5 rounded-full shrink-0">
+                                  <Plus className="w-3 h-3 text-black/50"/>
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        )})}
+                        );
+                      });
+                    })()}
                   </div>
                 )}
-              </div>
-
-              {/* Right Column: Leaderboard - Only show on mobile if AppState.LEADERBOARD */}
-              <div className={`space-y-4 ${appState === AppState.RANK ? 'hidden md:block' : 'block'}`}>
-                <div className="pb-4">
-                  <h2 className="text-lg md:text-xl text-black uppercase tracking-tight" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>Rankings</h2>
-                  <div className="flex gap-2 mt-2 overflow-x-auto no-scrollbar pb-2">
-                    {['All', 'Cleanser', 'SPF', 'Cream', 'Serum', 'Toner', 'Retinol', 'Moisturizer'].map((type) => (
-                      <button
-                        key={type}
-                        onClick={() => setLeaderboardFilter(type)}
-                        className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${leaderboardFilter === type ? 'text-black' : 'text-black/40 hover:text-black'}`}
-                      >
-                        {type}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {userProducts.filter(up => up?.category === 'Used' && (leaderboardFilter === 'All' || (up?.type || '').toLowerCase() === leaderboardFilter.toLowerCase())).length === 0 ? (
-                    <p className="text-black/50 text-xs font-black uppercase italic">You haven't ranked any products yet</p>
-                ) : (
-                    userProducts
-                        .filter(up => up?.category === 'Used' && (leaderboardFilter === 'All' || (up?.type || '').toLowerCase() === leaderboardFilter.toLowerCase()))
-                        .sort((a, b) => (b.personal_score || 0) - (a.personal_score || 0))
-                        .map((up: any) => (
-                            <div key={up.id} className="clean-card p-2 border-2 border-black/5 flex items-center justify-between">
-                            <div>
-                                <div className="text-[9px] font-black uppercase tracking-widest text-venus-accent mb-0.5">
-                                {up?.product_brand}
-                                </div>
-                                <h3 className="text-[10px] font-black text-black uppercase">{up?.product_name}</h3>
-                            </div>
-                            <div className="text-right">
-                                <span className="text-md font-black">{up?.personal_score?.toFixed(1) || '0.0'}</span>
-                            </div>
-                            </div>
-                        ))
-                )
-                }
               </div>
             </motion.div>
           )}
@@ -4044,22 +4351,22 @@ export default function App() {
                   <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm relative overflow-hidden">
                     <div className="flex justify-between items-start mb-4">
                       <div>
-                        <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block mb-1">Skin Barrier Risk Score</span>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block mb-1">Skin Barrier Status Score</span>
                         <div className="flex items-center gap-3">
                           <span className="text-3xl font-black text-black">
-                            {userProfile.barrier_risk !== null && userProfile.barrier_risk !== undefined ? userProfile.barrier_risk : '0'}
+                            {userProfile.barrier_status !== null && userProfile.barrier_status !== undefined ? userProfile.barrier_status : '0'}
                           </span>
                           <div className="flex flex-col">
                             <span className={`text-[10px] font-black uppercase tracking-wider ${
-                              Number(userProfile.barrier_risk) >= 6 ? 'text-red-600' :
-                              Number(userProfile.barrier_risk) >= 3 ? 'text-yellow-600' :
+                              Number(userProfile.barrier_status) >= 6 ? 'text-red-600' :
+                              Number(userProfile.barrier_status) >= 3 ? 'text-yellow-600' :
                               'text-green-600'
                             }`}>
-                              {Number(userProfile.barrier_risk) >= 6 ? 'Compromised / High Sensitivity' :
-                               Number(userProfile.barrier_risk) >= 3 ? 'Moderate Sensitivity Risk' :
+                              {Number(userProfile.barrier_status) >= 6 ? 'Compromised / High Sensitivity' :
+                               Number(userProfile.barrier_status) >= 3 ? 'Moderate Sensitivity Risk' :
                                'Strong Barrier / Healthy'}
                             </span>
-                            <span className="text-[9px] text-black/40">Computed from self-reported symptoms & reactivity</span>
+                            <span className="text-[9px] text-black/40">Computed from self-reported skin characteristics & reactivity</span>
                           </div>
                         </div>
                       </div>
@@ -4070,11 +4377,11 @@ export default function App() {
                     <div className="w-full bg-black/5 h-2 rounded-full overflow-hidden mb-4">
                       <div 
                         className={`h-full rounded-full transition-all duration-1000 ${
-                          Number(userProfile.barrier_risk) >= 6 ? 'bg-red-500' :
-                          Number(userProfile.barrier_risk) >= 3 ? 'bg-yellow-500' :
+                          Number(userProfile.barrier_status) >= 6 ? 'bg-red-500' :
+                          Number(userProfile.barrier_status) >= 3 ? 'bg-yellow-500' :
                           'bg-green-500'
                         }`}
-                        style={{ width: `${Math.min(100, Math.max(5, (Number(userProfile.barrier_risk) || 0) * 10))}%` }}
+                        style={{ width: `${Math.min(100, Math.max(5, (Number(userProfile.barrier_status) || 0) * 10))}%` }}
                       />
                     </div>
                     
@@ -4119,24 +4426,34 @@ export default function App() {
                     </h4>
                     {Array.isArray(userProfile.breakout_type) && userProfile.breakout_type.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
-                        {userProfile.breakout_type.map((b: string, idx: number) => (
+                        {userProfile.breakout_type.map((b: any, idx: number) => (
                           <span 
-                            key={b + idx} 
+                            key={String(b) + idx} 
                             className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                            {b}
+                            {getBreakoutTitle(b)}
                           </span>
                         ))}
                       </div>
-                    ) : typeof userProfile.breakout_type === 'string' && userProfile.breakout_type.trim() !== '' ? (
+                    ) : typeof userProfile.breakout_type === 'number' || (typeof userProfile.breakout_type === 'string' && userProfile.breakout_type.trim() !== '') ? (
                       <span className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
                         <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                        {userProfile.breakout_type}
+                        {getBreakoutTitle(userProfile.breakout_type)}
                       </span>
                     ) : (
                       <p className="text-xs text-black/40 italic">No specific breakout characteristics specified.</p>
                     )}
+                  </div>
+
+                  <div className="pt-6 text-center">
+                    <button
+                      onClick={handleSignOut}
+                      className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-red-600 hover:text-red-700 transition-colors bg-red-50 px-6 py-3 rounded-xl border border-red-200/50 cursor-pointer shadow-sm"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Log Out
+                    </button>
                   </div>
                 </div>
               )}
@@ -4562,12 +4879,10 @@ export default function App() {
       )}
 
       {/* Bottom Nav Hint */}
-      {(appState === AppState.PROGRESS || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.LEADERBOARD || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
+      {(appState === AppState.PROGRESS || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
         <div className="fixed bottom-0 left-0 right-0 flex justify-center bg-gradient-to-t from-white to-transparent z-40">
           <div className="clean-card py-3 px-6 flex justify-between md:justify-center gap-6 md:gap-8 items-center w-full md:w-auto bg-white border-t-2 md:border-2 border-black/5 shadow-2xl md:rounded-3xl">
             <Home className={`w-6 h-6 text-black cursor-pointer ${appState === AppState.DASHBOARD ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.DASHBOARD)} />
-            <div className="w-px h-4 bg-black/10 hidden md:block" />
-            <Award className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.LEADERBOARD ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.LEADERBOARD)} />
             <div className="w-px h-4 bg-black/10 hidden md:block" />
             <button
               onClick={() => navFileInputRef.current?.click()}
@@ -4657,6 +4972,46 @@ export default function App() {
         </div>
       )}
       {error && <ErrorModal error={error} onClose={() => setError(null)} />}
+      {authPromptModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full relative space-y-4 text-center">
+            <button className="absolute top-4 right-4 text-gray-400 hover:text-black transition" onClick={() => setAuthPromptModalOpen(false)}>
+              <X className="w-5 h-5"/>
+            </button>
+            <div className="w-12 h-12 bg-black/5 rounded-full flex items-center justify-center mx-auto text-black">
+              <UserIcon className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-black uppercase tracking-tight text-black">
+              Log In or Sign Up to add this to your tracker
+            </h3>
+            <p className="text-xs text-black/60">
+              Create an account or log in to track your skincare routine, products, and skin progress.
+            </p>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => {
+                  setAuthPromptModalOpen(false);
+                  setIsSignUp(false);
+                  setAppState(AppState.AUTH);
+                }}
+                className="flex-1 bg-black text-white py-3 rounded-xl font-black uppercase tracking-widest text-xs hover:bg-venus-accent transition-all cursor-pointer"
+              >
+                Log In
+              </button>
+              <button
+                onClick={() => {
+                  setAuthPromptModalOpen(false);
+                  setIsSignUp(true);
+                  setAppState(AppState.AUTH);
+                }}
+                className="flex-1 bg-black/10 text-black py-3 rounded-xl font-black uppercase tracking-widest text-xs hover:bg-black/20 transition-all cursor-pointer"
+              >
+                Sign Up
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <ProductConfirmationModal
         isOpen={isDashboardConfirmOpen}
         products={dashboardScanMatched}
@@ -4691,9 +5046,11 @@ export default function App() {
               <p className="text-sm font-black uppercase tracking-wider text-black">
                 {isLandingEvaluating ? "Evaluating Skin Fit..." : "Analyzing Photo..."}
               </p>
-              <p className="text-xs text-black/50 mt-1 font-mono">
-                {isLandingEvaluating ? "Running compatibility checks" : "AI is identifying your products"}
-              </p>
+              {isLandingEvaluating && (
+                <p className="text-xs text-black/50 mt-1 font-mono">
+                  Running compatibility checks
+                </p>
+              )}
             </div>
           </div>
         </div>

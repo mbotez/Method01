@@ -6,7 +6,8 @@ import { supabase } from '../lib/supabase';
 
 export interface UserProfile {
   skin_type: 'dry' | 'oily' | 'combination';
-  barrier_risk: number; // 0-8
+  barrier_status: number; // 0-8
+  skin_characteristics?: number;
   burn_risk: 'low' | 'medium' | 'high';
   new_product_reaction: number; // 0-3
   main_concern: number; // 1-12
@@ -18,7 +19,7 @@ export interface UserProfile {
   env: number; // 1-4
   redness_score: number; // 1-100
   wrinkles_score: number; // 1-100
-  scan_acne_type: number[]; // 1-9
+  scan_breakout_type: number[]; // 1-9
   blemish_assessment?: any;
 }
 
@@ -140,7 +141,7 @@ function joinNaturally(items: string[], fallback: string): string {
 
 // Concern number map label key
 const concernLabels: Record<number, string> = {
-  1: 'acne_and_scars',
+  1: 'breakouts_and_scars',
   2: 'redness',
   3: 'dark_spots',
   4: 'dullness',
@@ -149,8 +150,8 @@ const concernLabels: Record<number, string> = {
   7: 'wrinkles_and_fine_lines',
   8: 'pores_and_texture',
   9: 'sensitivity',
-  10: 'eczema',
-  11: 'fungal_acne',
+  10: 'dry_and_flaky_skin',
+  11: 'yeast_breakout',
   12: 'not_sure'
 };
 
@@ -164,12 +165,12 @@ const concernLabels: Record<number, string> = {
  */
 export function computeIrritationThreshold(userProfile: UserProfile): 'low' | 'medium' | 'high' {
   let riskTier: 'low' | 'medium' | 'high' = 'low';
-  const barrierRisk = getNum(userProfile.barrier_risk);
-  if (barrierRisk >= 0 && barrierRisk <= 3) {
+  const barrierStatus = getNum(userProfile.barrier_status);
+  if (barrierStatus >= 0 && barrierStatus <= 3) {
     riskTier = 'low';
-  } else if (barrierRisk >= 4 && barrierRisk <= 6) {
+  } else if (barrierStatus >= 4 && barrierStatus <= 6) {
     riskTier = 'medium';
-  } else if (barrierRisk >= 7 && barrierRisk <= 8) {
+  } else if (barrierStatus >= 7 && barrierStatus <= 8) {
     riskTier = 'high';
   }
 
@@ -184,19 +185,46 @@ export function computeIrritationThreshold(userProfile: UserProfile): 'low' | 'm
   return riskTier;
 }
 
-// Add this mapping dictionary near your other constants or inside the function
-const acneTypeStringToId: Record<string, number> = {
-  'blackheads': 1,
-  'whiteheads': 2,
+// Mapping dictionary for string identifiers and face scan terms to numeric IDs (1 through 8)
+export const breakoutTypeStringToId: Record<string, number> = {
+  // Option 1: Surface Whiteheads
+  'whiteheads': 1,
+  'surface whiteheads': 1,
+  'closed surface pores': 1,
+  'closed pores': 1,
+  
+  // Option 2: Surface Blackheads
+  'blackheads': 2,
+  'surface blackheads': 2,
+  'open surface pores': 2,
+  'open pores': 2,
+  
+  // Option 3: Post-Blemish Red Marks
   'pie': 3,
+  'post-blemish red marks': 3,
+  'red marks': 3,
+  
+  // Option 4: Post-Blemish Dark Spots
   'pih': 4,
-  'papules': 5,
+  'post-blemish dark spots': 4,
+  'dark spots': 4,
+  
+  // Option 5: Surface Bumps
+  'surface bumps': 5,
+  'surface breakouts': 5,
+  
+  // Option 6: General Congestion
   'congestion': 6,
-  'pustules': 7,
-  'severe_painful': 8,
-  'surface acne': 5,
-  'inflammatory acne': 7,
-  'deep acne': 6
+  'general congestion': 6,
+  'deep breakouts': 6,
+  
+  // Option 7: Surface Blemishes
+  'surface blemishes': 7,
+  'blemishes': 7,
+  
+  // Option 8: Deep & Tender Bumps
+  'deep & tender bumps': 8,
+  'deep and tender bumps': 8
 };
 
 // Global normalizer applied across all steps
@@ -209,7 +237,7 @@ export const normalizeToIds = (arr: any | null | undefined): number[] => {
     .map(x => {
       if (typeof x === 'string') {
         const key = x.trim().toLowerCase();
-        return acneTypeStringToId[key] ?? getNum(x, 0);
+        return breakoutTypeStringToId[key] ?? getNum(x, 0);
       }
       return getNum(x, 0);
     })
@@ -228,12 +256,12 @@ export function computeConcernMetricScore(concernNum: number, userProfile: UserP
     case 1: { // Acne & Scars
       // Extract and safely normalize breakout types and scan types using the global helper
       const normalizedBreakouts = normalizeToIds(userProfile.breakout_type);
-      const normalizedScans = normalizeToIds(userProfile.blemish_assessment || userProfile.scan_acne_type);
+      const normalizedScans = normalizeToIds(userProfile.blemish_assessment || userProfile.scan_breakout_type);
 
       // Handle the edge case where a single string property like `acne_type` was passed dynamically to the profile object
       const extraAcneType = (userProfile as any).acne_type;
       if (typeof extraAcneType === 'string') {
-        const mappedId = acneTypeStringToId[extraAcneType.trim().toLowerCase()];
+        const mappedId = breakoutTypeStringToId[extraAcneType.trim().toLowerCase()];
         if (mappedId) normalizedBreakouts.push(mappedId);
       }
 
@@ -242,42 +270,44 @@ export function computeConcernMetricScore(concernNum: number, userProfile: UserP
       
       const branches: number[] = [];
 
-      // Branch 1: Blackheads & Whiteheads (specific to Treatments/Targeted)
+      // Branch 1: Surface Whiteheads (1) & Surface Blackheads (2) (specific to Treatments/Targeted)
       if (union.includes(1) || union.includes(2)) {
         const matchingProducts = routineProducts.filter(p => p.cat2 === 'Treatment' || p.cat2 === 'Targeted');
 
         if (matchingProducts.length > 0) {
           const subScores: number[] = [];
 
-          // 1. Find the absolute highest blackheads score across all matching products
+          // 1. Find the highest whiteheads score (ID 1)
           if (union.includes(1)) {
-            const maxBlackheads = Math.max(...matchingProducts.map(p => getNum(p.clear_blackheads)));
-            subScores.push(maxBlackheads);
-          }
-
-          // 2. Find the absolute highest whiteheads score across all matching products
-          if (union.includes(2)) {
             const maxWhiteheads = Math.max(...matchingProducts.map(p => getNum(p.clear_whiteheads)));
             subScores.push(maxWhiteheads);
           }
 
+          // 2. Find the highest blackheads score (ID 2)
+          if (union.includes(2)) {
+            const maxBlackheads = Math.max(...matchingProducts.map(p => getNum(p.clear_blackheads)));
+            subScores.push(maxBlackheads);
+          }
+
           // 3. Average only the target sub-types that are actually active in the user's profile
-          branches.push(subScores.reduce((a, b) => a + b, 0) / subScores.length);
+          if (subScores.length > 0) {
+            branches.push(subScores.reduce((a, b) => a + b, 0) / subScores.length);
+          }
         } else {
           branches.push(0);
         }
       }
 
-      // Branch 2: Surface Acne & Inflammatory acne
+      // Branch 2: Surface Bumps (5) & Surface Blemishes (7)
       if (union.includes(5) || union.includes(7)) {
-        const maxVal = Math.max(...routineProducts.map(p => getNum(p.clear_surface_acne) + getNum(p.synergy_inflammatory_acne)));
+        const maxVal = Math.max(...routineProducts.map(p => getNum(p.clear_surface_breakouts) + getNum(p.synergy_breakout_response)));
         // Normalize 0-10 sum down to a standard 0-5 scale
         branches.push(maxVal / 2);
       }
 
-      // Branch 3: Deep Acne & Penetration
+      // Branch 3: General Congestion (6) & Deep & Tender Bumps (8)
       if (union.includes(6) || union.includes(8) || union.includes(9)) {
-        const maxVal = Math.max(...routineProducts.map(p => getNum(p.soothe_deep_acne) + getNum(p.synergy_deep_acne_penetration)));
+        const maxVal = Math.max(...routineProducts.map(p => getNum(p.soothe_deep_breakouts) + getNum(p.synergy_deep_breakout_penetration)));
         // Normalize 0-10 sum down to a standard 0-5 scale
         branches.push(maxVal / 2);
       }
@@ -299,10 +329,10 @@ export function computeConcernMetricScore(concernNum: number, userProfile: UserP
  * Queries Supabase database for the absolute best treatment/targeted additions for an under-served concern.
  */
 async function getRecommendedAddition(concernNum: number, userProfile: UserProfile): Promise<string[]> {
-  let orderCol = 'clear_surface_acne';
+  let orderCol = 'clear_surface_breakouts';
   const skinType = userProfile.skin_type;
   if (concernNum === 1) {
-    orderCol = 'clear_surface_acne';
+    orderCol = 'clear_surface_breakouts';
   } else if ([2, 9, 10].includes(concernNum)) {
     orderCol = skinType === 'dry' ?
       'calm_redness_dry_skin' : (skinType === 'oily' ? 'calm_redness_oily_skin' : 'calm_redness_combi_skin');
@@ -318,7 +348,7 @@ async function getRecommendedAddition(concernNum: number, userProfile: UserProfi
   } else if (concernNum === 8) {
     orderCol = 'clear_blackheads';
   } else if (concernNum === 11 || concernNum === 12) {
-    orderCol = 'clear_surface_acne';
+    orderCol = 'clear_surface_breakouts';
   }
 
   try {
@@ -331,7 +361,7 @@ async function getRecommendedAddition(concernNum: number, userProfile: UserProfi
     }
 
     if (concernNum === 11 || userProfile.main_concern === 11 || userProfile.scnd_concern === 11) {
-      query = query.eq('has_fungal_trigger', false);
+      query = query.eq('has_yeast_trigger', false);
     }
 
     query = query.order(orderCol, { ascending: false }).limit(30);
@@ -449,7 +479,7 @@ export async function checkRoutine(
         ingredient_scores (
           id,
           ingredient,
-          Breakouts_Acne,
+          Breakouts_Blemishes,
           Oiliness,
           Clogged_Pores_Blackheads,
           Dry_Skin,
@@ -471,7 +501,7 @@ export async function checkRoutine(
           Astringent,
           Cell_Turnover_Accelerator,
           Pregnancy_Safe,
-          Fungal_Acne_Trigger,
+          Yeast_Trigger,
           High_Irritation_Risk,
           Essential_Oils_Fragrance,
           Antagonistic_Group,
@@ -812,22 +842,22 @@ export async function checkRoutine(
       }
     }
 
-    // Fungal Acne Check
-    const isFungalConcern = userProfile.main_concern === 11 ||
+    // Malassezia Check
+    const isYeastConcern = userProfile.main_concern === 11 ||
       userProfile.scnd_concern === 11;
-    if (isFungalConcern) {
-      const isProdFungalTrigger = isTrueVal(product.has_fungal_trigger);
-      const hasFungalTriggerIng = productIngredients.some(ing => {
+    if (isYeastConcern) {
+      const isProdYeastTrigger = isTrueVal(product.has_yeast_trigger);
+      const hasYeastTriggerIng = productIngredients.some(ing => {
         const scores = getIngScores(ing);
-        return scores && isTrueVal(scores.Fungal_Acne_Trigger);
+        return scores && isTrueVal(scores.Yeast_Trigger);
       });
-      if (isProdFungalTrigger || hasFungalTriggerIng) {
+      if (isProdYeastTrigger || hasYeastTriggerIng) {
         detrimental.push({
           product_id: prodIdStr,
-          reason: `Contains ingredients that can feed fungal acne.`,
+          reason: `Contains ingredients that can feed malassezia/ yeast.`,
           severity: 'high'
         });
-        addNote(prodIdStr, `Can feed fungal acne — worth swapping out given your concern.`);
+        addNote(prodIdStr, `Can feed malassezia/ yeast — worth swapping out given your concern.`);
       }
     }
 
@@ -899,7 +929,7 @@ export async function checkRoutine(
   // ------------------------------------------
   // Acne & scars PIH melanin inhibitor gap check safely mapped
   const breakoutUnionBreakouts = normalizeToIds(userProfile.breakout_type);
-  const breakoutUnionScans = normalizeToIds(userProfile.blemish_assessment || userProfile.scan_acne_type);
+  const breakoutUnionScans = normalizeToIds(userProfile.blemish_assessment || userProfile.scan_breakout_type);
   const breakoutUnion = Array.from(new Set([...breakoutUnionBreakouts, ...breakoutUnionScans]));
   
   if (breakoutUnion.includes(4) && (userProfile.main_concern === 3 || userProfile.main_concern === 4 || userProfile.scnd_concern === 3 || userProfile.scnd_concern === 4)) {
@@ -930,8 +960,8 @@ export async function checkRoutine(
   // Efficacy calculations for primary/secondary concerns (Evaluated on normalized 0.0 - 5.0 scale)
   let mainScore = computeConcernMetricScore(userProfile.main_concern, userProfile, routineProducts, ingredientsData);
   if (userProfile.main_concern === 11) {
-    const hasFungalTriggers = detrimental.some(d => d.reason.toLowerCase().includes('fungal acne'));
-    mainScore = hasFungalTriggers ? 0 : 5;
+    const hasYeastTriggers = detrimental.some(d => d.reason.toLowerCase().includes('yeast-related breakouts'));
+    mainScore = hasYeastTriggers ? 0 : 5;
   } else if (userProfile.main_concern === 12) {
     const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || m.type === 'missing_spf');
     mainScore = corePillarsPass ? 5 : 0;
@@ -939,8 +969,8 @@ export async function checkRoutine(
 
   let scndScore = computeConcernMetricScore(userProfile.scnd_concern, userProfile, routineProducts, ingredientsData);
   if (userProfile.scnd_concern === 11) {
-    const hasFungalTriggers = detrimental.some(d => d.reason.toLowerCase().includes('fungal acne'));
-    scndScore = hasFungalTriggers ? 0 : 5;
+    const hasYeastTriggers = detrimental.some(d => d.reason.toLowerCase().includes('yeast-related breakouts'));
+    scndScore = hasYeastTriggers ? 0 : 5;
   } else if (userProfile.scnd_concern === 12) {
     const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || m.type === 'missing_spf');
     scndScore = corePillarsPass ? 5 : 0;
@@ -948,7 +978,7 @@ export async function checkRoutine(
 
   // Re-calculate for Log 4
   const normalizedBreakoutsForLog = normalizeToIds(userProfile.breakout_type);
-  const normalizedScansForLog = normalizeToIds(userProfile.blemish_assessment || userProfile.scan_acne_type);
+  const normalizedScansForLog = normalizeToIds(userProfile.blemish_assessment || userProfile.scan_breakout_type);
   const union = Array.from(new Set([...normalizedBreakoutsForLog, ...normalizedScansForLog]));
   
   const matchingProducts = routineProducts.filter(p => p.cat2 === 'Treatment' || p.cat2 === 'Targeted');

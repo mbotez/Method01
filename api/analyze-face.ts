@@ -23,7 +23,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const age = userAnswers?.age || "Unknown";
     const sensitivity = userAnswers?.sensitivity || [];
     const goals = userAnswers?.goals || [];
-    const breakoutType = userAnswers?.breakoutType || [];
+    const rawBreakoutType = userAnswers?.breakoutType || [];
+    const BREAKOUT_MAP: Record<number | string, string> = {
+      1: 'Surface Whiteheads',
+      2: 'Surface Blackheads',
+      3: 'Post-Blemish Red Marks',
+      4: 'Post-Blemish Dark Spots',
+      5: 'Surface Bumps',
+      6: 'General Congestion',
+      7: 'Surface Blemishes',
+      8: 'Deep & Tender Bumps',
+      'whiteheads': 'Surface Whiteheads',
+      'surface whiteheads': 'Surface Whiteheads',
+      'closed surface pores': 'Surface Whiteheads',
+      'closed pores': 'Surface Whiteheads',
+      'blackheads': 'Surface Blackheads',
+      'surface blackheads': 'Surface Blackheads',
+      'open surface pores': 'Surface Blackheads',
+      'open pores': 'Surface Blackheads',
+      'pie': 'Post-Blemish Red Marks',
+      'post-blemish red marks': 'Post-Blemish Red Marks',
+      'red marks': 'Post-Blemish Red Marks',
+      'pih': 'Post-Blemish Dark Spots',
+      'post-blemish dark spots': 'Post-Blemish Dark Spots',
+      'dark spots': 'Post-Blemish Dark Spots',
+      'surface bumps': 'Surface Bumps',
+      'surface breakouts': 'Surface Bumps',
+      'congestion': 'General Congestion',
+      'general congestion': 'General Congestion',
+      'deep breakouts': 'General Congestion',
+      'surface blemishes': 'Surface Blemishes',
+      'blemishes': 'Surface Blemishes',
+      'deep & tender bumps': 'Deep & Tender Bumps',
+      'deep and tender bumps': 'Deep & Tender Bumps',
+    };
+    const breakoutArr = Array.isArray(rawBreakoutType) ? rawBreakoutType : (rawBreakoutType ? [rawBreakoutType] : []);
+    const breakoutDescriptions = breakoutArr
+      .filter((b: any) => b && b !== 'none')
+      .map((b: any) => BREAKOUT_MAP[b] || (BREAKOUT_MAP[Number(b)] || String(b)));
 
     const ai = getAi();
     const systemInstruction =
@@ -40,7 +77,7 @@ Otherwise, set "face_detected": true, "face_too_small": false, "explanation": ""
 - Age: ${age}
 - Sensitivity & Redness logs: ${JSON.stringify(sensitivity)}
 - Goals: ${JSON.stringify(goals)}
-- Blemish / Congestion notes: ${JSON.stringify(breakoutType)}
+- Blemish / Congestion notes: ${JSON.stringify(breakoutDescriptions.length > 0 ? breakoutDescriptions : 'None specified')}
 
 Determine parameters:
 1. Redness Intensity: Rating from 0 (completely calm) to 100 (intense surface redness/sensitivity). Ground this in actual redness visible in the photo.

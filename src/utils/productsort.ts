@@ -64,8 +64,8 @@ export function clearProductSortCache() {
 
 export async function productSort(userProfile: any, productType: string, page: number = 1, forceRefresh: boolean = false, cat3: number | null = null) {
   const skinType = userProfile?.skin_type || 'any';
-  const barrierRisk = userProfile?.barrier_risk !== undefined && userProfile?.barrier_risk !== null 
-    ? Number(userProfile.barrier_risk) 
+  const barrierStatus = userProfile?.barrier_status !== undefined && userProfile?.barrier_status !== null 
+    ? Number(userProfile.barrier_status) 
     : 0;
   const pregnant = userProfile?.pregnant || 'No';
   const mainConcern = userProfile?.main_concern || '';
@@ -74,7 +74,7 @@ export async function productSort(userProfile: any, productType: string, page: n
     ? [...userProfile.actives_used].sort().join(',') 
     : '';
 
-  const cacheKey = `productsort_${productType}_pg-${page}_cat3-${cat3}_${userProfile?.id || 'anonymous'}_st-${skinType}_br-${barrierRisk}_pr-${pregnant}_mc-${mainConcern}_sc-${scndConcern}_act-${activesUsed}`;
+  const cacheKey = `productsort_${productType}_pg-${page}_cat3-${cat3}_${userProfile?.id || 'anonymous'}_st-${skinType}_bs-${barrierStatus}_pr-${pregnant}_mc-${mainConcern}_sc-${scndConcern}_act-${activesUsed}`;
   
   if (forceRefresh) {
     safeSessionStorageRemove(cacheKey);

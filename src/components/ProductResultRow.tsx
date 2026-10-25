@@ -52,7 +52,6 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
               if (benefits.length === 0) benefits.push('Balances skin & maintains health');
 
               if (s.contains_frag || s.has_fragrance_top50) safetyConcerns.push('Contains Fragrance');
-              if (s.has_fungal_trigger) safetyConcerns.push('Fungal Acne Trigger');
               if (s.has_high_irritation) safetyConcerns.push('High Irritation Risk');
 
               effComp = {
@@ -98,7 +97,7 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
           <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">
             {product.brand}
           </span>
-          <span className="text-sm text-black font-black uppercase truncate">
+          <span className="text-sm text-black font-black uppercase break-words">
             {product.name}
           </span>
           {product.type && (
@@ -109,91 +108,96 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
         </div>
       </div>
 
-      {/* Compatibility & Analysis Display (Shown for all users including unauthenticated) */}
-      {loading ? (
-        <div className="text-[10px] font-black uppercase tracking-wider text-black/40 animate-pulse pt-1">
-          Analyzing product properties & compatibility...
-        </div>
-      ) : compatibility ? (
-        <div className="bg-black/[0.03] border border-black/10 rounded-xl p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Formula Compatibility Analysis</span>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${
-              compatibility.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-              compatibility.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
-              'bg-amber-100 text-amber-800 border-amber-300'
-            }`}>
-              {compatibility.skinTypeFit || 'Compatible'}
-            </span>
-          </div>
-
-          {compatibility.benefits && compatibility.benefits.length > 0 && (
-            <div>
-              <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Targeted Functions Achieved</span>
-              <div className="flex flex-wrap gap-1">
-                {compatibility.benefits.map((benefit: string, idx: number) => (
-                  <span key={idx} className="bg-purple-50 text-purple-900 border border-purple-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-2.5 h-2.5 text-purple-600" /> {benefit}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {compatibility.safetyConcerns && compatibility.safetyConcerns.length > 0 && (
-            <div>
-              <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Triggers & Reactive Markers</span>
-              <div className="flex flex-wrap gap-1">
-                {compatibility.safetyConcerns.map((concern: string, idx: number) => (
-                  <span key={idx} className="bg-amber-50 text-amber-900 border border-amber-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                    <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> {concern}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {compatibility.scores && (
-            <div className="pt-1 border-t border-black/5">
-              <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Formula Properties</span>
-              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
-                  <span className="text-gray-500">Oil-Free</span>
-                  <span className={`font-bold ${compatibility.scores.oil_free ? 'text-emerald-600' : 'text-gray-400'}`}>{compatibility.scores.oil_free ? 'Yes' : 'No'}</span>
-                </div>
-                <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
-                  <span className="text-gray-500">Sulfate-Free</span>
-                  <span className={`font-bold ${compatibility.scores.sulfate_free ? 'text-emerald-600' : 'text-gray-400'}`}>{compatibility.scores.sulfate_free ? 'Yes' : 'No'}</span>
-                </div>
-                <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
-                  <span className="text-gray-500">Fragrance-Free</span>
-                  <span className={`font-bold ${(!compatibility.scores.contains_frag && !compatibility.scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-gray-400'}`}>
-                    {(!compatibility.scores.contains_frag && !compatibility.scores.has_fragrance_top50) ? 'Yes' : 'No'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
-                  <span className="text-gray-500">Fungal Acne Safe</span>
-                  <span className={`font-bold ${!compatibility.scores.has_fungal_trigger ? 'text-emerald-600' : 'text-gray-400'}`}>{!compatibility.scores.has_fungal_trigger ? 'Yes' : 'No'}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {compatibility.conflicts && compatibility.conflicts.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-0.5">
-              {compatibility.conflicts.map((conflict: string, idx: number) => (
-                <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                  <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
-      
-      <p className="text-xs text-black/60 pt-1">
+      <p className="text-xs text-black/70 leading-relaxed break-words pt-1">
         {loading ? 'Loading...' : description || 'No description available.'}
       </p>
+
+      {/* Key Benefits (Visible to all users) */}
+      {compatibility?.benefits && compatibility.benefits.length > 0 && (
+        <div className="pt-1">
+          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Key Benefits</span>
+          <div className="flex flex-wrap gap-1">
+            {compatibility.benefits.map((benefit: string, idx: number) => (
+              <span key={idx} className="bg-purple-50 text-purple-900 border border-purple-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                <CheckCircle2 className="w-2.5 h-2.5 text-purple-600" /> {benefit}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Potential Irritants (Visible to all users) */}
+      {compatibility?.safetyConcerns && compatibility.safetyConcerns.length > 0 && (
+        <div className="pt-1">
+          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Potential Irritants</span>
+          <div className="flex flex-wrap gap-1">
+            {compatibility.safetyConcerns.map((concern: string, idx: number) => (
+              <span key={idx} className="bg-amber-50 text-amber-900 border border-amber-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> {concern}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Formula Properties (Visible to all users) */}
+      {compatibility?.scores && (
+        <div className="pt-1 border-t border-black/5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Formula Properties</span>
+          <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+              <span className="text-gray-500">Oil-Free</span>
+              <span className={`font-bold ${compatibility.scores.oil_free ? 'text-emerald-600' : 'text-gray-400'}`}>{compatibility.scores.oil_free ? 'Yes' : 'No'}</span>
+            </div>
+            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+              <span className="text-gray-500">Sulfate-Free</span>
+              <span className={`font-bold ${compatibility.scores.sulfate_free ? 'text-emerald-600' : 'text-gray-400'}`}>{compatibility.scores.sulfate_free ? 'Yes' : 'No'}</span>
+            </div>
+            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+              <span className="text-gray-500">Fragrance-Free</span>
+              <span className={`font-bold ${(!compatibility.scores.contains_frag && !compatibility.scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-gray-400'}`}>
+                {(!compatibility.scores.contains_frag && !compatibility.scores.has_fragrance_top50) ? 'Yes' : 'No'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+              <span className="text-gray-500">Malassezia Safe</span>
+              <span className={`font-bold ${!compatibility.scores.has_yeast_trigger ? 'text-emerald-600' : 'text-gray-400'}`}>{!compatibility.scores.has_yeast_trigger ? 'Yes' : 'No'}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Formula Compatibility Analysis / Analysis Section (Visible ONLY when user is logged in) */}
+      {user && (
+        loading ? (
+          <div className="text-[10px] font-black uppercase tracking-wider text-black/40 animate-pulse pt-1">
+            Analyzing product properties & compatibility...
+          </div>
+        ) : compatibility ? (
+          <div className="bg-black/[0.03] border border-black/10 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Skin Compatibility</span>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${
+                compatibility.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                compatibility.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
+                'bg-amber-100 text-amber-800 border-amber-300'
+              }`}>
+                {compatibility.skinTypeFit || 'Compatible'}
+              </span>
+            </div>
+
+            {compatibility.conflicts && compatibility.conflicts.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {compatibility.conflicts.map((conflict: string, idx: number) => (
+                  <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                    <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null
+      )}
 
       {ingredients && (
         <div className="pt-1">
@@ -204,7 +208,7 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
             Ingredients {showIngredients ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
           {showIngredients && (
-            <p className="text-xs text-black/60 mt-1 bg-black/5 p-2 rounded-lg">
+            <p className="text-xs text-black/60 mt-1 bg-black/5 p-2 rounded-lg break-words">
               {ingredients}
             </p>
           )}

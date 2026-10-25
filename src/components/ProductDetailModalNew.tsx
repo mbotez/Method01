@@ -46,7 +46,7 @@ export const ProductDetailModalNew = ({ product, onClose }: { product: any, onCl
           <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Suitable for</p>
           <div className="text-xs text-gray-700 leading-relaxed space-y-1">
             <p><span className="font-semibold text-gray-900">Skin type:</span> Dry, Normal, Combination, All</p>
-            <p><span className="font-semibold text-gray-900">Concerns:</span> Acne, Redness, Dry skin</p>
+            <p><span className="font-semibold text-gray-900">Concerns:</span> Breakouts, Redness, Dry skin</p>
           </div>
         </div>
 

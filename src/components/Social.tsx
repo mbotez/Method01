@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageCircle, Users, Heart, Share2, MoreVertical, X, Search, Plus, Send, SlidersHorizontal, Camera, ArrowRight } from 'lucide-react';
+import { MessageCircle, Users, Heart, Share2, MoreVertical, X, Search, Plus, Send, SlidersHorizontal, Camera, ArrowRight, ChevronDown } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
@@ -108,6 +108,7 @@ export const Social = ({
   const setActiveMainTab = externalSetActiveMainTab !== undefined ? externalSetActiveMainTab : internalSetActiveMainTab;
   const [videoCategoryFilter, setVideoCategoryFilter] = useState<'All' | 'Glass skin' | 'Routine' | 'Educational'>('All');
   const [isVideoCategoryDropdownOpen, setIsVideoCategoryDropdownOpen] = useState(false);
+  const [expandedVideoProducts, setExpandedVideoProducts] = useState<Record<string, boolean>>({});
   const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
   const [savedVideos, setSavedVideos] = useState<Record<string, boolean>>({});
   const [videoLikesCount, setVideoLikesCount] = useState<Record<string, number>>({
@@ -272,7 +273,7 @@ export const Social = ({
       if (userSearch.length > 0) {
         const { data, error } = await supabase
           .from('users')
-          .select('id, username, skin_type')
+          .select('id, username')
           .ilike('username', `%${userSearch}%`)
           .limit(5);
         if (error) {
@@ -296,8 +297,7 @@ export const Social = ({
         .select(`
           *,
           users (
-            username,
-            skin_type
+            username
           )
         `)
         .order('timestamp', { ascending: false })
@@ -346,7 +346,7 @@ export const Social = ({
           .select(`
             id,
             following_id,
-            following:users!following_id(username, skin_type)
+            following:users!following_id(username)
           `)
           .eq('follower_id', user.id);
         
@@ -499,7 +499,7 @@ export const Social = ({
       <div className="w-full md:w-[70%] md:pl-10 h-full overflow-y-auto">
         
         {/* Main Tab Switcher */}
-        <div className="flex gap-6 border-b border-black/5 pb-2.5 mb-6">
+        <div className="flex justify-center gap-6 border-b border-black/5 pb-2.5 mb-6">
           <button 
             onClick={() => {
               setActiveMainTab('videos');
@@ -511,7 +511,7 @@ export const Social = ({
                 : 'text-black/40 hover:text-black/60'
             }`}
           >
-            Video Tutorials
+            Social media
           </button>
           <button 
             onClick={() => {
@@ -542,7 +542,7 @@ export const Social = ({
         </div>
 
         {/* Search Bar (Shared for both tabs) */}
-        <div className="flex items-center gap-2 mb-6 w-full">
+        <div className="flex items-center gap-2 mb-6 max-w-xl mx-auto w-full">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-black/30" />
             <input 
@@ -650,7 +650,7 @@ export const Social = ({
                 <p className="text-xs text-black/40 font-bold uppercase italic">No videos match your search or filters</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-32">
+              <div className="grid grid-cols-2 gap-2 md:gap-3 pb-32">
                 {filteredVideos.map(video => {
                   const isLiked = likedVideos[video.id];
                   const isSaved = savedVideos[video.id];
@@ -693,26 +693,43 @@ export const Social = ({
 
                         {/* Products */}
                         {video.video_products.length > 0 && (
-                          <div className="space-y-2 pt-2 pb-2">
-                            {video.video_products.map((vp) => (
-                              <button
-                                key={vp.product_id}
-                                onClick={() => openProductCard(vp.product_id)}
-                                className="flex items-center gap-3 w-full p-2 bg-black/5 rounded-xl hover:bg-venus-accent/10 transition-colors text-left"
-                              >
-                                {vp.products.photo_url && (
-                                  <img 
-                                    src={vp.products.photo_url} 
-                                    alt={vp.products.name} 
-                                    className="w-12 h-12 object-cover rounded-lg flex-shrink-0"
-                                  />
-                                )}
-                                <div className="flex flex-col justify-center overflow-hidden">
-                                  <span className="text-xs font-black uppercase tracking-wider text-black">{vp.products.brand}</span>
-                                  <span className="text-[10px] font-bold text-black/60 truncate">{vp.products.name}</span>
-                                </div>
-                              </button>
-                            ))}
+                          <div className="pt-2 pb-2 border-t border-black/5">
+                            <button
+                              onClick={() => {
+                                setExpandedVideoProducts(prev => ({
+                                  ...prev,
+                                  [video.id]: !prev[video.id]
+                                }));
+                              }}
+                              className="flex items-center justify-between w-full p-2 bg-black/5 hover:bg-black/10 rounded-xl transition-colors text-left text-[10px] font-black uppercase tracking-wider"
+                            >
+                              <span>Products ({video.video_products.length})</span>
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedVideoProducts[video.id] ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {expandedVideoProducts[video.id] && (
+                              <div className="space-y-2 pt-2">
+                                {video.video_products.map((vp) => (
+                                  <button
+                                    key={vp.product_id}
+                                    onClick={() => openProductCard(vp.product_id)}
+                                    className="flex items-center gap-3 w-full p-2 bg-black/5 rounded-xl hover:bg-venus-accent/10 transition-colors text-left"
+                                  >
+                                    {vp.products.photo_url && (
+                                      <img 
+                                        src={vp.products.photo_url} 
+                                        alt={vp.products.name} 
+                                        className="w-12 h-12 object-cover rounded-lg flex-shrink-0"
+                                      />
+                                    )}
+                                    <div className="flex flex-col justify-center overflow-hidden">
+                                      <span className="text-xs font-black uppercase tracking-wider text-black">{vp.products.brand}</span>
+                                      <span className="text-[10px] font-bold text-black/60 truncate">{vp.products.name}</span>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
 

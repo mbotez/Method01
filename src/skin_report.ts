@@ -1,18 +1,20 @@
 // Skin report generation logic based on questionnaire answers
 // This replaces the AI-generated reports with deterministic rule-based sentence generation.
+import { breakoutTypeStringToId } from './utils/RoutineCheck';
 
 export interface UserProfileAnswers {
   skin_type?: string;
-  breakout_type?: string | string[] | null;
-  barrier_risk?: number;
+  breakout_type?: number[] | number | string[] | string | null;
+  barrier_status?: number;
+  skin_characteristics?: number;
   burn_risk?: string;
   sunscreen?: string;
   redness_score?: number | null;
   wrinkles_score?: number | null;
   redness_main_area?: string | null;
   wrinkels_main_area?: string | null;
-  scan_acne_type?: string | null;
-  blemish_assessment?: string | null;
+  scan_breakout_type?: string | number | null;
+  blemish_assessment?: string | number | null;
   [key: string]: any;
 }
 
@@ -43,28 +45,40 @@ export function mapAnswersToProfile(answers: any): UserProfileAnswers {
   };
 
   const sensitivityList = answers.sensitivity || [];
-  const symptomsScore = sensitivityList.length;
+  const skinCharacteristicsScore = sensitivityList.length;
   const reactionScore = reactionMap[answers.reaction] || 0;
 
-  // Normalizes breakoutType into an array format regardless of input type
-  const breakoutTypeArray = Array.isArray(answers.breakoutType)
-    ? answers.breakoutType
-    : answers.breakoutType
-    ? [answers.breakoutType]
-    : [];
+  // Normalizes breakoutType into an array of numeric IDs (1 through 8)
+  const rawBreakout = answers.breakoutType;
+  const rawList = Array.isArray(rawBreakout)
+    ? rawBreakout
+    : (rawBreakout !== undefined && rawBreakout !== null ? [rawBreakout] : []);
+
+  const breakoutTypeArray: number[] = rawList
+    .map(item => {
+      if (typeof item === 'number') return item;
+      if (typeof item === 'string') {
+        const parsed = parseInt(item, 10);
+        if (!isNaN(parsed) && parsed >= 1 && parsed <= 8) return parsed;
+        return breakoutTypeStringToId[item.trim().toLowerCase()] ?? 0;
+      }
+      return 0;
+    })
+    .filter(n => n >= 1 && n <= 8);
 
   return {
     skin_type: feelMap[answers.feel] || 'normal',
     breakout_type: breakoutTypeArray,
-    barrier_risk: symptomsScore + reactionScore,
+    skin_characteristics: skinCharacteristicsScore,
+    barrier_status: skinCharacteristicsScore + reactionScore,
     burn_risk: sunMap[answers.sun] || 'medium',
     sunscreen: answers.sunscreen || 'Sometimes',
     redness_score: answers.redness_score !== undefined ? Number(answers.redness_score) : null,
     wrinkles_score: answers.wrinkles_score !== undefined ? Number(answers.wrinkles_score) : null,
     redness_main_area: answers.redness_main_area || null,
     wrinkels_main_area: answers.wrinkels_main_area || null,
-    scan_acne_type: answers.blemish_assessment || answers.scan_acne_type || null,
-    blemish_assessment: answers.blemish_assessment || answers.scan_acne_type || null,
+    scan_breakout_type: answers.blemish_assessment || answers.scan_breakout_type || null,
+    blemish_assessment: answers.blemish_assessment || answers.scan_breakout_type || null,
     sex: answers.sex || null,
     pregnant: answers.pregnant || null,
     actives_used: answers.activesUsed || []
@@ -87,79 +101,127 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
   // Handle breakout_type null check
   const isBreakoutNull = (
     !profile.breakout_type ||
-    (Array.isArray(profile.breakout_type) && profile.breakout_type.filter(t => t && t.toLowerCase() !== 'none').length === 0) ||
+    (Array.isArray(profile.breakout_type) && profile.breakout_type.filter(t => t != null && t !== 'none' && t !== 0).length === 0) ||
     (typeof profile.breakout_type === 'string' && (profile.breakout_type.trim() === '' || profile.breakout_type.toLowerCase() === 'none'))
   );
 
-  const BREAKOUT_DISPLAY_MAP: Record<string, string> = {
-    whiteheads: 'surface whiteheads',
-    blackheads: 'surface blackheads',
-    pie: 'post-blemish red marks',
-    pih: 'post-blemish dark spots',
-    papules: 'surface bumps',
-    congestion: 'skin congestion',
-    pustules: 'surface blemishes',
-    severe_painful: 'deep & tender blemishes'
+  const BREAKOUT_DISPLAY_MAP: Record<number | string, string> = {
+    1: 'surface whiteheads',
+    2: 'surface blackheads',
+    3: 'post-blemish red marks',
+    4: 'post-blemish dark spots',
+    5: 'surface bumps',
+    6: 'general congestion',
+    7: 'surface blemishes',
+    8: 'deep & tender blemishes',
+    // Clean string fallbacks
+    'whiteheads': 'surface whiteheads',
+    'surface whiteheads': 'surface whiteheads',
+    'closed surface pores': 'surface whiteheads',
+    'closed pores': 'surface whiteheads',
+    'blackheads': 'surface blackheads',
+    'surface blackheads': 'surface blackheads',
+    'open surface pores': 'surface blackheads',
+    'open pores': 'surface blackheads',
+    'pie': 'post-blemish red marks',
+    'post-blemish red marks': 'post-blemish red marks',
+    'red marks': 'post-blemish red marks',
+    'pih': 'post-blemish dark spots',
+    'post-blemish dark spots': 'post-blemish dark spots',
+    'dark spots': 'post-blemish dark spots',
+    'surface bumps': 'surface bumps',
+    'surface breakouts': 'surface bumps',
+    'congestion': 'general congestion',
+    'general congestion': 'general congestion',
+    'deep breakouts': 'general congestion',
+    'surface blemishes': 'surface blemishes',
+    'blemishes': 'surface blemishes',
+    'deep & tender bumps': 'deep & tender blemishes',
+    'deep and tender bumps': 'deep & tender blemishes'
   };
 
   // Format breakout_type for display S1.a / S1.b
   let breakout_display = '';
   if (Array.isArray(profile.breakout_type)) {
-    const validTypes = profile.breakout_type.filter(t => t && t.toLowerCase() !== 'none');
+    const validTypes = profile.breakout_type.filter(t => t != null && t !== 'none' && t !== 0);
     if (validTypes.length > 0) {
       breakout_display = validTypes.map(t => {
-        const val = t.toLowerCase();
-        return BREAKOUT_DISPLAY_MAP[val] || val;
+        return BREAKOUT_DISPLAY_MAP[t as any] || (typeof t === 'string' ? t.toLowerCase() : String(t));
       }).join(', ');
       const lastComma = breakout_display.lastIndexOf(', ');
       if (lastComma !== -1) {
         breakout_display = breakout_display.substring(0, lastComma) + ' and ' + breakout_display.substring(lastComma + 2);
       }
     }
-  } else if (typeof profile.breakout_type === 'string' && profile.breakout_type.trim() && profile.breakout_type.toLowerCase() !== 'none') {
-    const val = profile.breakout_type.toLowerCase();
-    breakout_display = BREAKOUT_DISPLAY_MAP[val] || val;
+  } else if (profile.breakout_type != null && profile.breakout_type !== 'none' && profile.breakout_type !== 0) {
+    const val = profile.breakout_type;
+    breakout_display = BREAKOUT_DISPLAY_MAP[val as any] || (typeof val === 'string' ? val.toLowerCase() : String(val));
   }
 
-  // Handle blemish_assessment / scan_acne_type null check
-  const scanVal = profile.blemish_assessment || profile.scan_acne_type;
-  const isScanAcneNull = (
+  // Handle blemish_assessment / scan_breakout_type null check
+  const scanVal = profile.blemish_assessment || profile.scan_breakout_type;
+  const isScanBreakoutNull = (
     !scanVal || 
-    scanVal.trim() === '' || 
-    scanVal.toLowerCase() === 'none'
+    String(scanVal).trim() === '' || 
+    String(scanVal).toLowerCase() === 'none'
   );
 
-  let scan_acne_display = '';
-  if (scanVal && scanVal.toLowerCase() !== 'none') {
-    scan_acne_display = scanVal.toLowerCase();
+  let scan_breakout_display = '';
+  if (scanVal && String(scanVal).toLowerCase() !== 'none') {
+    scan_breakout_display = String(scanVal).toLowerCase();
   }
 
   // Semantic matcher for breakout_type and scan scan result
-  function breakoutMatchesScan(breakoutVal: string, scanVal: string): boolean {
-    const b = breakoutVal.toLowerCase().trim();
+  function breakoutMatchesScan(breakoutVal: number | string, scanVal: string): boolean {
     const s = scanVal.toLowerCase().trim();
+    let bId: number | null = null;
+    if (typeof breakoutVal === 'number') {
+      bId = breakoutVal;
+    } else {
+      const parsed = parseInt(String(breakoutVal), 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 8) {
+        bId = parsed;
+      } else {
+        bId = breakoutTypeStringToId[String(breakoutVal).toLowerCase().trim()] || null;
+      }
+    }
+
+    if (bId !== null) {
+      switch (bId) {
+        case 1: // Surface Whiteheads
+          return s.includes('whitehead') || s.includes('closed') || s.includes('closed surface pores');
+        case 2: // Surface Blackheads
+          return s.includes('blackhead') || s.includes('open') || s.includes('open surface pores');
+        case 3: // Post-Blemish Red Marks
+          return s.includes('red') || s.includes('post-blemish red marks') || s.includes('red marks') || s.includes('pie');
+        case 4: // Post-Blemish Dark Spots
+          return s.includes('dark') || s.includes('post-blemish dark spots') || s.includes('dark spots') || s.includes('pih');
+        case 5: // Surface Bumps
+          return s.includes('bump') || s.includes('surface bumps') || s.includes('surface breakouts');
+        case 6: // General Congestion
+          return s.includes('congestion') || s.includes('general congestion') || s.includes('deep breakouts');
+        case 7: // Surface Blemishes
+          return s.includes('blemish') || s.includes('surface blemishes');
+        case 8: // Deep & Tender Bumps
+          return s.includes('deep') || s.includes('tender') || s.includes('deep & tender bumps') || s.includes('deep and tender bumps');
+        default:
+          return false;
+      }
+    }
+
+    const b = String(breakoutVal).toLowerCase().trim();
     if (b === s) return true;
     if (b.includes(s) || s.includes(b)) return true;
-    
-    // Semantic equivalent matching:
-    if (b.includes('severe_painful') && s.includes('tender')) return true;
-    if (b.includes('blackhead') && (s.includes('blackhead') || s.includes('open comedone') || s.includes('open_comedone'))) return true;
-    if (b.includes('whitehead') && (s.includes('whitehead') || s.includes('closed comedone') || s.includes('closed_comedone'))) return true;
-    if (b.includes('pimple') && (s.includes('papule') || s.includes('pustule') || s.includes('inflam'))) return true;
-    if (b.includes('bump') && (s.includes('papule') || s.includes('comedone'))) return true;
-    if (b.includes('mark') || b.includes('spot')) {
-      if (s.includes('hyperpigmentation') || s.includes('erythema') || s.includes('pie') || s.includes('pih')) return true;
-    }
     return false;
   }
 
-  function doesBreakoutMatchScanAcne(breakoutType: string | string[] | null | undefined, scanAcneType: string | null | undefined): boolean {
-    if (!breakoutType || !scanAcneType) return false;
-    if (scanAcneType.toLowerCase() === 'none') return false;
+  function doesBreakoutMatchScanBreakout(breakoutType: number | number[] | string | string[] | null | undefined, scanBreakoutType: string | number | null | undefined): boolean {
+    if (!breakoutType || !scanBreakoutType) return false;
+    if (String(scanBreakoutType).toLowerCase() === 'none') return false;
     
-    const scanVal = scanAcneType;
+    const scanVal = String(scanBreakoutType);
     if (Array.isArray(breakoutType)) {
-      const validTypes = breakoutType.filter(t => t && t.toLowerCase() !== 'none');
+      const validTypes = breakoutType.filter(t => t != null && t !== 'none' && t !== 0);
       return validTypes.some(b => breakoutMatchesScan(b, scanVal));
     } else {
       return breakoutMatchesScan(breakoutType, scanVal);
@@ -168,25 +230,25 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
 
   // --- First sentence: ---
   // 'You told us that you have [skin_type]' & 
-  // S1.a. if user [breakout_type] not null AND [breakout_type] = [scan_acne_type], then 'with signs of [breakout_type].'.
-  // S1.b. if user [breakout_type] not null AND [breakout_type] != [scan_acne_type], then 'with signs of [breakout_type], however your face scan shows it might actually be [scan_acne_type].'.
-  // S1.c. if user [breakout_type] = null AND [scan_acne_type] = not null, then ' and your face scan shows signs of [scan_acne_type].'.
-  // d. if user [breakout_type] = null AND [scan_acne_type] = null, then ' and your face is as clear as it gets'.
+  // S1.a. if user [breakout_type] not null AND [breakout_type] = [scan_breakout_type], then 'with signs of [breakout_type].'.
+  // S1.b. if user [breakout_type] not null AND [breakout_type] != [scan_breakout_type], then 'with signs of [breakout_type], however your face scan shows it might actually be [scan_breakout_type].'.
+  // S1.c. if user [breakout_type] = null AND [scan_breakout_type] = not null, then ' and your face scan shows signs of [scan_breakout_type].'.
+  // d. if user [breakout_type] = null AND [scan_breakout_type] = null, then ' and your face is as clear as it gets'.
   let firstSentence = `You told us that you have ${skinTypeWithSkin}`;
 
   if (!isBreakoutNull) {
-    const isAcneMatch = doesBreakoutMatchScanAcne(profile.breakout_type, scanVal);
-    if (isAcneMatch) {
+    const isBreakoutMatch = doesBreakoutMatchScanBreakout(profile.breakout_type, scanVal);
+    if (isBreakoutMatch) {
       // S1.a
       firstSentence += ` with signs of ${breakout_display}.`;
     } else {
       // S1.b
-      firstSentence += ` with signs of ${breakout_display}, however your face scan shows it might actually be ${scan_acne_display}.`;
+      firstSentence += ` with signs of ${breakout_display}, however your face scan shows it might actually be ${scan_breakout_display}.`;
     }
   } else {
-    if (!isScanAcneNull) {
+    if (!isScanBreakoutNull) {
       // S1.c
-      firstSentence += ` and your face scan shows signs of ${scan_acne_display}.`;
+      firstSentence += ` and your face scan shows signs of ${scan_breakout_display}.`;
     } else {
       // d (S1.d)
       firstSentence += ` and your face is as clear as it gets.`;
@@ -195,11 +257,11 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
 
   // --- Second sentence: ---
   // 'Your skin barrier appears to be ' &
-  // S2.I. if [barrier_risk] <=3 then 'healthy' 
-  // S2.II. if [barrier_risk] >3 and <=7 then 'slightly compromised' 
-  // S2.III. if [barrier_risk] >7 then 'highly compromised' 
+  // S2.I. if [barrier_status] <=3 then 'healthy' 
+  // S2.II. if [barrier_status] >3 and <=7 then 'slightly compromised' 
+  // S2.III. if [barrier_status] >7 then 'highly compromised' 
 
-  const barrier_risk = profile.barrier_risk != null ? Number(profile.barrier_risk) : 0;
+  const barrier_status = profile.barrier_status != null ? Number(profile.barrier_status) : 0;
   const burn_risk = (profile.burn_risk || 'medium').toLowerCase();
   const redness_score = profile.redness_score != null ? Number(profile.redness_score) : 0;
   
@@ -210,8 +272,8 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
 
   let secondSentence = 'Your skin barrier appears to be ';
 
-  // --- S2.I: healthy ([barrier_risk] <=3) ---
-  if (barrier_risk <= 3) {
+  // --- S2.I: healthy ([barrier_status] <=3) ---
+  if (barrier_status <= 3) {
     secondSentence += 'healthy';
     
     if (burn_risk === 'low' && redness_score < 30) {
@@ -245,8 +307,8 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
       secondSentence += '.';
     }
   } 
-  // --- S2.II: slightly compromised ([barrier_risk] >3 and <=7) ---
-  else if (barrier_risk > 3 && barrier_risk <= 7) {
+  // --- S2.II: slightly compromised ([barrier_status] >3 and <=7) ---
+  else if (barrier_status > 3 && barrier_status <= 7) {
     secondSentence += 'slightly compromised';
     
     if (burn_risk === 'low' && redness_score < 30) {
@@ -280,8 +342,8 @@ export function generateSkinReportText(profile: UserProfileAnswers): string {
       secondSentence += '.';
     }
   } 
-  // --- S2.III: highly compromised ([barrier_risk] >7) ---
-  else if (barrier_risk > 7) {
+  // --- S2.III: highly compromised ([barrier_status] >7) ---
+  else if (barrier_status > 7) {
     secondSentence += 'highly compromised';
     
     if (burn_risk === 'low' && redness_score < 30) {

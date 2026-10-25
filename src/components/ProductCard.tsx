@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronDown, ChevronUp, Loader2, CheckCircle2, AlertTriangle, Heart, RefreshCw, Calendar, HelpCircle, Trash2 } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Loader2, CheckCircle2, AlertTriangle, Heart, RefreshCw, Calendar, HelpCircle, Trash2, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
 
 // Concern ID mapping dictionary for displaying user-friendly text labels
 const CONCERN_MAP: Record<number, string> = {
-  1: 'Acne & Scars',
+  1: 'Breakouts & Scars',
   2: 'Redness',
   3: 'Dark Spots',
   4: 'Dullness',
@@ -14,8 +14,8 @@ const CONCERN_MAP: Record<number, string> = {
   7: 'Wrinkles & Fine Lines',
   8: 'Pores & Texture',
   9: 'Sensitivity',
-  10: 'Eczema',
-  11: 'Fungal Acne',
+  10: 'Extremely dry & flaky Skin',
+  11: 'Yeast-induced Breakouts',
   12: 'Not Sure'
 };
 
@@ -182,37 +182,11 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
         const isAuthed = !!session?.user?.id;
         setIsAuthenticated(isAuthed);
 
-        if (!isAuthed) {
-          const { data: productData, error: productError } = await supabase
-            .from('products')
-            .select('*')
-            .eq('id', productId)
-            .maybeSingle();
+        const targetUserId = session?.user?.id || '00000000-0000-0000-0000-000000000000';
 
-          if (productError) {
-            console.error('[ProductCard] Failed to fetch product for unauthenticated user:', productError);
-            setRpcErrorObj({ error: productError.message, code: productError.code, stuck_at_step: 'Products Table Fetch' });
-          } else if (productData) {
-            setProduct(productData);
-            setScores(null);
-            setUserProfile(null);
-            setComp({
-              skinTypeFit: 'Take quiz to check fit',
-              conflicts: [],
-              benefits: ['Balances skin & maintains health'],
-              safetyConcerns: []
-            });
-            setRpcErrorObj(null);
-          } else {
-            setProduct(null);
-          }
-          setLoading(false);
-          return;
-        }
-
-        // Always invoke database engine calculation via a clean RPC function call for authenticated users
+        // Always invoke database engine calculation via RPC for both auth and unauth users
         const { data, error } = await supabase.rpc('evaluate_product_compatibility', {
-          p_user_id: session.user.id,
+          p_user_id: targetUserId,
           p_product_id: productId
         });
 
@@ -231,7 +205,25 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
         if (data) {
           if (data.error) {
             console.error('[ProductCard] Database engine returned diagnostic error:', data);
-            setRpcErrorObj(data);
+            // Attempt to gracefully load product info from products table directly so UI isn't blocked
+            const { data: directProduct } = await supabase
+              .from('products')
+              .select('*')
+              .eq('id', productId)
+              .maybeSingle();
+
+            if (directProduct) {
+              setProduct(directProduct);
+              setComp({
+                skinTypeFit: 'General Fit',
+                conflicts: [],
+                benefits: ['Balances skin & maintains health'],
+                safetyConcerns: []
+              });
+              setRpcErrorObj(null);
+            } else {
+              setRpcErrorObj(data);
+            }
           } else {
             let effectiveComp = data.compatibility;
             if (!effectiveComp) {
@@ -255,7 +247,7 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               if (s.has_brightening_ingredient) {
                 benefits.push('Brightens skin tone & fades dark spots');
               }
-              if (s.clear_blackheads > 0 || s.clear_surface_acne > 0) {
+              if (s.clear_blackheads > 0 || s.clear_surface_breakouts > 0) {
                 benefits.push('Clears pores & blemishes');
               }
               if (benefits.length === 0) {
@@ -265,8 +257,8 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               if (s.contains_frag || s.has_fragrance_top50) {
                 safetyConcerns.push('Contains Fragrance');
               }
-              if (s.has_fungal_trigger) {
-                safetyConcerns.push('Fungal Acne Trigger');
+              if (s.has_yeast_trigger) {
+                safetyConcerns.push('Yeast-induced Breakout Trigger');
               }
               if (s.has_high_irritation) {
                 safetyConcerns.push('High Irritation Risk');
@@ -279,7 +271,7 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               }
 
               effectiveComp = {
-                skinTypeFit: 'Compatible Formula',
+                skinTypeFit: 'General Catalog Formula',
                 conflicts: [],
                 benefits,
                 safetyConcerns
@@ -290,8 +282,8 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               if ((s.contains_frag || s.has_fragrance_top50) && !concerns.some(c => c.toLowerCase().includes('fragrance'))) {
                 concerns.push('Contains Fragrance');
               }
-              if (s.has_fungal_trigger && !concerns.some(c => c.toLowerCase().includes('fungal'))) {
-                concerns.push('Fungal Acne Trigger');
+              if (s.has_yeast_trigger && !concerns.some(c => c.toLowerCase().includes('yeast'))) {
+                concerns.push('Yeast-induced Breakout Trigger');
               }
               if (s.has_high_irritation && !concerns.some(c => c.toLowerCase().includes('irritation'))) {
                 concerns.push('High Irritation Risk');
@@ -310,7 +302,7 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               sulfate_free: true,
               contains_frag: false,
               has_fragrance_top50: false,
-              has_fungal_trigger: false,
+              has_yeast_trigger: false,
               night: false
             };
 
@@ -407,144 +399,178 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
   const displayIngredients = isIngredientsExpanded ? (product.ingredients || []) : (product.ingredients || []).slice(0, 5);
 
   return (
-    <div className="bg-white rounded-2xl p-4 shadow-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto border border-gray-100">
+    <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto border border-gray-100 space-y-3">
       <button className="absolute top-4 right-4 text-gray-400 hover:text-black transition" onClick={onClose}>
         <X className="w-5 h-5"/>
       </button>
       
-      {/* Unauthenticated banner prompt */}
+      {/* Unauthenticated banner prompt matching photo search card */}
       {!isAuthenticated && (
-        <div className="mb-4 bg-gradient-to-r from-purple-50 via-pink-50 to-purple-50 border border-purple-200 p-3.5 rounded-xl text-center shadow-xs">
-          <p className="text-xs font-black text-purple-900 tracking-wide uppercase leading-snug">
-            Take the skin quiz or log in to see if it's a good fit :)
+        <div className="pb-4 border-b border-gray-200 text-center space-y-2 mb-2">
+          <p className="text-sm font-bold text-black">
+            Take skin quiz or log in to find out if these products fit your skin
           </p>
-          <div className="mt-2.5 flex items-center justify-center gap-2">
-            <button 
+          <button
+            onClick={() => {
+              onClose();
+              window.dispatchEvent(new CustomEvent('open-quiz-or-login'));
+            }}
+            className="w-full bg-black text-white py-3 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black/80 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+          >
+            Take skin quiz
+          </button>
+          <div className="text-center pt-1">
+            <span
               onClick={() => {
                 onClose();
-                window.dispatchEvent(new CustomEvent('open-quiz-or-login'));
+                window.dispatchEvent(new CustomEvent('open-login-modal'));
               }}
-              className="text-[10px] font-black uppercase tracking-widest bg-black text-white px-3.5 py-1.5 rounded-lg hover:bg-venus-accent transition-colors cursor-pointer shadow-sm"
+              className="text-xs font-bold text-black underline hover:text-venus-accent cursor-pointer"
             >
-              Take Quiz / Log In
-            </button>
+              Log in
+            </span>
           </div>
         </div>
       )}
 
-      {/* Product Metadata Header */}
-      <p className="text-[10px] font-black uppercase tracking-widest text-purple-600 mb-1">{product.brand || 'Unknown Brand'}</p>
-      <h2 className="text-xl font-black mb-1 text-black">{product.name || 'Unnamed Product'}</h2>
-      {product.type && <p className="text-xs text-gray-400 mb-4 uppercase tracking-wider font-medium">{product.type}</p>}
-      
+      {/* Product Header (Image left, Brand/Name/Type right) */}
+      <div className="flex items-start gap-4">
+        {(product.photo_url || trackerItem?.photo_url) ? (
+          <img
+            src={product.photo_url || trackerItem?.photo_url}
+            alt={product.name || 'Product'}
+            referrerPolicy="no-referrer"
+            className="w-16 h-16 object-cover rounded-xl border-2 border-black/15 flex-shrink-0"
+          />
+        ) : (
+          <div className="w-16 h-16 bg-black/5 rounded-xl border-2 border-black/15 flex items-center justify-center flex-shrink-0 text-[10px] text-black/40 font-bold">
+            No Image
+          </div>
+        )}
+
+        <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+          <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">
+            {product.brand || product.Brand || 'Unknown Brand'}
+          </span>
+          <span className="text-sm text-black font-black uppercase break-words">
+            {product.name || product.product_name || product.Name || product.ProductName || product['Product Name'] || 'Unnamed'}
+          </span>
+          {(product.type || product.Type) && (
+            <span className="text-[10px] text-black/50 font-semibold uppercase">
+              {product.type || product.Type}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Product Description */}
       {product.description && (
-        <p className="text-xs text-gray-600 mb-5 leading-relaxed">{product.description}</p>
+        <p className="text-xs text-black/70 leading-relaxed break-words pt-1">
+          {product.description}
+        </p>
       )}
 
+      {/* Key Benefits */}
+      {comp?.benefits && comp.benefits.length > 0 && (
+        <div className="pt-1">
+          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Key Benefits</span>
+          <div className="flex flex-wrap gap-1">
+            {comp.benefits.map((benefit: string, idx: number) => (
+              <span key={idx} className="bg-purple-50 text-purple-900 border border-purple-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                <CheckCircle2 className="w-2.5 h-2.5 text-purple-600" /> {benefit}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
+      {/* Potential Irritants */}
+      {comp?.safetyConcerns && comp.safetyConcerns.length > 0 && (
+        <div className="pt-1">
+          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Potential Irritants</span>
+          <div className="flex flex-wrap gap-1">
+            {comp.safetyConcerns.map((concern: string, idx: number) => (
+              <span key={idx} className="bg-amber-50 text-amber-900 border border-amber-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> {concern}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
-      {comp && (
-        <div className="space-y-4 border-t pt-4 mb-5">
-          <h3 className="font-black text-xs uppercase tracking-widest text-gray-400">Personal Compatibility Analysis</h3>
-          {/* Skin Type Fit Badge */}
-          <div className="flex items-center justify-between bg-gray-50 p-2.5 rounded-xl border border-gray-100">
-            <span className="text-xs font-bold text-gray-700">Skin Type Fit {userProfile?.skin_type ? `(${userProfile.skin_type})` : ''}:</span>
-            <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border ${
-              comp.skinTypeFit === 'Good Fit' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-              comp.skinTypeFit === 'Bad Fit' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-gray-100 text-gray-600 border-gray-200'
+      {/* Formula Properties */}
+      {scores && (
+        <div className="pt-1 border-t border-black/5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Formula Properties</span>
+          <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+              <span className="text-gray-500">Oil-Free</span>
+              <span className={`font-bold ${scores.oil_free ? 'text-emerald-600' : 'text-gray-400'}`}>{scores.oil_free ? 'Yes' : 'No'}</span>
+            </div>
+            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+              <span className="text-gray-500">Sulfate-Free</span>
+              <span className={`font-bold ${scores.sulfate_free ? 'text-emerald-600' : 'text-gray-400'}`}>{scores.sulfate_free ? 'Yes' : 'No'}</span>
+            </div>
+            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+              <span className="text-gray-500">Fragrance-Free</span>
+              <span className={`font-bold ${(!scores.contains_frag && !scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-gray-400'}`}>
+                {(!scores.contains_frag && !scores.has_fragrance_top50) ? 'Yes' : 'No'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+              <span className="text-gray-500">Malassezia Safe</span>
+              <span className={`font-bold ${!scores.has_yeast_trigger ? 'text-emerald-600' : 'text-gray-400'}`}>{!scores.has_yeast_trigger ? 'Yes' : 'No'}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Formula Compatibility Analysis (When authenticated) */}
+      {isAuthenticated && comp && (
+        <div className="bg-black/[0.03] border border-black/10 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Skin Compatibility</span>
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${
+              comp.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+              comp.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
+              'bg-amber-100 text-amber-800 border-amber-300'
             }`}>
               {comp.skinTypeFit || 'Compatible'}
             </span>
           </div>
 
-
-
-          {/* Routine Layering Conflicts */}
           {comp.conflicts && comp.conflicts.length > 0 && (
-            <div className="bg-red-50 border border-red-100 p-3 rounded-xl space-y-1.5">
-              <p className="text-[10px] font-black text-red-800 uppercase tracking-wider flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-600" /> Layering & System Blockers
-              </p>
-              <ul className="text-[11px] text-red-950 font-medium list-disc list-inside space-y-1 leading-normal">
-                {comp.conflicts.map((conflict: string, i: number) => <li key={i}>{conflict}</li>)}
-              </ul>
-            </div>
-          )}
-
-          {/* Targeted Skin Benefit System Tags */}
-          {comp.benefits && comp.benefits.length > 0 && (
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 mb-1.5">Targeted Functions Achieved</p>
-              <div className="flex flex-wrap gap-1.5">
-                {comp.benefits.map((benefit: string, idx: number) => (
-                  <span key={idx} className="bg-purple-50 text-purple-700 border border-purple-100 rounded-lg px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-purple-500" /> {benefit}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Explicit Safety Concerns warnings block */}
-          {comp.safetyConcerns && comp.safetyConcerns.length > 0 && (
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 mb-1.5">Triggers & Reactive Markers</p>
-              <div className="flex flex-wrap gap-1.5">
-                {comp.safetyConcerns.map((concern: string, idx: number) => (
-                  <span key={idx} className="bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3 text-amber-600" /> {concern}
-                  </span>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {comp.conflicts.map((conflict: string, idx: number) => (
+                <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                  <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
+                </span>
+              ))}
             </div>
           )}
         </div>
       )}
 
-      {/* --- PERSONAL COMPATIBILITY SUITE VIEW (POPULATED VIA RPC) --- */}
-      <div className="border-t pt-4 mb-5">
-        <h3 className="font-black text-xs uppercase tracking-widest text-gray-400 mb-3">My Ratings</h3>
-        <div className="bg-gray-50 border border-gray-100 rounded-xl p-1.5">
-          {!isAuthenticated && (
-            <div className="text-[10px] text-gray-500 italic mb-2 text-center">Log in to save your personal ratings.</div>
+      {/* Ingredients */}
+      {product.ingredients && product.ingredients.length > 0 ? (
+        <div className="pt-1">
+          <button
+            onClick={() => setIsIngredientsExpanded(!isIngredientsExpanded)}
+            className="flex items-center gap-1 text-[10px] font-black text-black uppercase underline cursor-pointer"
+          >
+            Ingredients {isIngredientsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+          {isIngredientsExpanded && (
+            <p className="text-xs text-black/60 mt-1 bg-black/5 p-2 rounded-lg break-words">
+              {Array.isArray(product.ingredients) ? product.ingredients.join(', ') : product.ingredients}
+            </p>
           )}
-          <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-            <RatingSlider 
-              label="Does what it says?" 
-              value={ratings.dwis} 
-              onChange={(val) => handleUpdateRating('dwis', val)} 
-              tooltipText="(Red: no / Yellow: it's ok / Green: amazing)"
-              disabled={!isAuthenticated}
-            />
-            <RatingSlider 
-              label="Price / Value" 
-              value={ratings.price_value} 
-              onChange={(val) => handleUpdateRating('price_value', val)} 
-              tooltipText="(Red: Not worth it / Yellow: it's ok / Green: bargain)"
-              disabled={!isAuthenticated}
-            />
-            <RatingSlider 
-              label="Feel" 
-              value={ratings.feel} 
-              onChange={(val) => handleUpdateRating('feel', val)} 
-              tooltipText="(Red: greasy / Yellow: matte / Green: dewy)"
-              disabled={!isAuthenticated}
-            />
-            <RatingSlider 
-              label="Layering" 
-              value={ratings.layer} 
-              onChange={(val) => handleUpdateRating('layer', val)} 
-              tooltipText="(Red: piles / Yellow: ok / Green: seamless)"
-              disabled={!isAuthenticated}
-            />
-          </div>
         </div>
-      </div>
+      ) : null}
 
-      
-      {/* --- TRACKER CONTROLS --- */}
+      {/* Tracker Controls (If trackerItem present) */}
       {trackerItem && (
-        <div className="border-t pt-4 mb-5 space-y-4">
+        <div className="border-t pt-4 mt-4 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-black text-xs uppercase tracking-widest text-gray-400">My Tracker</h3>
             <button 
@@ -662,73 +688,6 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
           </div>
         </div>
       )}
-
-      {/* --- FORMULA FREE-FROM CLAIMS "WHAT'S INSIDE" --- */}
-      {scores && (
-        <div className="border-t pt-4 mb-5">
-          <h3 className="font-black text-xs uppercase tracking-widest text-gray-400 mb-2">Formula Properties</h3>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex items-center justify-between bg-gray-50 border border-gray-100 px-2.5 py-1.5 rounded-lg text-xs">
-              <span className="text-gray-500 font-medium">Oil-Free</span>
-              <span className={`font-bold ${scores.oil_free ? 'text-emerald-600' : 'text-gray-400'}`}>{scores.oil_free ? 'Yes' : 'No'}</span>
-            </div>
-            <div className="flex items-center justify-between bg-gray-50 border border-gray-100 px-2.5 py-1.5 rounded-lg text-xs">
-              <span className="text-gray-500 font-medium">Sulfate-Free</span>
-              <span className={`font-bold ${scores.sulfate_free ? 'text-emerald-600' : 'text-gray-400'}`}>{scores.sulfate_free ? 'Yes' : 'No'}</span>
-            </div>
-            <div className="flex items-center justify-between bg-gray-50 border border-gray-100 px-2.5 py-1.5 rounded-lg text-xs">
-              <span className="text-gray-500 font-medium">Fragrance-Free</span>
-              <span className={`font-bold ${(!scores.contains_frag && !scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-gray-400'}`}>
-                {(!scores.contains_frag && !scores.has_fragrance_top50) ? 'Yes' : 'No'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between bg-gray-50 border border-gray-100 px-2.5 py-1.5 rounded-lg text-xs">
-              <span className="text-gray-500 font-medium">Fungal Acne Safe</span>
-              <span className={`font-bold ${!scores.has_fungal_trigger ? 'text-emerald-600' : 'text-gray-400'}`}>{!scores.has_fungal_trigger ? 'Yes' : 'No'}</span>
-            </div>
-          </div>
-          {scores.night && (
-            <div className="mt-2 text-[10px] bg-slate-900 text-slate-100 p-2 rounded-lg font-bold uppercase tracking-wider text-center">
-              🌙 PM Routine Optimization Only (Contains Photosensitizing Actives)
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* --- INGREDIENTS ACCORDION --- */}
-      <div className="border-t pt-4">
-        <h3 className="font-black text-xs uppercase mb-2 tracking-widest text-gray-400">Ingredients ({product.ingredients?.length || 0})</h3>
-        {product.ingredients && product.ingredients.length > 0 ? (
-          <>
-            <ul className="text-[11px] text-gray-700 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100 list-decimal pl-6">
-              {displayIngredients.map((ingredient: string, index: number) => (
-                <li key={index} className="pl-1">
-                  <span className="font-medium text-gray-900">{ingredient}</span> 
-                  {index < 5 && <span className="text-[9px] text-purple-500 font-mono ml-1 uppercase font-bold">[Base Compound]</span>}
-                </li>
-              ))}
-            </ul>
-            {product.ingredients.length > 5 && (
-              <button
-                className="mt-2.5 flex items-center text-xs font-black text-purple-600 transition hover:text-purple-800"
-                onClick={() => setIsIngredientsExpanded(!isIngredientsExpanded)}
-              >
-                {isIngredientsExpanded ? (
-                  <>
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="w-3.5 h-3.5 mr-1" /> View complete breakdown ({product.ingredients.length - 5} more)
-                  </>
-                )}
-              </button>
-            )}
-          </>
-        ) : (
-          <p className="text-xs text-gray-400 italic">Ingredient transparency listing unavailable.</p>
-        )}
-      </div>
     </div>
   );
 };

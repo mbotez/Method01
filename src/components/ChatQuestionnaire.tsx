@@ -24,7 +24,7 @@ interface Step {
   title: string;
   type: 'single' | 'multiple' | 'age' | 'tone' | 'text' | 'search_products' | 'search_ingredients';
   key: string;
-  options?: string[];
+  options?: (string | number)[];
   condition?: (answers: any) => boolean;
   part: number;
   tooltip?: string;
@@ -68,7 +68,7 @@ const ALL_STEPS: Step[] = [
     title: "What's the main skin concern you're looking to tackle?",
     type: 'single',
     key: 'mainConcern',
-    options: ['Blemishes & post-blemish marks', 'Redness', 'Dark Spots', 'Dullness', 'Dryness', 'Oily skin', 'Wrinkles & fine lines', 'Large pores & texture', 'Sensitivity', 'Not sure'],
+    options: ['Breakouts & post-breakout marks', 'Redness', 'Dark Spots', 'Dullness', 'Dryness', 'Oily skin', 'Wrinkles & fine lines', 'Large pores & texture', 'Sensitivity', 'Not sure'],
     part: 3
   },
   {
@@ -76,7 +76,7 @@ const ALL_STEPS: Step[] = [
     title: "Any other concerns we should keep in mind?",
     type: 'single',
     key: 'scndConcern',
-    options: ['Blemishes & post-blemish marks', 'Redness', 'Dark Spots', 'Dullness', 'Dryness', 'Oily skin', 'Wrinkles & fine lines', 'Large pores & texture', 'Sensitivity', 'Not sure'],
+    options: ['Breakouts & post-breakout marks', 'Redness', 'Dark Spots', 'Dullness', 'Dryness', 'Oily skin', 'Wrinkles & fine lines', 'Large pores & texture', 'Sensitivity', 'Not sure'],
     condition: (ans) => ans.mainConcern,
     part: 3
   },
@@ -85,17 +85,25 @@ const ALL_STEPS: Step[] = [
     title: "If you get blemishes or breakouts, what do they usually look like?",
     type: 'single',
     key: 'breakoutType',
-    options: ['whiteheads', 'blackheads', 'pie', 'pih', 'papules', 'congestion', 'pustules', 'severe_painful', 'none'],
-    condition: (ans) => ans.mainConcern === 'Blemishes & post-blemish marks' || ans.scndConcern === 'Blemishes & post-blemish marks',
+    options: [1, 2, 3, 4, 5, 6, 7, 8],
+    condition: (ans) => 
+      ans.mainConcern === 'Breakouts & post-breakout marks' || 
+      ans.scndConcern === 'Breakouts & post-breakout marks' ||
+      ans.mainConcern === 'Blemishes & post-blemish marks' || 
+      ans.scndConcern === 'Blemishes & post-blemish marks',
     part: 3
   },
   {
     id: 'breakoutWhere',
-    title: "And where do those blemishes or congestion tend to pop up?",
+    title: "And where do those breakouts tend to pop up?",
     type: 'single',
     key: 'breakoutWhere',
     options: ['Forehead', 'Nose', 'Chin/jawline', 'Cheeks', 'Chest/back'],
-    condition: (ans) => ans.mainConcern === 'Blemishes & post-blemish marks' || ans.scndConcern === 'Blemishes & post-blemish marks',
+    condition: (ans) => 
+      ans.mainConcern === 'Breakouts & post-breakout marks' || 
+      ans.scndConcern === 'Breakouts & post-breakout marks' ||
+      ans.mainConcern === 'Blemishes & post-blemish marks' || 
+      ans.scndConcern === 'Blemishes & post-blemish marks',
     part: 3
   },
   {
@@ -184,6 +192,9 @@ export const ChatQuestionnaire = ({
     pregnant: null,
     sex: null
   });
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+
   const [stepIndex, setStepIndex] = useState(0);
 
   const activeSteps = ALL_STEPS.filter(
@@ -192,15 +203,20 @@ export const ChatQuestionnaire = ({
   const currentStep = activeSteps[stepIndex] || activeSteps[activeSteps.length - 1];
 
   const updateAnswer = (key: string, value: any) => {
-    setAnswers((prev: any) => ({ ...prev, [key]: value }));
+    setAnswers((prev: any) => {
+      const updated = { ...prev, [key]: value };
+      answersRef.current = updated;
+      return updated;
+    });
   };
 
-  const handleNext = () => {
+  const handleNext = (overrideAnswers?: any) => {
+    const currentAns = overrideAnswers || answersRef.current;
     if (stepIndex < activeSteps.length - 1) {
       setStepIndex(stepIndex + 1);
     } else {
       if (onComplete) {
-        onComplete(answers);
+        onComplete(currentAns);
       }
     }
   };
@@ -280,7 +296,7 @@ export const ChatQuestionnaire = ({
   const [wrinklesScore, setWrinklesScore] = useState(0);
   const [rednessMainArea, setRednessMainArea] = useState('Cheeks');
   const [wrinklesMainArea, setWrinklesMainArea] = useState('Forehead');
-  const [scanAcneType, setScanAcneType] = useState('None');
+  const [scanBreakoutType, setScanBreakoutType] = useState('None');
 
   useEffect(() => {
     if (isScanningFace) {
@@ -446,15 +462,9 @@ export const ChatQuestionnaire = ({
       }
       setScanProgress(progressVal);
 
-      if (progressVal < 30) {
-        setScanStepName("Scanning luminance & contrast...");
-      } else if (progressVal < 55) {
-        setScanStepName("Isolating pigment coordinates...");
-      } else if (progressVal < 75) {
-        setScanStepName("Analyzing wrinkles alignment...");
-      } else {
-        setScanStepName("Refining comedonal classification...");
-      }
+      if (progressVal < 50) {
+        setScanStepName("Loading...");
+      } 
     }, 450);
 
     try {
@@ -510,7 +520,7 @@ export const ChatQuestionnaire = ({
         setWrinklesScore(data.wrinkles_score);
         setRednessMainArea(data.redness_main_area);
         setWrinklesMainArea(data.wrinkels_main_area);
-        setScanAcneType(data.blemish_assessment);
+        setScanBreakoutType(data.blemish_assessment);
 
         const finalAnswers = {
           ...answers,
@@ -519,7 +529,7 @@ export const ChatQuestionnaire = ({
           redness_main_area: data.redness_main_area,
           wrinkels_main_area: data.wrinkels_main_area,
           blemish_assessment: data.blemish_assessment,
-          scan_acne_type: data.blemish_assessment,
+          scan_breakout_type: data.blemish_assessment,
           front_photo: photoToUse,
           close_up_photo: closeUpPhoto,
         };
@@ -606,30 +616,36 @@ export const ChatQuestionnaire = ({
     }
   }, [debouncedProductSearchQuery, currentStep.type]);
 
-  const handleOptionClick = (option: string) => {
-    if (currentStep.id === 'breakoutType' && option === 'severe_painful') {
+  const handleOptionClick = (option: any) => {
+    if (currentStep.id === 'breakoutType' && (option === 8 || option === 'deep & tender bumps' || option === 'deep and tender bumps')) {
       setIsHardGated(true);
       return;
     }
-    let displayText = option;
+    let displayText = String(option);
     if (currentStep.id === 'breakoutType') {
-      const opt = [...BREAKOUT_PHOTO_OPTIONS, { value: 'dont_know', fullTitle: 'I don\'t know.' }].find(o => o.value === option);
+      const opt = [...BREAKOUT_PHOTO_OPTIONS, { value: 'dont_know', fullTitle: "I don't know." }].find(o => o.value === option || o.value === Number(option));
       if (opt) displayText = opt.fullTitle;
     }
   
     if (currentStep.type === 'multiple') {
       const currentList = answers[currentStep.key] || [];
       const newList = currentList.includes(option)
-        ? currentList.filter((item: string) => item !== option)
+        ? currentList.filter((item: any) => item !== option)
         : [...currentList, option];
       updateAnswer(currentStep.key, newList);
     } else {
-    // If it's breakoutType, store it as a single-element array [option]
-      const valueToStore = currentStep.id === 'breakoutType' ? [option] : option;
+      // If it's breakoutType, store it as a numeric array [option] or [] if 'dont_know'
+      let valueToStore: any = option;
+      if (currentStep.id === 'breakoutType') {
+        const numOption = typeof option === 'number' ? option : parseInt(option, 10);
+        valueToStore = !isNaN(numOption) && numOption >= 1 && numOption <= 8 ? [numOption] : [];
+      }
     
-      updateAnswer(currentStep.key, valueToStore);
+      const updated = { ...answersRef.current, [currentStep.key]: valueToStore };
+      answersRef.current = updated;
+      setAnswers(updated);
       addUserMessage(displayText);
-      setTimeout(handleNext, 300);
+      setTimeout(() => handleNext(updated), 300);
     }
   };
 
@@ -638,9 +654,11 @@ export const ChatQuestionnaire = ({
     const val = currentStep.type === 'age' ? inputText.replace(/\D/g, '') : inputText;
     if (currentStep.type === 'age' && !val) return;
     addUserMessage(val);
-    updateAnswer(currentStep.key, val);
+    const updated = { ...answersRef.current, [currentStep.key]: val };
+    answersRef.current = updated;
+    setAnswers(updated);
     setInputText('');
-    setTimeout(handleNext, 300);
+    setTimeout(() => handleNext(updated), 300);
   };
 
   if (isScanningFace) {
@@ -1209,7 +1227,7 @@ export const ChatQuestionnaire = ({
                     <div className="grid grid-cols-2 gap-2 text-[10px]">
                         <p>Redness: <span className="font-medium text-emerald-600">{msg.scanResults.redness_score}/10</span></p>
                         <p>Wrinkles: <span className="font-medium text-emerald-600">{msg.scanResults.wrinkles_score}/10</span></p>
-                        <p className="col-span-2">Acne type: <span className="font-medium text-emerald-600">{msg.scanResults.blemish_assessment || msg.scanResults.scan_acne_type}</span></p>
+                        <p className="col-span-2">Breakout type: <span className="font-medium text-emerald-600">{msg.scanResults.blemish_assessment || msg.scanResults.scan_breakout_type}</span></p>
                     </div>
                 </div>
               )}
@@ -1262,11 +1280,11 @@ export const ChatQuestionnaire = ({
             ))}
             {currentStep.type === 'multiple' && (
                 <button onClick={() => {
-                    const ans = answers[currentStep.key] || [];
+                    const ans = answersRef.current[currentStep.key] || [];
                     addUserMessage(ans.length > 0 ? ans.join(", ") : "None / Skip");
-                    handleNext();
+                    handleNext(answersRef.current);
                 }} className="bg-neutral-800 text-white px-4 py-2 rounded-full text-[15px] md:text-lg font-medium hover:bg-neutral-900 transition-colors">
-                    Submit
+                    Next
                 </button>
             )}
           </div>
@@ -1345,9 +1363,9 @@ export const ChatQuestionnaire = ({
               />
               <button 
                 onClick={() => {
-                  const ans = answers[currentStep.key] || [];
+                  const ans = answersRef.current[currentStep.key] || [];
                   addUserMessage(ans.length > 0 ? ans.join(", ") : "None");
-                  handleNext();
+                  handleNext(answersRef.current);
                 }} 
                 className="bg-amber-300 text-neutral-900 px-4 py-2 rounded-xl text-[15px] md:text-lg font-bold hover:bg-amber-400 transition-colors"
               >
@@ -1357,7 +1375,7 @@ export const ChatQuestionnaire = ({
             <button 
               onClick={() => {
                 addUserMessage("Skip");
-                handleNext();
+                handleNext(answersRef.current);
               }} 
               className="text-neutral-500 hover:text-neutral-700 text-[15px] md:text-lg py-2 font-medium w-full text-center"
             >
@@ -1407,9 +1425,9 @@ export const ChatQuestionnaire = ({
                 className="flex-1 p-3 rounded-xl border border-neutral-300 focus:outline-none focus:border-emerald-500 text-[15px] md:text-lg"
               />
               <button onClick={() => {
-                  const ans = answers[currentStep.key] || [];
+                  const ans = answersRef.current[currentStep.key] || [];
                   addUserMessage(ans.length > 0 ? ans.join(", ") : "Skip");
-                  handleNext();
+                  handleNext(answersRef.current);
               }} className="bg-amber-300 text-neutral-900 px-4 py-2 rounded-xl text-[15px] md:text-lg font-medium">
                 Done
               </button>
@@ -1417,7 +1435,7 @@ export const ChatQuestionnaire = ({
             {currentStep.id === 'currentProducts' && (
                 <button onClick={() => {
                     addUserMessage("Skip");
-                    handleNext();
+                    handleNext(answersRef.current);
                 }} className="text-neutral-500 hover:text-neutral-700 text-[15px] md:text-lg py-2 font-medium w-full text-center">
                     Skip
                 </button>
