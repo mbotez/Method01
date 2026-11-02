@@ -554,7 +554,7 @@ export const ChatQuestionnaire = ({
       setMessages([{
         id: generateId(),
         sender: 'bot',
-        text: "Hi there, I'm going to ask you a few questions about your skin and lifestyle to build your custom routine.",
+        text: "Hi there, I'm going to ask you a few questions about your skin and lifestyle to get your product compatibility.",
         timestamp: Date.now(),
         showBack: false
       }]);
