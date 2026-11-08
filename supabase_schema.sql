@@ -122,7 +122,6 @@ CREATE TABLE public.user_profile (
   barrier_status integer,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   sensitivity jsonb DEFAULT '[]'::jsonb,
-  goals jsonb DEFAULT '[]'::jsonb,
   breakout_type jsonb DEFAULT '[]'::jsonb,
   breakout_where text,
   env text,
@@ -181,7 +180,7 @@ CREATE TABLE public.ingredient_scores (
   Astringent boolean,
   Cell_Turnover_Accelerator boolean,
   Pregnancy_Safe boolean,
-  Fungal_Trigger boolean,
+  Yeast_Trigger boolean,
   High_Irritation_Risk boolean,
   Essential_Oils_Fragrance boolean,
   id integer GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -290,6 +289,8 @@ CREATE TABLE public.product_scores (
   contains_frag boolean DEFAULT false,
   oil_free boolean DEFAULT true,
   sulfate_free boolean DEFAULT true,
+  has_aha_active boolean DEFAULT false,
+  has_cell_turnover_accelerator boolean DEFAULT false,
   CONSTRAINT product_scores_pkey PRIMARY KEY (product_id),
   CONSTRAINT fk_product_scores_products FOREIGN KEY (product_id) REFERENCES public.products(id)
 );
@@ -357,4 +358,35 @@ CREATE TABLE public.products_filter (
   c_ahabha boolean DEFAULT false,
   CONSTRAINT products_filter_pkey PRIMARY KEY (product_id),
   CONSTRAINT products_filter_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
+);
+CREATE TABLE public.product_metric_culprits (
+  metric_name text NOT NULL, -- Holds the product identifier (product_id or product_name)
+  active_antagonistic_group text,
+  aggregated_clogging_risk text,
+  calm_redness text,
+  clear_blackheads text,
+  clear_surface_breakouts text,
+  clear_whiteheads text,
+  contains_frag text,
+  fade_pie text,
+  fade_pih text,
+  has_5alpha_inh text,
+  has_aha_active text,
+  has_bha_active text,
+  has_brightening_ingredient text,
+  has_cell_turnover_accelerator text,
+  has_fragrance_top50 text,
+  has_high_irritation text,
+  has_yeast_trigger text,
+  reduce_wrinkles text,
+  soothe_deep_breakouts text,
+  synergy_breakout_response text,
+  synergy_deep_breakout_penetration text,
+  CONSTRAINT product_metric_culprits_pkey PRIMARY KEY (metric_name)
+);
+CREATE TABLE public.5alpha (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  ingredient_name text,
+  ingredient_id integer,
+  CONSTRAINT 5alpha_pkey PRIMARY KEY (id)
 );

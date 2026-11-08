@@ -97,59 +97,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let rawLockedProducts: any[] | null = null;
     let rpcError: any = null;
     
+    const callRpcWithDualSchemas = async (barrierVal: number, reactionVal: number) => {
+      // 1. Try with PostgreSQL native registered signature (p_barrier_risk, p_scan_acne_type)
+      const res1 = await supabase.rpc('get_meli_product_sort', {
+        p_barrier_risk: barrierVal,
+        p_breakout_type: breakout_type,
+        p_cat3: cat3,
+        p_limit: LIMIT_PER_PAGE,
+        p_main_concern: main_concern,
+        p_new_product_reaction: reactionVal,
+        p_offset: offset,
+        p_pregnant: pregnant,
+        p_product_type: productType,
+        p_scan_acne_type: scan_breakout_type,
+        p_scnd_concern: secondary_concern,
+        p_skin_type: skin_type
+      });
+      if (!res1.error && res1.data) return res1.data;
+
+      // 2. Try with alternative parameter names (p_barrier_status, p_scan_breakout_type)
+      const res2 = await supabase.rpc('get_meli_product_sort', {
+        p_barrier_status: barrierVal,
+        p_breakout_type: breakout_type,
+        p_cat3: cat3,
+        p_limit: LIMIT_PER_PAGE,
+        p_main_concern: main_concern,
+        p_new_product_reaction: reactionVal,
+        p_offset: offset,
+        p_pregnant: pregnant,
+        p_product_type: productType,
+        p_scan_breakout_type: scan_breakout_type,
+        p_scnd_concern: secondary_concern,
+        p_skin_type: skin_type
+      });
+      if (!res2.error && res2.data) return res2.data;
+
+      throw res1.error || res2.error;
+    };
+
     try {
       if (barrier_level === 'high') {
-        const { data: safeData, error: safeError } = await supabase.rpc('get_meli_product_sort', {
-          p_barrier_status: userProfile.barrier_status || 0,
-          p_breakout_type: breakout_type,
-          p_main_concern: main_concern,
-          p_new_product_reaction: userProfile.new_product_reaction || 0,
-          p_pregnant: pregnant,
-          p_product_type: productType,
-          p_scan_breakout_type: scan_breakout_type,
-          p_scnd_concern: secondary_concern,
-          p_skin_type: skin_type,
-          p_limit: LIMIT_PER_PAGE, 
-          p_offset: offset,
-          p_cat3: cat3
-        });
-        if (safeError) throw safeError;
+        const safeData = await callRpcWithDualSchemas(userProfile.barrier_status || 0, userProfile.new_product_reaction || 0);
         rawProducts = safeData;
 
-        const { data: lockedData, error: lockedError } = await supabase.rpc('get_meli_product_sort', {
-          p_barrier_status: 3,
-          p_breakout_type: breakout_type,
-          p_main_concern: main_concern,
-          p_new_product_reaction: 0,
-          p_pregnant: pregnant,
-          p_product_type: productType,
-          p_scan_breakout_type: scan_breakout_type,
-          p_scnd_concern: secondary_concern,
-          p_skin_type: skin_type,
-          p_limit: LIMIT_PER_PAGE, 
-          p_offset: offset,
-          p_cat3: cat3
-        });
-        if (lockedError) throw lockedError;
-        
+        const lockedData = await callRpcWithDualSchemas(3, 0);
         const safeIds = new Set((rawProducts || []).map((p: any) => p.product_id));
         rawLockedProducts = (lockedData || []).filter((p: any) => !safeIds.has(p.product_id));
       } else {
-        const { data, error } = await supabase.rpc('get_meli_product_sort', {
-          p_barrier_status: userProfile.barrier_status || 0,
-          p_breakout_type: breakout_type,
-          p_main_concern: main_concern,
-          p_new_product_reaction: userProfile.new_product_reaction || 0,
-          p_pregnant: pregnant,
-          p_product_type: productType,
-          p_scan_breakout_type: scan_breakout_type,
-          p_scnd_concern: secondary_concern,
-          p_skin_type: skin_type,
-          p_limit: LIMIT_PER_PAGE, 
-          p_offset: offset,
-          p_cat3: cat3
-        });
-        if (error) throw error;
+        const data = await callRpcWithDualSchemas(userProfile.barrier_status || 0, userProfile.new_product_reaction || 0);
         rawProducts = data;
         rawLockedProducts = [];
       }

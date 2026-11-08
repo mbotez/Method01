@@ -19,6 +19,261 @@ const CONCERN_MAP: Record<number, string> = {
   12: 'Not Sure'
 };
 
+export function computeProductKeyBenefits(product: any, scores: any, rpcBenefits?: string[]): string[] {
+  const benefits: string[] = [];
+  const s = scores || {};
+  const p = product || {};
+  const name = (p.name || p.product_name || p.Name || '').toLowerCase();
+  const desc = (p.description || '').toLowerCase();
+
+  // 1. Calms facial redness
+  if (
+    s.calm_redness_dry_skin > 0 ||
+    s.calm_redness_oily_skin > 0 ||
+    s.calm_redness_combi_skin > 0 ||
+    s.has_vascular_calmer ||
+    name.includes('redness') ||
+    desc.includes('redness') ||
+    name.includes('calming') ||
+    desc.includes('calming') ||
+    name.includes('soothing') ||
+    desc.includes('soothing')
+  ) {
+    benefits.push('Calms facial redness');
+  }
+
+  // 2. Repairs skin barrier
+  if (
+    s.barrier_repair_dry_skin > 0 ||
+    s.barrier_repair_oily_skin > 0 ||
+    s.barrier_repair_combi_skin > 0 ||
+    name.includes('barrier') ||
+    desc.includes('barrier') ||
+    name.includes('ceramide') ||
+    desc.includes('ceramide')
+  ) {
+    benefits.push('Repairs skin barrier');
+  }
+
+  // 3. Deep hydration
+  if (
+    s.hydration_dry_skin > 0 ||
+    s.hydration_oily_skin > 0 ||
+    s.hydration_combi_skin > 0 ||
+    name.includes('hydrat') ||
+    desc.includes('hydrat') ||
+    name.includes('hyaluronic') ||
+    desc.includes('hyaluronic') ||
+    name.includes('moistur') ||
+    desc.includes('moistur')
+  ) {
+    benefits.push('Deep hydration');
+  }
+
+  // 4. Smooths fine lines & wrinkles
+  if (
+    s.reduce_wrinkles > 0 ||
+    name.includes('wrinkle') ||
+    desc.includes('wrinkle') ||
+    name.includes('anti-aging') ||
+    desc.includes('anti-aging') ||
+    name.includes('anti-ageing') ||
+    desc.includes('anti-ageing') ||
+    name.includes('firming') ||
+    desc.includes('firming')
+  ) {
+    benefits.push('Smooths fine lines & wrinkles');
+  }
+
+  // 5. Brightens skin tone & fades dark spots
+  if (
+    s.has_brightening_ingredient ||
+    s.has_melanin_inhibitor ||
+    s.fade_pie > 0 ||
+    s.fade_pih > 0 ||
+    name.includes('brighten') ||
+    desc.includes('brighten') ||
+    name.includes('dark spot') ||
+    desc.includes('dark spot') ||
+    name.includes('radiance') ||
+    desc.includes('radiance') ||
+    name.includes('vitamin c') ||
+    desc.includes('vitamin c')
+  ) {
+    benefits.push('Brightens skin tone & fades dark spots');
+  }
+
+  // 6. Clears pores & blemishes
+  if (
+    s.clear_blackheads > 0 ||
+    s.clear_whiteheads > 0 ||
+    s.clear_surface_breakouts > 0 ||
+    s.soothe_deep_breakouts > 0 ||
+    s.has_bha_active ||
+    s.has_purifying_active ||
+    (s.synergy_breakout_response && s.synergy_breakout_response > 0) ||
+    name.includes('blemish') ||
+    desc.includes('blemish') ||
+    name.includes('breakout') ||
+    desc.includes('breakout') ||
+    name.includes('acne') ||
+    desc.includes('acne') ||
+    name.includes('clarifying') ||
+    desc.includes('clarifying')
+  ) {
+    benefits.push('Clears pores & blemishes');
+  }
+
+  // 7. Oil control
+  if (
+    s.oil_control > 0 ||
+    s.has_5alpha_reductase_inhibitor ||
+    name.includes('oil control') ||
+    desc.includes('oil control') ||
+    name.includes('mattify') ||
+    desc.includes('mattify')
+  ) {
+    benefits.push('Oil control');
+  }
+
+  // 8. Refines skin texture
+  if (
+    s.has_aha_active ||
+    s.has_cell_turnover_accelerator ||
+    (s.synergy_deep_breakout_penetration && s.synergy_deep_breakout_penetration > 0) ||
+    name.includes('exfoliat') ||
+    desc.includes('exfoliat') ||
+    name.includes('texture') ||
+    desc.includes('texture')
+  ) {
+    benefits.push('Refines skin texture');
+  }
+
+  // Incorporate any distinct RPC benefits mapped cleanly
+  if (Array.isArray(rpcBenefits)) {
+    const RPC_BENEFIT_MAP: Record<string, string> = {
+      'Boosts Deep Hydration': 'Deep hydration',
+      'Repairs Skin Barrier': 'Repairs skin barrier',
+      'Calms Redness': 'Calms facial redness',
+      'Soothes Redness': 'Calms facial redness',
+      'Targets Active Breakouts': 'Clears pores & blemishes',
+      'Combats Clogged Pores': 'Clears pores & blemishes',
+      'Targets Fine Lines': 'Smooths fine lines & wrinkles',
+      'Smoothes Wrinkles & Fine Lines': 'Smooths fine lines & wrinkles',
+      'Fades Dark Spots': 'Brightens skin tone & fades dark spots',
+      'Brightens Dull Areas & Marks': 'Brightens skin tone & fades dark spots',
+      'Improves Skin Texture': 'Refines skin texture',
+      'Refines Pore Texture & Decongests': 'Refines skin texture'
+    };
+
+    for (const b of rpcBenefits) {
+      const normalized = RPC_BENEFIT_MAP[b] || b;
+      if (!benefits.includes(normalized)) {
+        benefits.push(normalized);
+      }
+    }
+  }
+
+  if (benefits.length === 0) {
+    benefits.push('Balances skin & maintains health');
+  }
+
+  return benefits;
+}
+
+export function computeProductPotentialIrritants(scores: any, rpcSafetyConcerns?: string[]): string[] {
+  const s = scores || {};
+  const concerns: string[] = [];
+
+  if (s.has_yeast_trigger) {
+    concerns.push('Yeast-induced Breakout Trigger');
+  }
+  if (s.has_high_irritation) {
+    concerns.push('May Be Irritant');
+  }
+  if (s.uv_sensitivity_required) {
+    concerns.push('Requires UV Sunscreen Protection');
+  }
+  if (s.night) {
+    concerns.push('Photosensitizing Active (Use PM Only)');
+  }
+  if (Number(s.aggregated_clogging_risk) > 0) {
+    concerns.push('May Cause Clogged Pores');
+  }
+
+  if (Array.isArray(rpcSafetyConcerns)) {
+    for (const c of rpcSafetyConcerns) {
+      const normalizedC = c === 'High Irritation Risk' ? 'May Be Irritant' : c;
+      const isClogConcern = normalizedC.toLowerCase().includes('clog') || normalizedC.toLowerCase().includes('comedogenic');
+      if (isClogConcern && Number(s.aggregated_clogging_risk) <= 0) {
+        continue; // Skip clogging flag if aggregated_clogging_risk is <= 0
+      }
+      if (normalizedC !== 'Contains Fragrance' && !concerns.some(existing => existing.toLowerCase() === normalizedC.toLowerCase())) {
+        concerns.push(normalizedC);
+      }
+    }
+  }
+
+  return concerns;
+}
+
+export function getMetricNamesForFlag(flagName: string): string[] {
+  const normalized = (flagName || '').toLowerCase().trim();
+
+  // clogging risk maps to aggregated_clogging_risk (must be checked before general pore/clear check)
+  if (normalized.includes('clog') || normalized.includes('comedogenic') || normalized.includes('aggregated_clogging_risk')) {
+    return ['aggregated_clogging_risk'];
+  }
+  // calms facial redness maps to calm_redness, fade_pie, fade_pih;
+  if (normalized.includes('redness')) {
+    return ['calm_redness', 'fade_pie', 'fade_pih'];
+  }
+  // repairs skin barrier maps to repair_barrier;
+  if (normalized.includes('barrier')) {
+    return ['repair_barrier'];
+  }
+  // deep hydration maps to deep_hydration;
+  if (normalized.includes('hydration') || normalized.includes('hydrat')) {
+    return ['deep_hydration'];
+  }
+  // Smooths fine lines maps to reduce_wrinkles, deep_hydration;
+  if (normalized.includes('fine lines') || normalized.includes('wrinkles')) {
+    return ['reduce_wrinkles'];
+  }
+  // brightens skin tone maps to has_brightening_ingredient, fade_pih;
+  if (normalized.includes('brighten') || normalized.includes('dark spots')) {
+    return ['has_brightening_ingredient', 'fade_pih'];
+  }
+  // clears pores maps to clear_blackheads, clear_surface_breakouts, clear_whiteheads;
+  if (normalized.includes('clear') || normalized.includes('pore') || normalized.includes('blemish')) {
+    return ['clear_blackheads', 'clear_surface_breakouts', 'clear_whiteheads'];
+  }
+  // oil control maps to has_5alpha_inh;
+  if (normalized.includes('oil control')) {
+    return ['has_5alpha_inh'];
+  }
+  // refines skin texture maps to has_cell_turnover_accelerator;
+  if (normalized.includes('texture')) {
+    return ['has_cell_turnover_accelerator'];
+  }
+  // contains fragrance / fragrance-free maps to has_fragrance_top50, contains_frag;
+  if (normalized.includes('fragrance')) {
+    return ['has_fragrance_top50', 'contains_frag'];
+  }
+  // yeast-induced breakout trigger maps to has_yeast_trigger;
+  if (normalized.includes('yeast')) {
+    return ['has_yeast_trigger'];
+  }
+  // high irritation risk / may be irritant maps to has_high_irritation;
+  if (normalized.includes('irritation') || normalized.includes('may be irritant')) {
+    return ['has_high_irritation'];
+  }
+
+  return [];
+}
+
+
+
 const RatingSlider = ({ 
   label, 
   value, 
@@ -82,6 +337,10 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
   const [loading, setLoading] = useState(true);
   const [isIngredientsExpanded, setIsIngredientsExpanded] = useState(false);
   const [rpcErrorObj, setRpcErrorObj] = useState<any>(null);
+
+  const [culprits, setCulprits] = useState<any[]>([]);
+  const [expandedBenefitFlag, setExpandedBenefitFlag] = useState<string | null>(null);
+  const [expandedIrritantFlag, setExpandedIrritantFlag] = useState<string | null>(null);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [localSize, setLocalSize] = useState(trackerItem?.size || '');
@@ -175,6 +434,10 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
       }
       setLoading(true);
       setRpcErrorObj(null);
+      setExpandedBenefitFlag(null);
+      setExpandedIrritantFlag(null);
+      setCulprits([]);
+
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!active) return;
@@ -184,13 +447,38 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
 
         const targetUserId = session?.user?.id || '00000000-0000-0000-0000-000000000000';
 
+        const numericId = Number(productId);
+        const culpritsPromise = !isNaN(numericId)
+          ? supabase
+              .from('product_metric_culprits')
+              .select('product_id, metric_name, ingredient_name, position, ingredient_id')
+              .eq('product_id', numericId)
+              .order('position', { ascending: true })
+          : Promise.resolve({ data: [], error: null });
+
         // Always invoke database engine calculation via RPC for both auth and unauth users
-        const { data, error } = await supabase.rpc('evaluate_product_compatibility', {
+        const rpcPromise = supabase.rpc('evaluate_product_compatibility', {
           p_user_id: targetUserId,
           p_product_id: productId
         });
 
+        const [rpcResult, culpritsResult] = await Promise.all([rpcPromise, culpritsPromise]);
         if (!active) return;
+
+        if (culpritsResult?.error) {
+          console.error('[ProductCard] Error querying product_metric_culprits from Supabase:', culpritsResult.error);
+        } else {
+          console.log(`[ProductCard] product_metric_culprits query for product #${numericId} returned ${culpritsResult?.data?.length || 0} rows:`, culpritsResult?.data);
+          if ((culpritsResult?.data?.length || 0) === 0) {
+            console.warn(`[ProductCard] product_metric_culprits returned 0 rows for product #${numericId}. If data was inserted, check if RLS (Row Level Security) is blocking read access for anon/authenticated roles.`);
+          }
+        }
+
+        if (culpritsResult?.data) {
+          setCulprits(culpritsResult.data);
+        }
+
+        const { data, error } = rpcResult;
 
         if (error) {
           console.error('[ProductCard] Supabase RPC failed with error:', error);
@@ -217,7 +505,7 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               setComp({
                 skinTypeFit: 'General Fit',
                 conflicts: [],
-                benefits: ['Balances skin & maintains health'],
+                benefits: computeProductKeyBenefits(directProduct, null),
                 safetyConcerns: []
               });
               setRpcErrorObj(null);
@@ -225,78 +513,6 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               setRpcErrorObj(data);
             }
           } else {
-            let effectiveComp = data.compatibility;
-            if (!effectiveComp) {
-              const s = data.scores || {};
-              const p = data.product || {};
-              const benefits: string[] = [];
-              const safetyConcerns: string[] = [];
-
-              if (s.calm_redness_dry_skin > 0 || s.calm_redness_oily_skin > 0 || s.calm_redness_combi_skin > 0 || p.name?.toLowerCase().includes('redness') || p.description?.toLowerCase().includes('redness')) {
-                benefits.push('Calms facial redness');
-              }
-              if (s.barrier_repair_dry_skin > 0 || s.barrier_repair_oily_skin > 0 || s.barrier_repair_combi_skin > 0 || p.name?.toLowerCase().includes('barrier') || p.description?.toLowerCase().includes('barrier')) {
-                benefits.push('Repairs skin barrier');
-              }
-              if (s.hydration_dry_skin > 0 || s.hydration_oily_skin > 0 || s.hydration_combi_skin > 0) {
-                benefits.push('Deep hydration');
-              }
-              if (s.reduce_wrinkles > 0) {
-                benefits.push('Smooths fine lines & wrinkles');
-              }
-              if (s.has_brightening_ingredient) {
-                benefits.push('Brightens skin tone & fades dark spots');
-              }
-              if (s.clear_blackheads > 0 || s.clear_surface_breakouts > 0) {
-                benefits.push('Clears pores & blemishes');
-              }
-              if (benefits.length === 0) {
-                benefits.push('Balances skin & maintains health');
-              }
-
-              if (s.contains_frag || s.has_fragrance_top50) {
-                safetyConcerns.push('Contains Fragrance');
-              }
-              if (s.has_yeast_trigger) {
-                safetyConcerns.push('Yeast-induced Breakout Trigger');
-              }
-              if (s.has_high_irritation) {
-                safetyConcerns.push('High Irritation Risk');
-              }
-              if (s.uv_sensitivity_required) {
-                safetyConcerns.push('Requires UV Sunscreen Protection');
-              }
-              if (s.night) {
-                safetyConcerns.push('Photosensitizing Active (Use PM Only)');
-              }
-
-              effectiveComp = {
-                skinTypeFit: 'General Catalog Formula',
-                conflicts: [],
-                benefits,
-                safetyConcerns
-              };
-            } else {
-              const s = data.scores || {};
-              const concerns = [...(effectiveComp.safetyConcerns || [])];
-              if ((s.contains_frag || s.has_fragrance_top50) && !concerns.some(c => c.toLowerCase().includes('fragrance'))) {
-                concerns.push('Contains Fragrance');
-              }
-              if (s.has_yeast_trigger && !concerns.some(c => c.toLowerCase().includes('yeast'))) {
-                concerns.push('Yeast-induced Breakout Trigger');
-              }
-              if (s.has_high_irritation && !concerns.some(c => c.toLowerCase().includes('irritation'))) {
-                concerns.push('High Irritation Risk');
-              }
-              if (s.uv_sensitivity_required && !concerns.some(c => c.toLowerCase().includes('uv') || c.toLowerCase().includes('sunscreen'))) {
-                concerns.push('Requires UV Sunscreen Protection');
-              }
-              if (s.night && !concerns.some(c => c.toLowerCase().includes('night') || c.toLowerCase().includes('photosensitizing'))) {
-                concerns.push('Photosensitizing Active (Use PM Only)');
-              }
-              effectiveComp.safetyConcerns = concerns;
-            }
-
             const effectiveScores = data.scores || {
               oil_free: true,
               sulfate_free: true,
@@ -304,6 +520,21 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               has_fragrance_top50: false,
               has_yeast_trigger: false,
               night: false
+            };
+
+            const p = data.product || {};
+
+            // Inherent key benefits computed from formula properties regardless of user profile
+            const formulaBenefits = computeProductKeyBenefits(p, effectiveScores, data.compatibility?.benefits);
+            const formulaConcerns = computeProductPotentialIrritants(effectiveScores, data.compatibility?.safetyConcerns);
+
+            const effectiveComp = {
+              ...(data.compatibility || {
+                skinTypeFit: 'General Catalog Formula',
+                conflicts: []
+              }),
+              benefits: formulaBenefits,
+              safetyConcerns: formulaConcerns
             };
 
             setProduct(data.product);
@@ -434,19 +665,25 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
       )}
 
       {/* Product Header (Image left, Brand/Name/Type right) */}
-      <div className="flex items-start gap-4">
-        {(product.photo_url || trackerItem?.photo_url) ? (
-          <img
-            src={product.photo_url || trackerItem?.photo_url}
-            alt={product.name || 'Product'}
-            referrerPolicy="no-referrer"
-            className="w-16 h-16 object-cover rounded-xl border-2 border-black/15 flex-shrink-0"
-          />
-        ) : (
-          <div className="w-16 h-16 bg-black/5 rounded-xl border-2 border-black/15 flex items-center justify-center flex-shrink-0 text-[10px] text-black/40 font-bold">
-            No Image
-          </div>
-        )}
+      {(() => {
+        const imgSrc = product.photo_url || trackerItem?.photo_url || product.image_url || product.image || product.photo;
+        console.log('[ProductCard] Opening product card / modal for product:', product?.name || productId, 'image URL source:', imgSrc, product);
+        return (
+          <div className="flex items-start gap-4">
+            {imgSrc ? (
+              <img
+                src={imgSrc}
+                alt={product.name || 'Product'}
+                referrerPolicy="no-referrer"
+                onLoad={() => console.log('[ProductCard] Image loaded successfully:', imgSrc)}
+                onError={(e) => console.error('[ProductCard] Image failed to load:', imgSrc, e)}
+                className="w-16 h-16 object-cover rounded-xl border-2 border-black/15 flex-shrink-0"
+              />
+            ) : (
+              <div className="w-16 h-16 bg-black/5 rounded-xl border-2 border-black/15 flex items-center justify-center flex-shrink-0 text-[10px] text-black/40 font-bold">
+                No Image
+              </div>
+            )}
 
         <div className="flex flex-col gap-0.5 flex-1 min-w-0">
           <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">
@@ -462,6 +699,8 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
           )}
         </div>
       </div>
+        );
+      })()}
 
       {/* Product Description */}
       {product.description && (
@@ -471,32 +710,221 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
       )}
 
       {/* Key Benefits */}
-      {comp?.benefits && comp.benefits.length > 0 && (
-        <div className="pt-1">
-          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Key Benefits</span>
-          <div className="flex flex-wrap gap-1">
-            {comp.benefits.map((benefit: string, idx: number) => (
-              <span key={idx} className="bg-purple-50 text-purple-900 border border-purple-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-2.5 h-2.5 text-purple-600" /> {benefit}
-              </span>
-            ))}
+      {comp?.benefits && comp.benefits.length > 0 && (() => {
+        const getIngredientsForFlag = (flagName: string) => {
+          const metrics = getMetricNamesForFlag(flagName);
+          if (!metrics || metrics.length === 0) return [];
+          const rawIngs = culprits.filter((c: any) => c.metric_name && metrics.includes(c.metric_name));
+          const seen = new Set<string>();
+          return rawIngs.filter((item: any) => {
+            const name = (item.ingredient_name || '').trim().toLowerCase();
+            if (!name || seen.has(name)) return false;
+            seen.add(name);
+            return true;
+          });
+        };
+
+        return (
+          <div className="pt-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Key Benefits</span>
+            <div className="flex flex-wrap gap-1">
+              {comp.benefits.map((benefit: string, idx: number) => {
+                const matchedIngs = getIngredientsForFlag(benefit);
+                const isClickable = matchedIngs.length > 0;
+                const isExpanded = expandedBenefitFlag === benefit;
+
+                return (
+                  <button
+                    type="button"
+                    key={idx}
+                    onClick={() => {
+                      console.log(`[ProductCard] Clicked on Key Benefit: "${benefit}"`);
+                      console.log(`[ProductCard] Mapped metrics for "${benefit}":`, getMetricNamesForFlag(benefit));
+                      console.log(`[ProductCard] Total culprits loaded for product #${productId}:`, culprits.length, culprits);
+                      console.log(`[ProductCard] Matched unique ingredients (${matchedIngs.length}):`, matchedIngs);
+
+                      if (isClickable) {
+                        setExpandedBenefitFlag(isExpanded ? null : benefit);
+                      } else {
+                        console.warn(`[ProductCard] Flag "${benefit}" has 0 matching ingredients in product_metric_culprits.`);
+                      }
+                    }}
+                    className={`border rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
+                      isExpanded
+                        ? 'bg-purple-100 text-purple-950 border-purple-400 shadow-xs ring-1 ring-purple-300'
+                        : 'bg-purple-50 text-purple-900 border-purple-200/60'
+                    } ${
+                      isClickable
+                        ? 'cursor-pointer hover:bg-purple-100 hover:border-purple-300 active:scale-[0.98]'
+                        : 'cursor-pointer hover:bg-purple-100/50 opacity-90'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-2.5 h-2.5 text-purple-600 flex-shrink-0" />
+                    <span>{benefit}</span>
+                    {isClickable && (
+                      <span className="flex items-center gap-0.5 ml-0.5 text-[8px] text-purple-700 bg-purple-200/70 px-1 py-0.1 rounded font-mono font-bold">
+                        {matchedIngs.length}
+                        {isExpanded ? (
+                          <ChevronUp className="w-2 h-2 text-purple-800" />
+                        ) : (
+                          <ChevronDown className="w-2 h-2 text-purple-600" />
+                        )}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Expanded Ingredients Drawer for Clicked Benefit */}
+            {expandedBenefitFlag && (() => {
+              const ings = getIngredientsForFlag(expandedBenefitFlag);
+              if (ings.length === 0) return null;
+              return (
+                <div className="mt-2 p-2.5 bg-purple-50/70 border border-purple-200/80 rounded-xl space-y-1.5 animate-fadeIn">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-purple-900 border-b border-purple-200/60 pb-1">
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                      {expandedBenefitFlag}
+                    </span>
+                    <span className="text-[9px] font-mono text-purple-700 bg-purple-200/60 px-1.5 py-0.5 rounded font-bold">
+                      {ings.length} Ingr
+                    </span>
+                  </div>
+                  <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                    {ings.map((item: any, iIdx: number) => (
+                      <div key={iIdx} className="flex items-center justify-between bg-white px-2 py-1.5 rounded-lg border border-purple-100 text-[11px] shadow-2xs">
+                        <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0"></span>
+                          <span className="font-bold text-gray-900 truncate">
+                            {item.ingredient_name || 'Unknown Ingredient'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0 text-[9px] font-mono">
+                          {item.position != null && (
+                            <span className="bg-purple-100/70 text-purple-900 px-1.5 py-0.5 rounded font-bold">
+                              #{item.position}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Potential Irritants */}
-      {comp?.safetyConcerns && comp.safetyConcerns.length > 0 && (
-        <div className="pt-1">
-          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Potential Irritants</span>
-          <div className="flex flex-wrap gap-1">
-            {comp.safetyConcerns.map((concern: string, idx: number) => (
-              <span key={idx} className="bg-amber-50 text-amber-900 border border-amber-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> {concern}
-              </span>
-            ))}
+      {comp?.safetyConcerns && comp.safetyConcerns.length > 0 && (() => {
+        const getIngredientsForFlag = (flagName: string) => {
+          const metrics = getMetricNamesForFlag(flagName);
+          if (!metrics || metrics.length === 0) return [];
+          const rawIngs = culprits.filter((c: any) => c.metric_name && metrics.includes(c.metric_name));
+          const seen = new Set<string>();
+          return rawIngs.filter((item: any) => {
+            const name = (item.ingredient_name || '').trim().toLowerCase();
+            if (!name || seen.has(name)) return false;
+            seen.add(name);
+            return true;
+          });
+        };
+
+        return (
+          <div className="pt-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Potential Irritants</span>
+            <div className="flex flex-wrap gap-1">
+              {comp.safetyConcerns.map((concern: string, idx: number) => {
+                const matchedIngs = getIngredientsForFlag(concern);
+                const isClickable = matchedIngs.length > 0;
+                const isExpanded = expandedIrritantFlag === concern;
+
+                return (
+                  <button
+                    type="button"
+                    key={idx}
+                    onClick={() => {
+                      console.log(`[ProductCard] Clicked on Potential Irritant: "${concern}"`);
+                      console.log(`[ProductCard] Mapped metrics for "${concern}":`, getMetricNamesForFlag(concern));
+                      console.log(`[ProductCard] Total culprits loaded for product #${productId}:`, culprits.length, culprits);
+                      console.log(`[ProductCard] Matched unique ingredients (${matchedIngs.length}):`, matchedIngs);
+
+                      if (isClickable) {
+                        setExpandedIrritantFlag(isExpanded ? null : concern);
+                      } else {
+                        console.warn(`[ProductCard] Flag "${concern}" has 0 matching ingredients in product_metric_culprits.`);
+                      }
+                    }}
+                    className={`border rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
+                      isExpanded
+                        ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-xs ring-1 ring-amber-300'
+                        : 'bg-amber-50 text-amber-900 border-amber-200/60'
+                    } ${
+                      isClickable
+                        ? 'cursor-pointer hover:bg-amber-100 hover:border-amber-300 active:scale-[0.98]'
+                        : 'cursor-pointer hover:bg-amber-100/50 opacity-90'
+                    }`}
+                  >
+                    <AlertTriangle className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
+                    <span>{concern}</span>
+                    {isClickable && (
+                      <span className="flex items-center gap-0.5 ml-0.5 text-[8px] text-amber-800 bg-amber-200/70 px-1 py-0.1 rounded font-mono font-bold">
+                        {matchedIngs.length}
+                        {isExpanded ? (
+                          <ChevronUp className="w-2 h-2 text-amber-800" />
+                        ) : (
+                          <ChevronDown className="w-2 h-2 text-amber-600" />
+                        )}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Expanded Culprits Drawer for Clicked Irritant */}
+            {expandedIrritantFlag && (() => {
+              const ings = getIngredientsForFlag(expandedIrritantFlag);
+              if (ings.length === 0) return null;
+              return (
+                <div className="mt-2 p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl space-y-1.5 animate-fadeIn">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-amber-900 border-b border-amber-200/60 pb-1">
+                    <span className="flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 text-amber-600" />
+                      {expandedIrritantFlag}
+                    </span>
+                    <span className="text-[9px] font-mono text-amber-800 bg-amber-200/60 px-1.5 py-0.5 rounded font-bold">
+                      {ings.length} Ingr
+                    </span>
+                  </div>
+                  <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                    {ings.map((item: any, iIdx: number) => (
+                      <div key={iIdx} className="flex items-center justify-between bg-white px-2 py-1.5 rounded-lg border border-amber-100 text-[11px] shadow-2xs">
+                        <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"></span>
+                          <span className="font-bold text-gray-900 truncate">
+                            {item.ingredient_name || 'Unknown Ingredient'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0 text-[9px] font-mono">
+                          {item.position != null && (
+                            <span className="bg-amber-100/70 text-amber-900 px-1.5 py-0.5 rounded font-bold">
+                              #{item.position}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
-        </div>
-      )}
+        );
+      })()}
+
 
       {/* Formula Properties */}
       {scores && (
@@ -511,9 +939,17 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               <span className="text-gray-500">Sulfate-Free</span>
               <span className={`font-bold ${scores.sulfate_free ? 'text-emerald-600' : 'text-gray-400'}`}>{scores.sulfate_free ? 'Yes' : 'No'}</span>
             </div>
-            <div className="flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5">
+            <div 
+              onClick={() => {
+                const isFragFree = !scores.contains_frag && !scores.has_fragrance_top50;
+                if (!isFragFree) {
+                  setExpandedIrritantFlag(expandedIrritantFlag === 'Contains Fragrance' ? null : 'Contains Fragrance');
+                }
+              }}
+              className={`flex items-center justify-between bg-white px-2 py-1 rounded border border-black/5 ${(!scores.contains_frag && !scores.has_fragrance_top50) ? '' : 'cursor-pointer hover:bg-amber-50/60 transition-colors'}`}
+            >
               <span className="text-gray-500">Fragrance-Free</span>
-              <span className={`font-bold ${(!scores.contains_frag && !scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-gray-400'}`}>
+              <span className={`font-bold ${(!scores.contains_frag && !scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-amber-700 underline'}`}>
                 {(!scores.contains_frag && !scores.has_fragrance_top50) ? 'Yes' : 'No'}
               </span>
             </div>
