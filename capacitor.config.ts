@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.daybreak.canonic',
-  appName: 'Méli',
+  appName: 'Canonic',
   webDir: 'dist',
 };
 

@@ -311,6 +311,7 @@ export const Social = ({
   const [guideCategoryFilter, setGuideCategoryFilter] = useState<string>('All');
   const [isGuideCategoryDropdownOpen, setIsGuideCategoryDropdownOpen] = useState(false);
   const [selectedGuide, setSelectedGuide] = useState<SkincareGuide | null>(null);
+  const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
   const [savedGuideIds, setSavedGuideIds] = useState<string[]>([]);
 
   const toggleSaveGuide = (id: string, e?: React.MouseEvent) => {
@@ -640,7 +641,7 @@ export const Social = ({
                 <p className="text-xs text-black/40 font-bold uppercase italic">No trending videos match your filters</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-6">
                 {filteredVideos.map((video) => {
                   const isExpanded = !!expandedVideoProducts[video.id];
                   const isLiked = !!likedVideos[video.id];
@@ -648,7 +649,7 @@ export const Social = ({
                   const likesCount = videoLikesCount[video.video_id] || 1200;
 
                   return (
-                    <div key={video.id} className="clean-card bg-white border border-black/5 rounded-2xl overflow-hidden hover:border-black/20 hover:shadow-md transition-all flex flex-col justify-between">
+                    <div key={video.id} className="clean-card bg-white border border-black/5 rounded-2xl overflow-hidden hover:border-black/20 hover:shadow-md transition-all flex flex-col justify-between overflow-x-hidden">
                       {/* Video Player */}
                       <div className="relative aspect-[9/16] max-h-[460px] bg-black rounded-t-xl overflow-hidden">
                         {video.platform === 'youtube' ? (
@@ -660,13 +661,16 @@ export const Social = ({
                             allowFullScreen
                           />
                         ) : (
-                          <iframe
-                            src={`https://www.tiktok.com/embed/v2/${video.video_id}`}
-                            title={video.title}
-                            className="w-full h-full border-0"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                          />
+                          <div className="w-full h-full overflow-hidden relative">
+                            <iframe
+                              src={`https://www.tiktok.com/embed/v2/${video.video_id}`}
+                              title={video.title}
+                              className="w-full h-full border-0 transform scale-[0.98] origin-top"
+                              scrolling="no"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          </div>
                         )}
                       </div>
 
@@ -760,35 +764,41 @@ export const Social = ({
           </div>
         ) : activeMainTab === 'articles' ? (
           /* Tab 2: ARTICLES */
-          <div className="space-y-4 pb-32">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-6 pb-32">
             {filteredArticles.length === 0 ? (
               <div className="text-center py-12 bg-black/[0.02] rounded-2xl border border-dashed border-black/10">
                 <p className="text-xs text-black/40 font-bold uppercase italic">No articles match your search query</p>
               </div>
             ) : (
               filteredArticles.map(article => (
-                <div key={article.article_id || article.id} className="clean-card bg-white border border-black/5 p-6 rounded-2xl hover:border-black/20 hover:shadow-sm transition-all space-y-3">
-                  {article.image_url && (
-                    <div className="rounded-xl overflow-hidden border border-black/5 mb-3 max-h-56">
-                      <img src={article.image_url} alt={article.title} className="w-full h-full object-cover" />
+                <div 
+                  key={article.article_id || article.id} 
+                  onClick={() => setSelectedArticle(article)}
+                  className="clean-card bg-white border border-black/5 p-4 md:p-6 rounded-2xl hover:border-black/25 hover:shadow-sm transition-all space-y-3 cursor-pointer group flex flex-col justify-between"
+                >
+                  <div className="space-y-3">
+                    {article.image_url && (
+                      <div className="rounded-xl overflow-hidden border border-black/5 mb-3 max-h-40">
+                        <img src={article.image_url} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-[10px] text-black/40">
+                      <span className="font-black uppercase tracking-wider text-venus-accent">Clinical Editorial</span>
+                      <span>{new Date(article.created_at).toLocaleDateString()}</span>
                     </div>
-                  )}
-                  <div className="flex items-center justify-between text-xs text-black/40">
-                    <span className="font-black uppercase tracking-wider text-[10px] text-venus-accent">Clinical Editorial</span>
-                    <span>{new Date(article.created_at).toLocaleDateString()}</span>
+                    <h3 className="text-xs md:text-sm font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2">
+                      {article.title}
+                    </h3>
+                    <p className="text-[10px] md:text-xs text-black/70 leading-relaxed font-medium line-clamp-2">
+                      {article.article_content}
+                    </p>
                   </div>
-                  <h3 className="text-base font-black uppercase tracking-tight text-black hover:text-venus-accent transition-colors">
-                    {article.title}
-                  </h3>
-                  <p className="text-xs md:text-sm text-black/70 leading-relaxed font-medium">
-                    {article.article_content}
-                  </p>
-                  <div className="pt-3 flex items-center justify-between border-t border-black/5">
-                    <a href={article.article_link || '#'} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black uppercase tracking-widest text-black hover:underline flex items-center gap-1.5">
-                      <span>Read Full Article</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </a>
-                    <span className="text-[9px] font-bold text-black/40">Skincare Science Lab</span>
+                  <div className="pt-3 mt-3 border-t border-black/5 flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-black">
+                    <span className="group-hover:underline flex items-center gap-1">
+                      Read Article
+                      <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-0.5" />
+                    </span>
+                    <span className="text-[9px] text-black/40 font-bold lowercase">canonic.lab</span>
                   </div>
                 </div>
               ))
@@ -819,19 +829,19 @@ export const Social = ({
                 <p className="text-xs text-black/40 font-bold uppercase italic">No guides found matching your criteria</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-6">
                 {filteredGuides.map((guide) => {
                   const isSaved = savedGuideIds.includes(guide.id);
                   return (
                     <div 
                       key={guide.id}
                       onClick={() => setSelectedGuide(guide)}
-                      className="clean-card bg-white border border-black/5 rounded-2xl p-6 hover:border-black/20 hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
+                      className="clean-card bg-white border border-black/5 rounded-2xl p-4 md:p-6 hover:border-black/20 hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
                     >
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-xs text-black/50">
-                            <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">{guide.category}</span>
+                          <div className="flex items-center gap-1.5 text-[10px] text-black/50">
+                            <span className="font-black uppercase tracking-wider text-venus-accent">{guide.category}</span>
                             <span>·</span>
                             <span>{guide.readTime}</span>
                           </div>
@@ -840,48 +850,28 @@ export const Social = ({
                             className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isSaved ? 'text-venus-accent bg-venus-accent/10' : 'text-black/30 hover:text-black hover:bg-black/5'}`}
                             title="Save guide"
                           >
-                            <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-current' : ''}`} />
+                            <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-current' : ''}`} />
                           </button>
                         </div>
 
                         <div>
-                          <h3 className="text-base font-black text-black uppercase tracking-tight group-hover:text-venus-accent transition-colors">
+                          <h3 className="text-xs md:text-sm font-black text-black uppercase tracking-tight group-hover:text-venus-accent transition-colors line-clamp-1">
                             {guide.title}
                           </h3>
-                          <p className="text-[11px] text-black/50 font-medium italic mt-0.5">
+                          <p className="text-[10px] text-black/50 font-medium italic mt-0.5">
                             {guide.subtitle}
                           </p>
                         </div>
 
-                        <p className="text-xs text-black/70 leading-relaxed font-medium line-clamp-3">
+                        <p className="text-[10px] md:text-xs text-black/70 leading-relaxed font-medium line-clamp-2">
                           {guide.summary}
                         </p>
-
-                        {/* Key Rule Highlight Box */}
-                        <div className="p-3 rounded-xl bg-venus-accent/[0.04] border border-black/5 text-left space-y-1">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-black/40 block">Clinical Rule</span>
-                          <p className="text-[11px] font-bold text-black/80 leading-snug">
-                            {guide.keyRule}
-                          </p>
-                        </div>
-
-                        {/* Recommended Actives Badges */}
-                        <div className="space-y-1 pt-1">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-black/40 block">Key Actives</span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {guide.recommendedActives.map((act) => (
-                              <span key={act} className="text-[9px] font-bold uppercase px-2 py-0.5 bg-black/5 rounded-md text-black/70">
-                                {act}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
                       </div>
 
-                      <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-wider text-black group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1.5">
+                      <div className="pt-3 mt-3 border-t border-black/5 flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-black group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
                           Read Protocol
-                          <ChevronRight className="w-3.5 h-3.5" />
+                          <ChevronRight className="w-3 h-3" />
                         </span>
                         <span className="text-[9px] font-bold text-black/40 uppercase tracking-widest">{guide.steps.length} Steps</span>
                       </div>
@@ -892,6 +882,74 @@ export const Social = ({
             )}
           </div>
         )}
+
+      {/* Article Detail Modal */}
+      <AnimatePresence>
+        {selectedArticle && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedArticle(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative bg-white rounded-3xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 md:p-8 shadow-2xl z-10 border border-black/10 space-y-6"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-black/5 pb-4">
+                <div>
+                  <div className="flex items-center gap-2 text-xs text-black/50 mb-1">
+                    <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">Clinical Editorial</span>
+                    <span>·</span>
+                    <span>{new Date(selectedArticle.created_at).toLocaleDateString()}</span>
+                  </div>
+                  <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black">
+                    {selectedArticle.title}
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setSelectedArticle(null)}
+                  className="w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 text-black flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {selectedArticle.image_url && (
+                <div className="rounded-2xl overflow-hidden border border-black/5 max-h-72">
+                  <img src={selectedArticle.image_url} alt={selectedArticle.title} className="w-full h-full object-cover" />
+                </div>
+              )}
+
+              <p className="text-xs md:text-sm text-black/80 leading-relaxed font-medium whitespace-pre-line">
+                {selectedArticle.article_content}
+              </p>
+
+              <div className="pt-4 border-t border-black/5 flex items-center justify-between">
+                <a 
+                  href={selectedArticle.article_link || '#'} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-xs font-black uppercase tracking-widest text-black hover:underline flex items-center gap-1.5"
+                >
+                  <span>Open External Link</span>
+                  <ArrowRight className="w-4 h-4" />
+                </a>
+                <button
+                  onClick={() => setSelectedArticle(null)}
+                  className="py-2.5 px-6 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors cursor-pointer"
+                >
+                  Close Article
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       </div>
 
       {/* Guide Detail Modal */}
