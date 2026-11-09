@@ -49,7 +49,6 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
       setScanMatchedProducts(matches);
       setIsConfirmScanOpen(true);
     } catch (err: any) {
-      console.error("Photo scan error:", err);
       setScanError(err.message || "An error occurred during photo scan. Please try again.");
     } finally {
       setIsScanning(false);
@@ -116,8 +115,6 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
       let breakoutReasons: string[] = [];
       try {
         if (selectedProduct.id && userId) {
-          console.log(`[TrackerNewProductModal] Evaluating product via new RPC for user: ${userId}, product: ${selectedProduct.id}`);
-          
           const { data, error } = await supabase.rpc('evaluate_product_compatibility', {
             p_user_id: userId,
             p_product_id: selectedProduct.id.toString()
@@ -131,12 +128,10 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
               breakoutReasons = comp.safetyConcerns;
             }
             productVerdict = comp.skinTypeFit === 'Bad Fit' ? 'Avoid' : comp.skinTypeFit === 'Good Fit' ? 'Recommended' : 'Caution';
-            console.log(`[TrackerNewProductModal] RPC Evaluation successful. Verdict: ${productVerdict}, breakoutRisk: ${hasBreakoutRisk}`);
-          }
+            }
         }
       } catch (err) {
-        console.error('[TrackerNewProductModal] Exception during RPC evaluation flow:', err);
-      }
+        }
 
       const payload = {
         user_id: userId,

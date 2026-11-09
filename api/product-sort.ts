@@ -89,9 +89,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-    console.log('[product-sort API] --- STARTING PRODUCT SORT ---');
-    console.log('[product-sort API] Input Profile:', { skin_type, main_concern, secondary_concern, barrier_level, productType, cat3, page, offset });
-
     // EXECUTE RPC CALL WITH DIRECT QUERY FALLBACK
     let rawProducts: any[] | null = null;
     let rawLockedProducts: any[] | null = null;
@@ -154,8 +151,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Direct table query fallback if the RPC function fails or has unmigrated definitions
     if (rpcError) {
-      console.warn('[product-sort API] Database RPC failed, engaging direct query fallback:', rpcError.message);
-      
       try {
         let baseQuery = supabase
           .from('products')
@@ -204,7 +199,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           rawLockedProducts = [];
         }
       } catch (fallbackErr: any) {
-        console.error('[product-sort API] Fallback query failed as well:', fallbackErr);
         return res.status(500).json({
           success: false,
           error: fallbackErr.message || "Failed to query products from database"
@@ -214,8 +208,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const filteredProducts = rawProducts || [];
     const lockedProductsList = rawLockedProducts || [];
-    console.log(`[product-sort API] Returned ${filteredProducts.length} products and ${lockedProductsList.length} locked products for page ${page}.`);
-
     // PARSE INTO PRODUCTS & PRESCRIPTIONS
     const standardProducts = filteredProducts.filter((p: any) => !p.is_prescription);
     const prescriptionProducts = filteredProducts.filter((p: any) => p.is_prescription);
@@ -240,7 +232,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     });
   } catch (error: any) {
-    console.error('product-sort handler error:', error);
     return res.status(500).json({ 
       success: false, 
       error: error.message || "Internal server error in product-sort",

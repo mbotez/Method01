@@ -1,6 +1,6 @@
 {
-  "name": "Méli",
-  "description": "Personalized skincare ritual analysis, tracking, and socials.",
+  "name": "Canonic",
+  "description": "Skincare rituals, tracking and education.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

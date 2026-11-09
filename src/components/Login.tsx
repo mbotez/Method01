@@ -66,7 +66,6 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
       // On web, signInWithOAuth redirects the window.
       // On native mobile, external browser opens and redirects back via com.daybreak.canonic://auth-callback
     } catch (err: any) {
-      console.error('Google Auth Error:', err);
       const msg = err.message || 'Failed to authenticate with Google';
       setLocalError(msg);
       onError?.(msg);

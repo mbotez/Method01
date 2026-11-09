@@ -5,7 +5,6 @@ function safeSessionStorageSet(key: string, value: string) {
   try {
     sessionStorage.setItem(key, value);
   } catch (e: any) {
-    console.warn("[productSort Client] Failed to set sessionStorage due to quota limit or browser restriction. Attempting to clear existing productsort cache to free space...", e);
     try {
       const keysToRemove: string[] = [];
       for (let i = 0; i < sessionStorage.length; i++) {
@@ -23,8 +22,7 @@ function safeSessionStorageSet(key: string, value: string) {
       });
       sessionStorage.setItem(key, value);
     } catch (retryErr) {
-      console.warn("[productSort Client] Could not save to sessionStorage even after clearing keys.", retryErr);
-    }
+      }
   }
 }
 
@@ -33,7 +31,6 @@ function safeSessionStorageGet(key: string): string | null {
   try {
     return sessionStorage.getItem(key);
   } catch (e) {
-    console.warn("[productSort Client] Failed to read from sessionStorage.", e);
     return null;
   }
 }
@@ -43,8 +40,7 @@ function safeSessionStorageRemove(key: string) {
   try {
     sessionStorage.removeItem(key);
   } catch (e) {
-    console.warn("[productSort Client] Failed to remove from sessionStorage.", e);
-  }
+    }
 }
 
 export function clearProductSortCache() {
@@ -58,8 +54,7 @@ export function clearProductSortCache() {
     }
     keysToRemove.forEach(key => sessionStorage.removeItem(key));
   } catch (e) {
-    console.error("[productSort Client] Failed to clear productsort cache.", e);
-  }
+    }
 }
 
 export async function productSort(userProfile: any, productType: string, page: number = 1, forceRefresh: boolean = false, cat3: number | null = null) {
@@ -85,7 +80,6 @@ export async function productSort(userProfile: any, productType: string, page: n
         const parsed = JSON.parse(cached);
         return parsed;
       } catch (e) {
-        console.error("[productSort Client] Error parsing cached products JSON. Bypassing cache.", e);
         safeSessionStorageRemove(cacheKey);
       }
     }
@@ -112,7 +106,6 @@ export async function productSort(userProfile: any, productType: string, page: n
       throw new Error(errJson.error || `Product sort API failed with status ${response.status}`);
     }
   } catch (apiErr: any) {
-    console.warn('[productSort Client] Local API request failed, trying Edge Function:', apiErr);
     lastError = apiErr;
   }
 
@@ -131,7 +124,6 @@ export async function productSort(userProfile: any, productType: string, page: n
       throw new Error(error.message || "Supabase Edge Function error during product sort");
     }
   } catch (err: any) {
-    console.error('[productSort Client] Edge Function connection failed:', err);
     lastError = err;
   }
 

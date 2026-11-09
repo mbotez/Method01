@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Sparkles, 
   ChevronRight, 
   ChevronLeft,
   ArrowRight, 
@@ -49,7 +48,7 @@ import { ProductCard, ProductCardContent } from './components/ProductCard';
 import { ProductLink } from './components/ProductLink';
 import { ComparisonModal } from './components/ComparisonModal';
 import { TrackerNewProductModal } from './components/TrackerNewProductModal';
-import { Social } from './components/Social';
+import { Social, SKINCARE_GUIDES } from './components/Social';
 import { ChatQuestionnaire } from './components/ChatQuestionnaire';
 import { INVENTORY, Product } from './constants';
 import { InlineTrackerControls } from './components/InlineTrackerControls';
@@ -66,7 +65,7 @@ import { setupCapacitorDeepLinkAuth, handleWebAuthCallback } from './utils/auth'
 // ... (rest of imports)
 
 const GlowingBackground = ({ appState }: { appState: AppState }) => (
-  <div className="fixed inset-0 -z-10 overflow-hidden bg-[#85701d]">
+  <div className="fixed inset-0 -z-10 overflow-hidden bg-[#FAF9F6]">
     <div className="absolute top-[-5%] left-[-5%] w-[30%] h-[30%] rounded-full bg-venus-accent/[0.1] blur-[100px]" />
     <div className="absolute top-[20%] right-[10%] w-[20%] h-[20%] rounded-full bg-venus-accent/[0.15] blur-[80px]" />
   </div>
@@ -95,7 +94,8 @@ enum AppState {
   SOCIAL,
   PROFILE,
   PROGRESS,
-  PRODUCT_PAGE
+  PRODUCT_PAGE,
+  ROUTINES
 }
 
 const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
@@ -143,10 +143,19 @@ const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
 };
 
 export default function App() {
+  const [isWeb, setIsWeb] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 640);
   const [appState, setAppState] = useState<AppState>(() => {
-    const isWeb = typeof window !== 'undefined' && window.innerWidth >= 640;
-    return isWeb ? AppState.SOCIAL : AppState.LANDING;
+    const isWebInitial = typeof window !== 'undefined' && window.innerWidth >= 640;
+    return isWebInitial ? AppState.RANK : AppState.LANDING;
   });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsWeb(typeof window !== 'undefined' && window.innerWidth >= 640);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const { openProductCard } = useProductCard();
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -218,10 +227,17 @@ export default function App() {
   const [routineProductScores, setRoutineProductScores] = useState<Record<string, any>>({});
 
   const getBenefitsForProduct = (p: any, s: any) => {
+    const rawCat2 = p?.cat2 ||
+      s?.cat2 ||
+      p?.product_scores?.cat2 ||
+      (Array.isArray(p?.product_scores) ? p?.product_scores[0]?.cat2 : '') ||
+      '';
+    const isTreatment = String(rawCat2).trim().toLowerCase() === 'treatment';
+
     const benefits: string[] = [];
     const name = (p.name || p.product_name || '').toLowerCase();
     const desc = (p.description || '').toLowerCase();
-    if (s?.calm_redness_dry_skin > 0 || s?.calm_redness_oily_skin > 0 || s?.calm_redness_combi_skin > 0 || name.includes('redness') || desc.includes('redness')) {
+    if (!isTreatment && (s?.calm_redness_dry_skin > 0 || s?.calm_redness_oily_skin > 0 || s?.calm_redness_combi_skin > 0 || name.includes('redness') || desc.includes('redness'))) {
       benefits.push('Calms facial redness');
     }
     if (s?.barrier_repair_dry_skin > 0 || s?.barrier_repair_oily_skin > 0 || s?.barrier_repair_combi_skin > 0 || name.includes('barrier') || desc.includes('barrier')) {
@@ -242,10 +258,15 @@ export default function App() {
     if (s?.oil_control > 0) {
       benefits.push('Oil control');
     }
-    if (benefits.length === 0) {
-      benefits.push('Balances skin & maintains health');
+
+    let finalBenefits = isTreatment
+      ? benefits.filter(b => b.toLowerCase() !== 'calms facial redness')
+      : benefits;
+
+    if (finalBenefits.length === 0) {
+      finalBenefits.push('Balances skin & maintains health');
     }
-    return benefits;
+    return finalBenefits;
   };
 
   const getActiveRoutineProducts = (products: any[], routineTime: string) => {
@@ -310,7 +331,7 @@ export default function App() {
   const [selectedPhoto, setSelectedPhoto] = useState<any | null>(null);
   const [isFollowsOpen, setIsFollowsOpen] = useState(false);
   const [socialTab, setSocialTab] = useState<'Messages' | 'Friends'>('Friends');
-  const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'articles' | 'community'>('videos');
+  const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'articles' | 'guides' | 'community'>('videos');
   const [latestVideos, setLatestVideos] = useState<any[]>([]);
   const [lastPost, setLastPost] = useState<any>(null);
   const [loadingLatestVideos, setLoadingLatestVideos] = useState(true);
@@ -338,6 +359,16 @@ export default function App() {
   const [isLandingConfirmOpen, setIsLandingConfirmOpen] = useState(false);
   const [cachedLandingProducts, setCachedLandingProducts] = useState<MatchedProduct[]>([]);
   const [isLandingEvaluating, setIsLandingEvaluating] = useState(false);
+
+  const fetchTrackerData = useCallback(async (customUserId?: string) => {
+    const uid = customUserId || user?.id;
+    if (!uid) return;
+    const { data, error } = await supabase
+      .from('tracker')
+      .select('*')
+      .eq('user_id', uid);
+    if (error) if (data) setTrackerData(data);
+  }, [user]);
 
   // Inspiration Sorting States
   const [selectedInspirationCategory, setSelectedInspirationCategory] = useState<string | null>(null);
@@ -389,7 +420,6 @@ export default function App() {
         }));
       }
     } catch (err: any) {
-      console.error("Error running productSort:", err);
       setSortingError(err.message || "Could not sort products. Please ensure your profile is fully set up in the Profile tab.");
     } finally {
       if (page === 1) {
@@ -417,9 +447,8 @@ export default function App() {
           product_id: p.id || p.product_id || null
       });
       if (trackerError) throw trackerError;
-      fetchTrackerData();
+      fetchTrackerData(user?.id);
     } catch (err: any) {
-      console.error("Error adding product to tracker:", err);
       setError(`Failed to add product to tracker: ${err.message}`);
     }
   };
@@ -436,7 +465,6 @@ export default function App() {
       setDashboardScanMatched(matches);
       setIsDashboardConfirmOpen(true);
     } catch (err: any) {
-      console.error("Dashboard scan error:", err);
       setDashboardScanError(err.message || "An error occurred during photo scan. Please try again.");
     } finally {
       setIsDashboardScanning(false);
@@ -458,7 +486,6 @@ export default function App() {
       setNavScanMatched(matches);
       setIsNavConfirmOpen(true);
     } catch (err: any) {
-      console.error("Nav scan error:", err);
       setNavScanError(err.message || "An error occurred during photo scan. Please try again.");
     } finally {
       setIsNavScanning(false);
@@ -480,7 +507,6 @@ export default function App() {
       setLandingScanMatched(matches);
       setIsLandingConfirmOpen(true);
     } catch (err: any) {
-      console.error("Landing scan error:", err);
       setLandingScanError(err.message || "An error occurred during photo scan. Please try again.");
     } finally {
       setIsLandingScanning(false);
@@ -516,7 +542,6 @@ export default function App() {
 
     const { error: insertError } = await supabase.from('tracker').insert(payload);
     if (insertError) {
-      console.error("Error saving scanned products to tracker:", insertError);
       setLandingScanError("Failed to save scanned products to tracker.");
     }
   };
@@ -545,7 +570,6 @@ export default function App() {
 
     const { error: insertError } = await supabase.from('tracker').insert(payload);
     if (insertError) {
-      console.error("Error saving scanned products to tracker:", insertError);
       setNavScanError("Failed to save scanned products to tracker.");
     }
   };
@@ -575,7 +599,6 @@ export default function App() {
 
     const { error: insertError } = await supabase.from('tracker').insert(payload);
     if (insertError) {
-      console.error("Error saving scanned products to tracker:", insertError);
       setDashboardScanError("Failed to save scanned products to tracker.");
     }
   };
@@ -598,13 +621,11 @@ export default function App() {
           .limit(3);
 
         if (videoError) {
-          console.error("Error fetching latest videos:", videoError);
-        } else if (videoData) {
+          } else if (videoData) {
           setLatestVideos(videoData);
         }
       } catch (err) {
-        console.error("Exception fetching latest videos:", err);
-      } finally {
+        } finally {
         setLoadingLatestVideos(false);
       }
 
@@ -622,13 +643,11 @@ export default function App() {
           .maybeSingle();
 
         if (postError) {
-          console.error("Error fetching last post:", postError);
-        } else if (postData) {
+          } else if (postData) {
           setLastPost(postData);
         }
       } catch (err) {
-        console.error("Exception fetching last post:", err);
-      } finally {
+        } finally {
         setLoadingLastPost(false);
       }
     };
@@ -700,7 +719,6 @@ export default function App() {
 
   const handleShareRoutine = async (targetUserId: string) => {
     if (!shareRoutine || !user?.id) {
-        console.error('Missing data for share:', { shareRoutine: !!shareRoutine, userId: user?.id });
         return;
     }
     
@@ -712,9 +730,7 @@ export default function App() {
         message: `${user.username || 'Someone'} has sent you their routine! It's now available in your routines table.`,
         timestamp: new Date().toISOString()
     });
-    if (msgError) console.error('Error sending message:', msgError);
-
-    // 2. Duplicate routine
+    if (msgError) {}
     const { error } = await supabase
         .from('routines')
         .insert({
@@ -725,9 +741,7 @@ export default function App() {
             notes: shareRoutine.notes
         });
     
-    if (error) {
-        console.error('Error duplicating routine:', error);
-    } else {
+    if (error) {} else {
         setIsSharingOpen(false);
         setShareRoutine(null);
         setUsernameSearch('');
@@ -845,7 +859,6 @@ export default function App() {
         
         // Graceful retry fallback if the new face scan columns or sex/pregnant/actives_used columns do not exist in the backend database yet
         if (profileError && (profileError.message.toLowerCase().includes('column') || profileError.code === '42703')) {
-            console.warn('Supabase profile table structure does not match, removing extended columns and retrying...');
             const { 
               redness, redness_score, wrinkles_score, redness_main_area, wrinkels_main_area, scan_breakout_type,
               sex, pregnant, actives_used,
@@ -858,14 +871,6 @@ export default function App() {
         }
         
         if (profileError) {
-            console.error('Error saving user profile to Supabase:', {
-                error: profileError,
-                payload: profilePayload,
-                message: profileError.message,
-                details: profileError.details,
-                hint: profileError.hint,
-                code: profileError.code
-            });
             throw profileError;
         }
 
@@ -898,8 +903,7 @@ export default function App() {
                         in_use: true
                     });
                     if (trackerError) {
-                        console.error('Error inserting questionnaire product into tracker:', trackerError);
-                    }
+                        }
                 }
             }
         }
@@ -966,8 +970,16 @@ export default function App() {
     const handleOpenQuizOrLogin = () => {
       setAppState(AppState.ONBOARDING_DETAILS);
     };
+    const handleOpenLoginModal = () => {
+      setIsSignUp(false);
+      setAppState(AppState.AUTH);
+    };
     window.addEventListener('open-quiz-or-login', handleOpenQuizOrLogin);
-    return () => window.removeEventListener('open-quiz-or-login', handleOpenQuizOrLogin);
+    window.addEventListener('open-login-modal', handleOpenLoginModal);
+    return () => {
+      window.removeEventListener('open-quiz-or-login', handleOpenQuizOrLogin);
+      window.removeEventListener('open-login-modal', handleOpenLoginModal);
+    };
   }, []);
 
   // Listen for browser navigation changes (popstate / hashchange)
@@ -1016,8 +1028,7 @@ export default function App() {
       }
     } catch (err) {
       if (currentId === searchIdRef.current) {
-        console.error('Search error:', err);
-      }
+        }
     } finally {
       if (currentId === searchIdRef.current) {
         setIsSearching(false);
@@ -1055,8 +1066,7 @@ export default function App() {
       }
     } catch (err) {
       if (currentId === routineSearchIdRef.current) {
-        console.error('Routine search error:', err);
-      }
+        }
     } finally {
       if (currentId === routineSearchIdRef.current) {
         setIsSearchingRoutine(false);
@@ -1075,7 +1085,6 @@ export default function App() {
   // Handlers
   const handleDeleteRoutine = async () => {
     if (!routineToDelete) {
-      console.warn("handleDeleteRoutine: routineToDelete is null");
       return;
     }
     try {
@@ -1090,14 +1099,12 @@ export default function App() {
       }
 
       if (!data || data.length === 0) {
-        console.warn("Delete executed but zero rows were deleted. This usually means the row ID was not found, or it was silently blocked by a Supabase Row Level Security (RLS) policy.");
         throw new Error("Zero rows deleted or matches not found. If this is in your database, please check if your Supabase 'routines' table has a Row Level Security (RLS) policy enabling DELETE permissions for authenticated users.");
       }
 
       setRoutines(prev => prev.filter(rt => rt.id !== routineToDelete.id));
       setRoutineToDelete(null);
     } catch (e: any) {
-      console.error("Error deleting routine:", e);
       setError(`Error deleting routine: ${formatSupabaseError(e)}`);
       setRoutineToDelete(null);
     }
@@ -1165,7 +1172,7 @@ export default function App() {
       .update({ [field]: value, updated_at: new Date().toISOString() })
       .eq('id', item.id);
 
-    if (error) console.error('Error updating tracker:', error);
+    if (error) {}
   };
 
   const handleTrackerProductClick = async (item: any, withTrackerItem: boolean = true) => {
@@ -1198,7 +1205,6 @@ export default function App() {
         email: user?.email,
       }
     };
-    console.error('Supabase Error:', JSON.stringify(errInfo));
     setError("Database Protocol Error: " + (err.message || "Unknown error"));
   };
 
@@ -1266,7 +1272,6 @@ export default function App() {
                 setPendingQuestionnaireAnswers(null);
                 await fetchTrackerData(currentUser.id);
             } catch (e: any) {
-                console.error("Error saving pending profile:", e);
                 setError(`Error saving profile info: ${e.message}`);
             }
         }
@@ -1296,8 +1301,7 @@ export default function App() {
                   .select();
 
                 if (insertError) {
-                  console.error("Error saving scanned products to tracker:", insertError);
-                }
+                  }
 
                 await fetchTrackerData(currentUser.id);
 
@@ -1311,8 +1315,7 @@ export default function App() {
                 // Clear the cached products
                 localStorage.removeItem('cachedLandingProducts');
             } catch (cacheErr) {
-                console.error("Error processing cached landing products:", cacheErr);
-            } finally {
+                } finally {
                 if (mounted) setIsLandingEvaluating(false);
             }
         }
@@ -1324,7 +1327,7 @@ export default function App() {
             .eq('id', currentUser.id)
             .single();
 
-          if (error) { console.error('FAILED CALL:', { table: 'users', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
+          if (error) { }
 
           if (data && mounted) {
             setProfile(data);
@@ -1340,13 +1343,11 @@ export default function App() {
             .maybeSingle();
 
           if (uProfileError) {
-            console.error('FAILED CALL:', { table: 'user_profile', action: 'SELECT', errorCode: uProfileError.code, message: uProfileError.message });
-          } else if (uProfile && mounted) {
+            } else if (uProfile && mounted) {
             setUserProfile(uProfile);
           }
         } catch (e) {
-          console.error("Auth profile error:", e);
-        } finally {
+          } finally {
           if (mounted) setLoading(false);
         }
       } else {
@@ -1368,26 +1369,38 @@ export default function App() {
   useEffect(() => {
     if (loading) return;
 
-    const isWeb = typeof window !== 'undefined' && window.innerWidth >= 640;
-
     if (user) {
-      // If we are on landing/auth but logged in, move directly to blog (on web) or dashboard (on mobile)
+      // If we are on landing/auth but logged in, move directly to dashboard
       if (appState === AppState.LANDING || appState === AppState.AUTH) {
-        setAppState(isWeb ? AppState.SOCIAL : AppState.DASHBOARD);
+        setAppState(AppState.DASHBOARD);
       }
     } else {
-      // If logged out on web and currently on landing, redirect to blog (social)
-      if (isWeb && appState === AppState.LANDING) {
-        setAppState(AppState.SOCIAL);
+      // If logged out on web and currently on landing or dashboard, redirect to products page
+      if (isWeb && (appState === AppState.LANDING || appState === AppState.DASHBOARD)) {
+        setAppState(AppState.RANK);
         return;
       }
-      // If logged out, only allow entry points and social (blog) page
-      const allowedStates = [AppState.LANDING, AppState.AUTH, AppState.ONBOARDING_DETAILS, AppState.RANK, AppState.TRACKER, AppState.SOCIAL];
+      // If logged out on any screen and on dashboard (Home), redirect to products on web or landing on mobile
+      if (appState === AppState.DASHBOARD) {
+        setAppState(isWeb ? AppState.RANK : AppState.LANDING);
+        return;
+      }
+      // If logged out, only allow entry points, products, tracker, and social (blog) page
+      const allowedStates = [AppState.AUTH, AppState.ONBOARDING_DETAILS, AppState.RANK, AppState.TRACKER, AppState.SOCIAL];
+      if (!isWeb) {
+        allowedStates.push(AppState.LANDING);
+      }
       if (!allowedStates.includes(appState)) {
-        setAppState(isWeb ? AppState.SOCIAL : AppState.LANDING);
+        setAppState(isWeb ? AppState.RANK : AppState.LANDING);
       }
     }
-  }, [user, profile, appState, loading]);
+  }, [user, profile, appState, loading, isWeb]);
+
+  useEffect(() => {
+    if (appState === AppState.PROGRESS) {
+      setAppState(AppState.PROFILE);
+    }
+  }, [appState]);
 
   useEffect(() => {
     if (!userProfile?.id) return;
@@ -1490,7 +1503,7 @@ export default function App() {
     const fetchFilteredProducts = async () => {
       const query = buildProductQuery();
       const { data, error } = await query;
-      if (error) { console.error('FAILED CALL:', { table: 'products', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
+      if (error) { }
       if (data) setProducts(data);
     };
 
@@ -1500,7 +1513,7 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async () => {
         const query = buildProductQuery();
         const { data, error } = await query;
-        if (error) { console.error('FAILED CALL:', { table: 'products', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
+        if (error) { }
         if (data) setProducts(data);
       })
       .subscribe();
@@ -1510,16 +1523,7 @@ export default function App() {
     };
   }, [primaryFilter, subFilter]);
 
-  const fetchTrackerData = useCallback(async (customUserId?: string) => {
-    const uid = customUserId || user?.id;
-    if (!uid) return;
-    const { data, error } = await supabase
-      .from('tracker')
-      .select('*')
-      .eq('user_id', uid);
-    if (error) console.error('Tracker fetch error:', error);
-    if (data) setTrackerData(data);
-  }, [user]);
+
 
   // Routine compatibility checks using RoutineCheck.ts
   useEffect(() => {
@@ -1612,8 +1616,7 @@ export default function App() {
 
           newChecks[key] = checkResult;
         } catch (e) {
-          console.error(`Error running checkRoutine for key ${key}:`, e);
-        }
+          }
       }
 
       if (active) {
@@ -1651,8 +1654,7 @@ export default function App() {
         .in('product_id', ids);
 
       if (error) {
-        console.error("Error fetching routine product scores:", error);
-      } else if (data) {
+        } else if (data) {
         const map: Record<string, any> = {};
         data.forEach((row: any) => {
           map[String(row.product_id)] = row;
@@ -1677,7 +1679,7 @@ export default function App() {
         .select('*')
         .eq('user_id', user.id)
         .order('updated_at', { ascending: true });
-      if (routinesError) { console.error('FAILED ROUTINES CALL:', routinesError); }
+      if (routinesError) { }
       else { setRoutines(routinesData || []); }
 
       // Progress
@@ -1686,7 +1688,7 @@ export default function App() {
         .select('*')
         .eq('user_id', user.id)
         .order('timestamp', { ascending: false });
-      if (progressError) { console.error('FAILED PROGRESS CALL:', progressError); }
+      if (progressError) { }
       else { setProgressPhotos(progressData || []); }
 
       // Upp
@@ -1694,7 +1696,7 @@ export default function App() {
         .from('upp')
         .select('*')
         .eq('user_id', user.id);
-      if (uppError) { console.error('FAILED UPP CALL:', uppError); }
+      if (uppError) { }
       else { if (uppData) setUserProducts(uppData); }
 
       // User Profile
@@ -1703,7 +1705,7 @@ export default function App() {
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
-      if (profileError) { console.error('FAILED USER_PROFILE CALL:', profileError); }
+      if (profileError) { }
       else { setUserProfile(profileData || null); }
 
       // Tracker
@@ -1716,7 +1718,7 @@ export default function App() {
     const routineChannel = supabase.channel('routine-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'routines', filter: `user_id=eq.${user.id}` }, async () => {
         const { data, error } = await supabase.from('routines').select('*').eq('user_id', user.id).order('updated_at', { ascending: true });
-        if (error) { console.error('FAILED CALL:', { table: 'routines', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
+        if (error) { }
         if (data) setRoutines(data);
       })
       .subscribe();
@@ -1724,8 +1726,7 @@ export default function App() {
     const trackerChannel = supabase.channel('tracker-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tracker', filter: `user_id=eq.${user.id}` }, async () => {
         const { data, error } = await supabase.from('tracker').select('*').eq('user_id', user.id);
-        if (error) console.error('Tracker realtime error:', error);
-        if (data) setTrackerData(data);
+        if (error) if (data) setTrackerData(data);
       })
       .subscribe();
 
@@ -1736,7 +1737,7 @@ export default function App() {
           .select('*')
           .eq('user_id', user.id)
           .order('timestamp', { ascending: false });
-        if (error) { console.error('FAILED CALL:', { table: 'progress', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
+        if (error) { }
         if (data) setProgressPhotos(data);
       })
       .subscribe();
@@ -1744,7 +1745,7 @@ export default function App() {
     const uppChannel = supabase.channel('upp-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'upp', filter: `user_id=eq.${user.id}` }, async (payload) => {
         const { data, error } = await supabase.from('upp').select('*').eq('user_id', user.id);
-        if (error) { console.error('FAILED CALL:', { table: 'upp', action: 'SELECT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint }); }
+        if (error) { }
         if (data) {
           setUserProducts(data);
         }
@@ -1754,7 +1755,7 @@ export default function App() {
     const userProfileChannel = supabase.channel('user_profile-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_profile', filter: `id=eq.${user.id}` }, async () => {
         const { data, error } = await supabase.from('user_profile').select('*').eq('id', user.id).maybeSingle();
-        if (error) { console.error('FAILED CALL:', { table: 'user_profile', action: 'SELECT', errorCode: error.code, message: error.message }); }
+        if (error) { }
         if (data) setUserProfile(data);
       })
       .subscribe();
@@ -1773,7 +1774,6 @@ export default function App() {
       const { error } = await supabase.from('upp').delete().eq('id', userProductId);
       if (error) throw error;
     } catch (e) {
-      console.error(e);
       setError("Error deleting product");
     }
   };
@@ -1808,7 +1808,6 @@ export default function App() {
       ]);
     
     if (error) {
-      console.error('Error saving rating:', error);
       return;
     }
     
@@ -1845,7 +1844,6 @@ export default function App() {
           });
 
         if (uploadError) {
-          console.error('CRITICAL: Storage Upload Error:', uploadError);
           // Check if bucket exists error
           if (uploadError.message.includes('bucket not found') || uploadError.message.includes('does not exist')) {
             throw new Error("Storage bucket 'progress_pics' not found. Please create it in Supabase dashboard.");
@@ -1873,7 +1871,6 @@ export default function App() {
           .single();
 
         if (insertError) {
-          console.error('Database Insert Error:', insertError);
           throw insertError;
         }
 
@@ -1883,7 +1880,6 @@ export default function App() {
         }
         
       } catch (err: any) {
-        console.error("Progress upload process failed:", err);
         setError("Failed to process entry: " + (err.message || 'Unknown error'));
       }
       
@@ -1900,7 +1896,6 @@ export default function App() {
     }
     
     if (!user) {
-      console.error("Delete failed: No user found");
       return;
     }
 
@@ -1920,8 +1915,7 @@ export default function App() {
         .remove([filePath]);
 
       if (storageError) {
-        console.warn("Storage deletion warning (might already be gone):", storageError);
-      }
+        }
 
       // 3. Delete from Database
       const { error: dbError } = await supabase
@@ -1930,7 +1924,6 @@ export default function App() {
         .eq('id', photo.id);
 
       if (dbError) {
-        console.error("Database deletion error:", dbError);
         throw dbError;
       }
 
@@ -1940,7 +1933,6 @@ export default function App() {
         setSelectedPhoto(null);
       }
     } catch (err: any) {
-      console.error("Error deleting photo:", err);
       setError("Failed to delete photo: " + (err.message || 'Unknown error'));
     }
   };
@@ -1959,7 +1951,6 @@ export default function App() {
             await fetchTrackerData();
             generateCuratedSelection();
         } catch (e: any) {
-            console.error("Error saving questionnaire:", e);
             setError(`Error saving profile info: ${formatSupabaseError(e)}`);
         }
     } else {
@@ -1992,12 +1983,10 @@ export default function App() {
         .upsert(payload);
       
       if (profileError) {
-         console.error('FAILED CALL:', { table: 'users', action: 'UPSERT', errorCode: profileError.code, message: profileError.message, details: profileError.details, hint: profileError.hint }); 
          throw profileError;
       }
 
     } catch (e: any) {
-      console.error("Update profile failed:", e);
       setError(e.message || "Something went wrong.");
       setAppState(AppState.ONBOARDING_DETAILS);
     }
@@ -2024,7 +2013,6 @@ export default function App() {
         .insert(routinePayload);
 
       if (routineError) {
-        console.error('FAILED CALL:', { table: 'routines', action: 'INSERT', errorCode: routineError.code, message: routineError.message, details: routineError.details, hint: routineError.hint }); 
         throw routineError;
       }
 
@@ -2043,21 +2031,18 @@ export default function App() {
         .eq('id', user.id);
       
       if (userError) {
-        console.error('FAILED CALL:', { table: 'users', action: 'UPDATE', errorCode: userError.code, message: userError.message, details: userError.details, hint: userError.hint }); 
         throw userError;
       }
 
       setAppState(AppState.DASHBOARD);
     } catch (e) {
-      console.error(e);
-    }
+      }
   };
 
   const handleSaveRoutine = async () => {
     setRoutineFormError(null);
     setIsSavingRoutineForm(true);
     if (!user) {
-      console.error('No user found');
       setRoutineFormError('No user found');
       setIsSavingRoutineForm(false);
       return;
@@ -2203,7 +2188,6 @@ export default function App() {
       setRoutineFormError(null);
       setIsSavingRoutineForm(false);
     } catch (e) {
-      console.error("error saving routine", e);
       setRoutineFormError(`Error saving routine: ${formatSupabaseError(e)}`);
       setIsSavingRoutineForm(false);
     }
@@ -2338,7 +2322,6 @@ export default function App() {
       setUppCategories([]);
       setUppImpression('Loved it');
     } catch (e) {
-      console.error('Error in handleSaveUPP:', e);
       setError(`Error saving product to UPP: ${formatSupabaseError(e)}`);
     }
   };
@@ -2349,6 +2332,290 @@ export default function App() {
     }, 3000);
     return () => clearTimeout(timer);
   }, []);
+
+  const renderMyRoutinesSection = (hideHeaderActions: boolean = false) => (
+    <div className="space-y-4 md:space-y-6">
+      {!hideHeaderActions && (
+        <div className="flex items-center justify-between md:border-0 md:pb-0">
+          <div className="flex items-center gap-2 text-black">
+            <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>My routines</h3>
+          </div>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={handleAddRoutine}
+              className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden md:inline">New Routine</span>
+            </button>
+            <button 
+              onClick={() => dashboardFileInputRef.current?.click()}
+              disabled={isDashboardScanning}
+              className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2 cursor-pointer"
+            >
+              {isDashboardScanning ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Camera className="w-4 h-4" />
+              )}
+              <span className="hidden md:inline">Scan Product</span>
+            </button>
+          </div>
+        </div>
+      )}
+      <input
+        type="file"
+        accept="image/*"
+        capture="environment"
+        ref={dashboardFileInputRef}
+        onChange={handleDashboardPhotoScan}
+        className="hidden"
+      />
+      
+      {dashboardScanError && (
+        <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold border-2 border-red-500/15">
+          {dashboardScanError}
+        </div>
+      )}
+      <div className="space-y-8">
+        {routines.length === 0 ? (
+          <div className="py-12 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50 rounded-2xl">
+            <Sun className="w-8 h-8 text-black/20 mb-2" />
+            <p className="text-black/50 text-sm font-black uppercase tracking-widest">No routine added yet</p>
+            <p className="text-black/40 text-xs mt-1">Create your first morning or evening skincare ritual.</p>
+            <button
+              onClick={handleAddRoutine}
+              className="mt-4 px-4 py-2 bg-black text-white text-xs font-black uppercase tracking-wider rounded-xl hover:bg-venus-accent transition-colors cursor-pointer"
+            >
+              + Create Routine
+            </button>
+          </div>
+        ) : (
+          routines.map((rt: any, rIdx: number) => (
+            <div key={rIdx} className="clean-card p-4 border-2 border-black/5 bg-venus-accent/[0.06] relative group flex flex-col gap-2">
+              {/* Header row: Number, Routine Name + Actions - Clickable to toggle */}
+              <div className="flex items-start gap-4 cursor-pointer" onClick={() => {
+                  toggleRoutineExpansion(rIdx);
+                }}>
+                  {/* Routine Name and Metadata */}
+                  <div className="flex-1 min-w-0">
+                      {rt.routine_name && (
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-black bg-venus-accent/20 text-venus-accent px-1.5 py-0.5 rounded uppercase">{rt.time || 'AM'}</span>
+                            <h4 className="font-black text-black uppercase text-sm md:text-base tracking-tight pt-1 truncate">
+                              {rt.routine_name}
+                            </h4>
+                          </div>
+                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded uppercase shrink-0 ${
+                            (() => {
+                              const score = routineChecks[rt.id || String(rIdx)]?.routine_score;
+                              if (score === undefined) return 'bg-black/5 text-black/50 animate-pulse';
+                              if (score >= 80) return 'bg-green-100 text-green-800 border border-green-200';
+                              if (score >= 50) return 'bg-amber-100 text-amber-800 border border-amber-200';
+                              return 'bg-red-100 text-red-800 border border-red-200';
+                            })()
+                          }`}>
+                            {routineChecks[rt.id || String(rIdx)] !== undefined 
+                              ? `${routineChecks[rt.id || String(rIdx)].routine_score}/100` 
+                              : '...'}
+                          </span>
+                        </div>
+                      )}
+                      {/* Day */}
+                      <div className="mt-0.5">
+                         <span className="text-[9px] uppercase font-bold tracking-widest text-black/40 truncate">{(rt.days || []).join(', ')}</span>
+                      </div>
+                  </div>
+              </div>
+
+              {/* Products - Routine Items */}
+              {expandedRoutines.includes(rIdx) && (
+                <div className="space-y-2 pt-2 border-t border-black/5">
+                    {getActiveRoutineProducts(rt.products, rt.time).map((p: any, i: number) => (
+                        <div key={i} className="flex flex-col gap-0.5 text-xs border-b border-black/5 pb-1">
+                            <div className="flex items-center gap-2">
+                                <span className="uppercase font-black tracking-widest text-venus-accent">{p.type}</span>
+                                <span className="font-bold text-black/80">{p.brand}</span>
+                            </div>
+                            <ProductLink 
+                                 productId={p.id} 
+                                 productName={p.name} 
+                                 className="text-black/60 hover:text-venus-accent transition-colors text-left" 
+                             />
+                        </div>
+                    ))}
+
+                    {/* Routine Check Analysis Section */}
+                    {(() => {
+                      const check = routineChecks[rt.id || String(rIdx)];
+                      if (!check) {
+                        return (
+                          <div className="mt-4 p-4 rounded-2xl bg-black/[0.01] border border-dashed border-black/5 flex items-center justify-center text-xs text-black/40 font-bold uppercase tracking-wider animate-pulse">
+                            Calculating compatibility metrics...
+                          </div>
+                        );
+                      }
+
+                      const amSequence = check.recommendations?.find(r => r.startsWith("Recommended AM Layering Sequence:"));
+                      const pmSequence = check.recommendations?.find(r => r.startsWith("Recommended PM Layering Sequence:"));
+                      const otherRecommendations = (check.recommendations || []).filter(r => 
+                        !r.startsWith("Recommended AM Layering Sequence:") && 
+                        !r.startsWith("Recommended PM Layering Sequence:")
+                      );
+
+                      return (
+                        <div className="mt-4 p-4 rounded-2xl bg-black/[0.02] border border-black/5 space-y-4">
+                          {/* Title / Header */}
+                          <div className="flex items-center justify-between border-b border-black/5 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black uppercase tracking-wider text-black">Routine Analysis</span>
+                            </div>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase border ${
+                              check.routine_score >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
+                              check.routine_score >= 50 ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                              'bg-red-100 text-red-800 border-red-200'
+                            }`}>
+                              Score: {check.routine_score}/100
+                            </span>
+                          </div>
+
+                          {/* Mini Dashboard */}
+                          {check.debug && (
+                            <div className="grid grid-cols-2 gap-3 bg-white border border-black/5 p-3 rounded-xl shadow-sm">
+                              <div className="space-y-0.5 text-left">
+                                <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Skin Barrier Risk</span>
+                                <span className={`text-xs font-black uppercase ${
+                                  check.debug.user_irritation_threshold === 'high' ? 'text-red-600' :
+                                  check.debug.user_irritation_threshold === 'medium' ? 'text-amber-600' : 'text-green-600'
+                                }`}>
+                                  {check.debug.user_irritation_threshold} Risk
+                                </span>
+                              </div>
+                              <div className="space-y-0.5 text-left">
+                                <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Actives Budget</span>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-black text-black">
+                                    {check.debug.active_count} / {check.debug.active_budget} limit
+                                  </span>
+                                </div>
+                                <div className="w-full bg-black/5 h-1.5 rounded-full overflow-hidden mt-1">
+                                  <div 
+                                    className={`h-full rounded-full transition-all duration-500 ${check.debug.active_count > check.debug.active_budget ? 'bg-red-500 animate-pulse' : 'bg-venus-accent'}`}
+                                    style={{ width: `${Math.min(100, (check.debug.active_count / (check.debug.active_budget || 1)) * 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* TIMELINE / LAYERING FLOW */}
+                          {amSequence && (
+                            <div className="bg-white border border-black/5 rounded-xl p-3 shadow-sm space-y-2 text-left">
+                              <div className="flex items-center gap-1.5 text-black">
+                                <Sun className="w-3.5 h-3.5 text-amber-500" />
+                                <span className="text-[10px] font-black uppercase tracking-wider">Recommended AM Layering</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                {amSequence.replace("Recommended AM Layering Sequence:", "").trim().split(" → ").map((step, sIdx) => (
+                                  <React.Fragment key={sIdx}>
+                                    {sIdx > 0 && <span className="text-black/30 text-xs">→</span>}
+                                    <span className="bg-amber-50 text-[10px] font-bold text-amber-900 border border-amber-200/50 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1">
+                                      <span className="w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center font-black text-[8px]">{sIdx + 1}</span>
+                                      {step}
+                                    </span>
+                                  </React.Fragment>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {pmSequence && (
+                            <div className="bg-white border border-black/5 rounded-xl p-3 shadow-sm space-y-2 text-left">
+                              <div className="flex items-center gap-1.5 text-black">
+                                <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                                <span className="text-[10px] font-black uppercase tracking-wider">Recommended PM Layering</span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                {pmSequence.replace("Recommended PM Layering Sequence:", "").trim().split(" → ").map((step, sIdx) => (
+                                  <React.Fragment key={sIdx}>
+                                    {sIdx > 0 && <span className="text-black/30 text-xs">→</span>}
+                                    <span className="bg-indigo-50 text-[10px] font-bold text-indigo-900 border border-indigo-200/50 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1">
+                                      <span className="w-3.5 h-3.5 rounded-full bg-indigo-500 text-white flex items-center justify-center font-black text-[8px]">{sIdx + 1}</span>
+                                      {step}
+                                    </span>
+                                  </React.Fragment>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* INSIGHTS & WARNINGS */}
+                          {otherRecommendations.length > 0 && (
+                            <div className="space-y-1.5 text-left">
+                              <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block px-1">Insights & Warnings</span>
+                              <div className="space-y-1">
+                                {otherRecommendations.map((rec, rIdx) => {
+                                  const isWarning = rec.toLowerCase().includes("warning") || 
+                                                    rec.toLowerCase().includes("alert") || 
+                                                    rec.toLowerCase().includes("gap") || 
+                                                    rec.toLowerCase().includes("shortfall") ||
+                                                    rec.toLowerCase().includes("danger") ||
+                                                    rec.toLowerCase().includes("risk");
+                                  return (
+                                    <div 
+                                      key={rIdx} 
+                                      className={`p-2.5 rounded-xl border flex items-start gap-2.5 text-xs shadow-sm ${
+                                        isWarning 
+                                          ? 'bg-red-50/50 border-red-500/15 text-red-900' 
+                                          : 'bg-white border-black/5 text-black/80'
+                                      }`}
+                                    >
+                                      {isWarning ? (
+                                        <Shield className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                                      ) : (
+                                        <CheckCircle2 className="w-4 h-4 text-venus-accent shrink-0 mt-0.5" />
+                                      )}
+                                      <span className="font-medium leading-relaxed whitespace-pre-wrap">{rec}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                </div>
+              )}
+              
+              {/* Actions */}
+              {expandedRoutines.includes(rIdx) && (
+                <div className="flex items-center gap-1 shrink-0 pt-2 border-t border-black/5 mt-1 justify-end">
+                    <label className="flex items-center gap-1 p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer text-black/40 hover:text-black text-xs mr-auto">
+                        <input type="checkbox" onChange={(e) => handleToggleTrackerRoutine(rt.products, rt.time, e.target.checked)} className="form-checkbox" />
+                        <span>Add to tracker</span>
+                    </label>
+                    <button onClick={() => { setShareRoutine(rt); setIsSharingOpen(true); }} className='p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer' title="Share">
+                        <Share2 className="w-4 h-4 text-black/40 hover:text-black" />
+                    </button>
+                    <button onClick={() => handleEditRoutine(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer' title="Edit">
+                        <Pencil className="w-4 h-4 text-black/40 hover:text-black" />
+                    </button>
+                    <button onClick={() => handleSetReminder(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer' title="Reminder">
+                        <AlarmClock className="w-4 h-4 text-black/40 hover:text-black" />
+                    </button>
+                    <button onClick={() => setRoutineToDelete(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors text-red-500/40 hover:text-red-500 cursor-pointer' title="Delete">
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-b from-[#FAF9F6] to-[#F3F2EE] space-y-4">
@@ -2379,44 +2646,58 @@ export default function App() {
             className="fixed inset-y-0 left-0 w-64 bg-white z-[60] shadow-2xl p-6 flex flex-col gap-6"
           >
             <div className="flex justify-between items-center">
-                <span className="font-bubble text-3xl text-black font-medium cursor-pointer" onClick={() => { setAppState(AppState.LANDING); setIsMobileNavOpen(false); }}>Canonic</span>
+                <span className="font-bubble text-3xl text-black font-medium cursor-pointer" onClick={() => { 
+                  if (user) {
+                    setAppState(AppState.DASHBOARD);
+                  } else {
+                    setAppState(isWeb ? AppState.RANK : AppState.LANDING);
+                  }
+                  setIsMobileNavOpen(false); 
+                }}>Canonic</span>
                 <button onClick={() => setIsMobileNavOpen(false)}><X /></button>
             </div>
             {/* Navigation items moved from footer */}
             <div className="flex flex-col gap-4">
-              <button onClick={() => { setAppState(AppState.DASHBOARD); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.DASHBOARD ? 'text-black font-black' : 'text-black/60'}`}>
-                <FlaskConical className="w-6 h-6" />
-                <span className="text-sm uppercase tracking-widest font-black">Home</span>
-              </button>
               {user && (
-                <button onClick={() => { setAppState(AppState.PROGRESS); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.PROGRESS ? 'text-black font-black' : 'text-black/60'}`}>
-                  <Newspaper className="w-6 h-6" />
-                  <span className="text-sm uppercase tracking-widest font-black">Progress</span>
+                <button onClick={() => { setAppState(AppState.DASHBOARD); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 cursor-pointer ${appState === AppState.DASHBOARD ? 'text-black font-black' : 'text-black/60 hover:text-black'}`}>
+                  <FlaskConical className="w-6 h-6" />
+                  <span className="text-sm uppercase tracking-widest font-black">Home</span>
+                </button>
+              )}
+              {user ? (
+                <button onClick={() => { setAppState(AppState.ROUTINES); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 cursor-pointer ${appState === AppState.ROUTINES ? 'text-black font-black' : 'text-black/60 hover:text-black'}`}>
+                  <Sun className="w-6 h-6" />
+                  <span className="text-sm uppercase tracking-widest font-black">My Routines</span>
+                </button>
+              ) : (
+                <button onClick={() => { setAuthPromptModalOpen(true); setIsMobileNavOpen(false); }} className="flex items-center gap-4 text-black/60 hover:text-black cursor-pointer">
+                  <Sun className="w-6 h-6" />
+                  <span className="text-sm uppercase tracking-widest font-black">My Routines</span>
                 </button>
               )}
               {user && (
-                <button onClick={() => { setAppState(AppState.TRACKER); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.TRACKER ? 'text-black font-black' : 'text-black/60'}`}>
+                <button onClick={() => { setAppState(AppState.TRACKER); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 cursor-pointer ${appState === AppState.TRACKER ? 'text-black font-black' : 'text-black/60 hover:text-black'}`}>
                   <CheckSquare className="w-6 h-6" />
                   <span className="text-sm uppercase tracking-widest font-black">Tracker</span>
                 </button>
               )}
-              <button onClick={() => { setAppState(AppState.RANK); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.RANK ? 'text-black font-black' : 'text-black/60'}`}>
+              <button onClick={() => { setAppState(AppState.RANK); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 cursor-pointer ${appState === AppState.RANK ? 'text-black font-black' : 'text-black/60 hover:text-black'}`}>
                 <ShoppingBag className="w-6 h-6" />
                 <span className="text-sm uppercase tracking-widest font-black">Products</span>
               </button>
 
-              <button onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.SOCIAL && !isFollowsOpen ? 'text-black font-black' : 'text-black/60'}`}>
+              <button onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 cursor-pointer ${appState === AppState.SOCIAL && !isFollowsOpen ? 'text-black font-black' : 'text-black/60 hover:text-black'}`}>
                 <Heart className="w-6 h-6" />
-                <span className="text-sm uppercase tracking-widest font-black">Blog</span>
+                <span className="text-sm uppercase tracking-widest font-black">The Edit</span>
               </button>
               {user && (
-                <button onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(true); setSocialTab('Messages'); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.SOCIAL && isFollowsOpen ? 'text-black font-black' : 'text-black/60'}`}>
+                <button onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(true); setSocialTab('Messages'); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 cursor-pointer ${appState === AppState.SOCIAL && isFollowsOpen ? 'text-black font-black' : 'text-black/60 hover:text-black'}`}>
                   <MessageCircle className="w-6 h-6" />
                   <span className="text-sm uppercase tracking-widest font-black">Messages</span>
                 </button>
               )}
               {user && (
-                <button onClick={() => { setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 ${appState === AppState.PROFILE ? 'text-black font-black' : 'text-black/60'}`}>
+                <button onClick={() => { setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} className={`flex items-center gap-4 cursor-pointer ${appState === AppState.PROFILE ? 'text-black font-black' : 'text-black/60 hover:text-black'}`}>
                   <UserIcon className="w-6 h-6" />
                   <span className="text-sm uppercase tracking-widest font-black">Profile</span>
                 </button>
@@ -2549,7 +2830,7 @@ export default function App() {
         )}
       </header>
       
-      <main className={`pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : 'max-w-4xl'}`}>
+      <main className={`pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`}>
         <AnimatePresence mode="wait">
           
           {appState === AppState.AUTH && (
@@ -2588,7 +2869,7 @@ export default function App() {
             >
               <ProductCardContent 
                 productId={String(selectedProductForPage.id)}
-                onClose={() => setAppState(AppState.DASHBOARD)} 
+                onClose={() => setAppState(user ? AppState.DASHBOARD : AppState.RANK)} 
               />
             </motion.div>
           )}
@@ -2822,7 +3103,7 @@ export default function App() {
                       )
                       .map((alert: string, idx: number) => (
                         <div key={idx} className="p-3 bg-rose-50 text-rose-700 rounded-xl text-[10px] font-black uppercase tracking-wider border border-rose-100 flex items-center gap-2 animate-pulse text-left">
-                          <Sparkles className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                          <Shield className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                           <span>{alert}</span>
                         </div>
                       ))}
@@ -3074,309 +3355,7 @@ export default function App() {
                 </div>
 
                 {/* Routine Card */}
-                <div className="space-y-4 md:space-y-6">
-                  <div className="flex items-center justify-between md:border-0 md:pb-0">
-                    <div className="flex items-center gap-2 text-black">
-                      <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>My routines</h3>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <button 
-                        onClick={handleAddRoutine}
-                        className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span className="hidden md:inline">New Routine</span>
-                      </button>
-                      <button 
-                        onClick={() => dashboardFileInputRef.current?.click()}
-                        disabled={isDashboardScanning}
-                        className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2"
-                      >
-                        {isDashboardScanning ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Camera className="w-4 h-4" />
-                        )}
-                        <span className="hidden md:inline">Scan Product</span>
-                      </button>
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      ref={dashboardFileInputRef}
-                      onChange={handleDashboardPhotoScan}
-                      className="hidden"
-                    />
-                  </div>
-                  
-                  {dashboardScanError && (
-                    <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold border-2 border-red-500/15">
-                      {dashboardScanError}
-                    </div>
-                  )}
-                  <div className="space-y-8">
-                    {routines.length === 0 ? (
-                      <div className="py-12 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50">
-                        <p className="text-black/50 text-sm font-black uppercase tracking-widest">No routine added yet</p>
-                      </div>
-                    ) : (
-                      routines.map((rt: any, rIdx: number) => (
-                        <div key={rIdx} className="clean-card p-4 border-2 border-black/5 bg-venus-accent/[0.06] relative group flex flex-col gap-2">
-                          {/* Header row: Number, Routine Name + Actions - Clickable to toggle */}
-                          <div className="flex items-start gap-4 cursor-pointer" onClick={() => {
-                              toggleRoutineExpansion(rIdx);
-                            }}>
-                              {/* Routine Name and Metadata */}
-                              <div className="flex-1 min-w-0">
-                                  {rt.routine_name && (
-                                    <div className="flex items-center justify-between w-full">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[9px] font-black bg-venus-accent/20 text-venus-accent px-1.5 py-0.5 rounded uppercase">{rt.time || 'AM'}</span>
-                                        <h4 className="font-black text-black uppercase text-sm md:text-base tracking-tight pt-1 truncate">
-                                          {rt.routine_name}
-                                        </h4>
-                                      </div>
-                                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded uppercase shrink-0 ${
-                                        (() => {
-                                          const score = routineChecks[rt.id || String(rIdx)]?.routine_score;
-                                          if (score === undefined) return 'bg-black/5 text-black/50 animate-pulse';
-                                          if (score >= 80) return 'bg-green-100 text-green-800 border border-green-200';
-                                          if (score >= 50) return 'bg-amber-100 text-amber-800 border border-amber-200';
-                                          return 'bg-red-100 text-red-800 border border-red-200';
-                                        })()
-                                      }`}>
-                                        {routineChecks[rt.id || String(rIdx)] !== undefined 
-                                          ? `${routineChecks[rt.id || String(rIdx)].routine_score}/100` 
-                                          : '...'}
-                                      </span>
-                                    </div>
-                                  )}
-                                  {/* Day */}
-                                  <div className="mt-0.5">
-                                     <span className="text-[9px] uppercase font-bold tracking-widest text-black/40 truncate">{(rt.days || []).join(', ')}</span>
-                                  </div>
-                              </div>
-                          </div>
-
-                          {/* Products - Routine Items */}
-                          {expandedRoutines.includes(rIdx) && (
-                            <div className="space-y-2 pt-2 border-t border-black/5">
-                                {getActiveRoutineProducts(rt.products, rt.time).map((p: any, i: number) => (
-                                    <div key={i} className="flex flex-col gap-0.5 text-xs border-b border-black/5 pb-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className="uppercase font-black tracking-widest text-venus-accent">{p.type}</span>
-                                            <span className="font-bold text-black/80">{p.brand}</span>
-                                        </div>
-                                        <ProductLink 
-                                             productId={p.id} 
-                                             productName={p.name} 
-                                             className="text-black/60 hover:text-venus-accent transition-colors text-left" 
-                                         />
-                                    </div>
-                                ))}
-
-                                {/* Routine Check Analysis Section */}
-                                {(() => {
-                                  const check = routineChecks[rt.id || String(rIdx)];
-                                  if (!check) {
-                                    return (
-                                      <div className="mt-4 p-4 rounded-2xl bg-black/[0.01] border border-dashed border-black/5 flex items-center justify-center text-xs text-black/40 font-bold uppercase tracking-wider animate-pulse">
-                                        Calculating compatibility metrics...
-                                      </div>
-                                    );
-                                  }
-
-                                  const amSequence = check.recommendations?.find(r => r.startsWith("Recommended AM Layering Sequence:"));
-                                  const pmSequence = check.recommendations?.find(r => r.startsWith("Recommended PM Layering Sequence:"));
-                                  const otherRecommendations = (check.recommendations || []).filter(r => 
-                                    !r.startsWith("Recommended AM Layering Sequence:") && 
-                                    !r.startsWith("Recommended PM Layering Sequence:")
-                                  );
-
-                                  return (
-                                    <div className="mt-4 p-4 rounded-2xl bg-black/[0.02] border border-black/5 space-y-4">
-                                      {/* Title / Header */}
-                                      <div className="flex items-center justify-between border-b border-black/5 pb-2">
-                                        <div className="flex items-center gap-2">
-                                          
-                                          <span className="text-xs font-black uppercase tracking-wider text-black">Routine Analysis</span>
-                                        </div>
-                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase border ${
-                                          check.routine_score >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
-                                          check.routine_score >= 50 ? 'bg-amber-100 text-amber-800 border-amber-200' :
-                                          'bg-red-100 text-red-800 border-red-200'
-                                        }`}>
-                                          Score: {check.routine_score}/100
-                                        </span>
-                                      </div>
-
-                                      {/* Mini Dashboard */}
-                                      {check.debug && (
-                                        <div className="grid grid-cols-2 gap-3 bg-white border border-black/5 p-3 rounded-xl shadow-sm">
-                                          <div className="space-y-0.5 text-left">
-                                            <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Skin Barrier Risk</span>
-                                            <span className={`text-xs font-black uppercase ${
-                                              check.debug.user_irritation_threshold === 'high' ? 'text-red-600' :
-                                              check.debug.user_irritation_threshold === 'medium' ? 'text-amber-600' : 'text-green-600'
-                                            }`}>
-                                              {check.debug.user_irritation_threshold} Risk
-                                            </span>
-                                          </div>
-                                          <div className="space-y-0.5 text-left">
-                                            <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Actives Budget</span>
-                                            <div className="flex items-center justify-between">
-                                              <span className="text-xs font-black text-black">
-                                                {check.debug.active_count} / {check.debug.active_budget} limit
-                                              </span>
-                                            </div>
-                                            <div className="w-full bg-black/5 h-1.5 rounded-full overflow-hidden mt-1">
-                                              <div 
-                                                className={`h-full rounded-full transition-all duration-500 ${check.debug.active_count > check.debug.active_budget ? 'bg-red-500 animate-pulse' : 'bg-venus-accent'}`}
-                                                style={{ width: `${Math.min(100, (check.debug.active_count / (check.debug.active_budget || 1)) * 100)}%` }}
-                                              />
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* TIMELINE / LAYERING FLOW */}
-                                      {amSequence && (
-                                        <div className="bg-white border border-black/5 rounded-xl p-3 shadow-sm space-y-2 text-left">
-                                          <div className="flex items-center gap-1.5 text-black">
-                                            <Sun className="w-3.5 h-3.5 text-amber-500" />
-                                            <span className="text-[10px] font-black uppercase tracking-wider">Recommended AM Layering</span>
-                                          </div>
-                                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                            {amSequence.replace("Recommended AM Layering Sequence:", "").trim().split(" → ").map((step, sIdx) => (
-                                              <React.Fragment key={sIdx}>
-                                                {sIdx > 0 && <span className="text-black/30 text-xs">→</span>}
-                                                <span className="bg-amber-50 text-[10px] font-bold text-amber-900 border border-amber-200/50 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1">
-                                                  <span className="w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center font-black text-[8px]">{sIdx + 1}</span>
-                                                  {step}
-                                                </span>
-                                              </React.Fragment>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {pmSequence && (
-                                        <div className="bg-white border border-black/5 rounded-xl p-3 shadow-sm space-y-2 text-left">
-                                          <div className="flex items-center gap-1.5 text-black">
-                                            <Moon className="w-3.5 h-3.5 text-indigo-500" />
-                                            <span className="text-[10px] font-black uppercase tracking-wider">Recommended PM Layering</span>
-                                          </div>
-                                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                            {pmSequence.replace("Recommended PM Layering Sequence:", "").trim().split(" → ").map((step, sIdx) => (
-                                              <React.Fragment key={sIdx}>
-                                                {sIdx > 0 && <span className="text-black/30 text-xs">→</span>}
-                                                <span className="bg-indigo-50 text-[10px] font-bold text-indigo-900 border border-indigo-200/50 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1">
-                                                  <span className="w-3.5 h-3.5 rounded-full bg-indigo-500 text-white flex items-center justify-center font-black text-[8px]">{sIdx + 1}</span>
-                                                  {step}
-                                                </span>
-                                              </React.Fragment>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* INSIGHTS & WARNINGS */}
-                                      {otherRecommendations.length > 0 && (
-                                        <div className="space-y-1.5 text-left">
-                                          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block px-1">Insights & Warnings</span>
-                                          <div className="space-y-1">
-                                            {otherRecommendations.map((rec, rIdx) => {
-                                              const isWarning = rec.toLowerCase().includes("warning") || 
-                                                                rec.toLowerCase().includes("alert") || 
-                                                                rec.toLowerCase().includes("gap") || 
-                                                                rec.toLowerCase().includes("shortfall") ||
-                                                                rec.toLowerCase().includes("danger") ||
-                                                                rec.toLowerCase().includes("risk");
-                                              return (
-                                                <div 
-                                                  key={rIdx} 
-                                                  className={`p-2.5 rounded-xl border flex items-start gap-2.5 text-xs shadow-sm ${
-                                                    isWarning 
-                                                      ? 'bg-red-50/50 border-red-500/15 text-red-900' 
-                                                      : 'bg-white border-black/5 text-black/80'
-                                                  }`}
-                                                >
-                                                  {isWarning ? (
-                                                    <Shield className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                                                  ) : (
-                                                    <CheckCircle2 className="w-4 h-4 text-venus-accent shrink-0 mt-0.5" />
-                                                  )}
-                                                  <span className="font-medium leading-relaxed whitespace-pre-wrap">{rec}</span>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* RECOMMENDED ADDITIONS */}
-                                      {false && check.resolved_additions && check.resolved_additions.length > 0 && (
-                                        <div className="space-y-2 text-left">
-                                          <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block px-1">Recommended Additions</span>
-                                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                            {check.resolved_additions.map((item: any, itemIdx: number) => (
-                                              <div key={itemIdx} className="bg-white border-2 border-dashed border-black/5 p-3 rounded-xl flex items-start justify-between gap-3 shadow-sm hover:border-venus-accent/20 transition-colors">
-                                                <div className="space-y-1 min-w-0 flex-1">
-                                                  <div className="flex items-center gap-1.5">
-                                                    <span className="bg-venus-accent/10 text-venus-accent text-[8px] font-black px-1.5 py-0.5 rounded uppercase">{item.type || 'Treatment'}</span>
-                                                    <span className="font-bold text-black/80 text-xs truncate">{item.brand}</span>
-                                                  </div>
-                                                  <ProductLink 
-                                                    productId={String(item.product_id)} 
-                                                    productName={item.name} 
-                                                    className="text-black/60 hover:text-venus-accent transition-colors text-[11px] block truncate font-black" 
-                                                  />
-                                                  <p className="text-[10px] text-black/50 leading-relaxed font-medium">{item.reason}</p>
-                                                </div>
-                                                <button 
-                                                  onClick={() => openProductCard(Number(item.product_id))}
-                                                  className="text-[9px] font-black uppercase tracking-widest bg-black text-white px-2.5 py-1.5 rounded-lg hover:bg-black/80 transition-all shrink-0 shadow-sm"
-                                                >
-                                                  Add
-                                                </button>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
-                            </div>
-                          )}
-                          
-                          {/* Actions */}
-                          {expandedRoutines.includes(rIdx) && (
-                            <div className="flex items-center gap-1 shrink-0 pt-2 border-t border-black/5 mt-1 justify-end">
-                                <label className="flex items-center gap-1 p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer text-black/40 hover:text-black text-xs mr-auto">
-                                    <input type="checkbox" onChange={(e) => handleToggleTrackerRoutine(rt.products, rt.time, e.target.checked)} className="form-checkbox" />
-                                    <span>Add to tracker</span>
-                                </label>
-                                <button onClick={() => { setShareRoutine(rt); setIsSharingOpen(true); }} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Share">
-                                    <Share2 className="w-4 h-4 text-black/40 hover:text-black" />
-                                </button>
-                                <button onClick={() => handleEditRoutine(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Edit">
-                                    <Pencil className="w-4 h-4 text-black/40 hover:text-black" />
-                                </button>
-                                <button onClick={() => handleSetReminder(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors' title="Reminder">
-                                    <AlarmClock className="w-4 h-4 text-black/40 hover:text-black" />
-                                </button>
-                                <button onClick={() => setRoutineToDelete(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors text-red-500/40 hover:text-red-500' title="Delete">
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+                {renderMyRoutinesSection(false)}
 
                 {/* Trending Section */}
                 <div className="space-y-4 mt-12 text-left">
@@ -3450,15 +3429,15 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Chatter Section */}
+                {/* Guides Section */}
                 <div className="space-y-4 mt-12 text-left">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
-                      Chatter
+                      Guides
                     </h3>
                     <button
                       onClick={() => {
-                        setSocialActiveMainTab('community');
+                        setSocialActiveMainTab('guides');
                         setAppState(AppState.SOCIAL);
                       }}
                       className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer"
@@ -3467,38 +3446,33 @@ export default function App() {
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
-                  {loadingLastPost ? (
-                    <div className="h-32 bg-black/5 rounded-2xl animate-pulse" />
-                  ) : lastPost ? (
-                    <div className="clean-card p-4 border-2 border-black/5 bg-white hover:border-black/10 transition-all max-w-xl space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-venus-accent/20 border border-black flex items-center justify-center text-[9px] font-black">
-                            {lastPost.users?.username?.[0] || 'U'}
-                          </div>
-                          <div>
-                            <h4 className="text-[9px] font-black uppercase tracking-tight leading-none">{lastPost.users?.username || 'Anonymous'}</h4>
-                            <p className="text-[7px] text-black/40 font-bold">@{lastPost.users?.skin_type || 'member'} • {new Date(lastPost.timestamp).toLocaleDateString()}</p>
-                          </div>
-                        </div>
+                  
+                  {SKINCARE_GUIDES && SKINCARE_GUIDES.length > 0 && (
+                    <div 
+                      onClick={() => {
+                        setSocialActiveMainTab('guides');
+                        setAppState(AppState.SOCIAL);
+                      }}
+                      className="clean-card p-5 border-2 border-black/5 bg-white hover:border-black/20 hover:shadow-md transition-all max-w-xl space-y-3 cursor-pointer group rounded-2xl"
+                    >
+                      <div className="flex items-center justify-between text-xs text-black/50">
+                        <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">
+                          {SKINCARE_GUIDES[0].category}
+                        </span>
+                        <span>{SKINCARE_GUIDES[0].readTime}</span>
                       </div>
-                      
                       <div>
-                        {lastPost.title && (
-                          <h4 className="text-[10px] font-black uppercase tracking-tight mb-1 text-venus-accent">{lastPost.title}</h4>
-                        )}
-                        <p className="text-xs font-medium leading-normal text-black/80">{lastPost.content}</p>
+                        <h4 className="text-sm font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors">
+                          {SKINCARE_GUIDES[0].title}
+                        </h4>
+                        <p className="text-xs text-black/70 leading-relaxed font-medium mt-1">
+                          {SKINCARE_GUIDES[0].summary}
+                        </p>
                       </div>
-                      
-                      {lastPost.post_media && (
-                        <div className="rounded-lg overflow-hidden border border-black/5 max-h-40">
-                          <img src={lastPost.post_media} className="w-full h-full object-cover" alt="Post media" />
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="py-8 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50">
-                      <p className="text-black/50 text-[10px] font-black uppercase tracking-widest">No chatter posts available</p>
+                      <div className="pt-2 border-t border-black/5 flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-black">
+                        <span>Explore full protocol</span>
+                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3514,119 +3488,48 @@ export default function App() {
           )}
 
 
-          {/* PROGRESS */}
-          {appState === AppState.PROGRESS && (
+          {/* MY ROUTINES PAGE */}
+          {appState === AppState.ROUTINES && (
             <motion.div 
-              key="progress"
-              initial={{ opacity: 0, y: 20 }}
+              key="routines-page"
+              initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-12"
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-8 max-w-4xl mx-auto w-full pb-16"
             >
-
-              {/* Progress Tracker increased spacing */}
-              <div className="space-y-6 mt-12">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-black">
-                    <h3 className="font-sans font-black text-lg md:text-xl uppercase tracking-tight">Progress</h3>
+              <div className="border-b border-black/5 pb-4 md:pb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Sun className="w-5 h-5 text-venus-accent" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">Regimen Protocol</span>
                   </div>
+                  <h2 className="text-2xl md:text-3xl font-sans font-black text-black uppercase tracking-tight">
+                    My Routines
+                  </h2>
+                  <p className="text-xs md:text-sm text-black/50 font-medium mt-1">
+                    Track your daily routines.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
                   <button 
-                    onClick={() => progressInputRef.current?.click()}
-                    className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2"
+                    onClick={handleAddRoutine}
+                    className="bg-black text-white px-4 py-2.5 rounded-xl text-xs uppercase tracking-widest font-black hover:bg-venus-accent transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
                   >
                     <Plus className="w-4 h-4" />
-                    <span className="hidden md:inline">New Entry</span>
+                    <span>New Routine</span>
                   </button>
-                    
-                  <input 
-                    type="file" 
-                    style={{ display: 'none' }}
-                    accept="image/*" 
-                    ref={progressInputRef} 
-                    onChange={handleProgressUpload} 
-                  />
-                </div>
-
-                {/* Skin Rating Section */}
-                <div className="pt-4 border-t border-black/5">
-                  <h4 className="font-black text-black uppercase text-sm tracking-tight mb-3">Rate your skin today</h4>
-                  {!isRatingExpanded ? (
-                    <div className="flex justify-center gap-4 text-3xl">
-                      {[1, 2, 3, 4, 5].map((rating) => (
-                        <button 
-                          key={rating}
-                          onClick={() => { setSelectedRating(rating); setIsRatingExpanded(true); }}
-                          className="hover:scale-125 transition-transform"
-                        >
-                          {['😡', '😢', '😐', '🙂', '🤩'][rating - 1]}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <p className="text-center font-bold text-sm">
-                        {['Urghhhh', 'Kinda poopy day', 'Meh, could be better', 'Feeling myself!', 'Everything is awesome!'][selectedRating! - 1]}
-                      </p>
-                      <p className="font-black text-black uppercase text-xs tracking-tight">Any notes?</p>
-                      <textarea 
-                        value={ratingNote} 
-                        onChange={(e) => setRatingNote(e.target.value)}
-                        className="w-full border p-2 text-sm"
-                        placeholder="Add your notes..."
-                      />
-                      <button 
-                        onClick={handleSaveRating} 
-                        className="w-full bg-black text-white p-2 text-sm uppercase font-bold tracking-widest hover:bg-black/90"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1">
-                  {progressPhotos.length === 0 ? (
-                    <div className="py-12 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50 w-full">
-                      <p className="text-black/50 text-sm font-black uppercase tracking-widest">No picture added yet</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-3">
-                      {progressPhotos.map((photo: any) => (
-                        <div key={photo.id} className="space-y-1.5">
-                          <div 
-                            onClick={() => setSelectedPhoto(photo)}
-                            className="aspect-[3/4] clean-card relative group overflow-hidden border border-black/5 bg-black/[0.02] cursor-pointer"
-                          >
-                            <img 
-                              src={resolveImageUrl(photo.image_url)} 
-                              alt="Progress" 
-                              className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'https://placehold.co/600x600/white/black?text=Image+Not+Found';
-                              }}
-                            />
-                            {/* Delete Button */}
-                            <button 
-                              type="button"
-                              onClick={(e) => {
-                                handleDeletePhoto(photo, e);
-                              }}
-                              className="absolute top-1 right-1 z-[60] w-6 h-6 flex items-center justify-center bg-black/5 hover:bg-black/20 backdrop-blur-md rounded-full text-black opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all border border-black/5 cursor-pointer"
-                              aria-label="Delete photo"
-                            >
-                              <X className="w-3.5 h-3.5 pointer-events-none" />
-                            </button>
-                          </div>
-                          <p className="text-[9px] md:text-[10px] uppercase font-black tracking-widest text-black/60 text-center">
-                            {new Date(photo.timestamp || photo.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <button 
+                    onClick={() => dashboardFileInputRef.current?.click()}
+                    disabled={isDashboardScanning}
+                    className="bg-black/5 hover:bg-black/10 text-black px-4 py-2.5 rounded-xl text-xs uppercase tracking-widest font-black transition-colors flex items-center gap-2 cursor-pointer"
+                  >
+                    {isDashboardScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                    <span>Scan Product</span>
+                  </button>
                 </div>
               </div>
 
+              {renderMyRoutinesSection(true)}
             </motion.div>
           )}
 
@@ -3635,62 +3538,62 @@ export default function App() {
               key="rank"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="pt-1 md:pt-2 max-w-4xl mx-auto space-y-3"
+              className="pt-1 md:pt-2 max-w-6xl mx-auto space-y-4 w-full"
             >
               {/* Products column */}
-              <div className="space-y-4 md:pl-2">
-                <div className="flex flex-col gap-3 border-b-2 border-black pb-3">
-                  <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
+              <div className="space-y-4 w-full">
+                <div className="flex flex-col items-center gap-3 border-b-2 border-black pb-3 w-full text-center">
+                  <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black text-center w-full" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
                     Browse Products
                   </h2>
                   
-                                     {/* Primary Filter Bubbles (Circular Photo Bubbles like reference image) */}
-                   <div className="flex flex-nowrap gap-3 md:gap-2.5 overflow-x-auto no-scrollbar scroll-smooth py-2 px-1 snap-x snap-mandatory">
-                     {[
-                       { name: 'Type', image: 'https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=300&q=80', filterKey: 'By Type' },
-                       { name: 'Ingredient', image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=300&q=80', filterKey: 'By Ingredient' },
-                       { name: 'Concern', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=300&q=80', filterKey: 'By Concern' },
-                       { name: 'Trending', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=300&q=80', filterKey: 'Trending' },
-                       { name: 'Pregnancy-safe', image: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=300&q=80', filterKey: 'Pregnancy-safe' }
-                     ].map(item => {
-                       const isActive = (primaryFilter === 'By Type' && (subFilter === item.filterKey || (item.filterKey === 'By Type' && subFilter === 'All'))) || primaryFilter === item.filterKey;
-                       return (
-                         <button
-                           key={item.name}
-                           onClick={() => {
-                             if (item.filterKey === 'By Type') {
-                               setPrimaryFilter('By Type');
-                               setSubFilter('All');
-                             } else {
-                               setPrimaryFilter(item.filterKey);
-                               setSubFilter('all');
-                             }
-                           }}
-                           className="flex flex-col items-center gap-1.5 shrink-0 snap-start group cursor-pointer w-20 sm:w-24 md:w-28"
-                         >
-                           <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-md mx-auto ${
-                             isActive ? 'border-black scale-105 shadow-lg ring-2 ring-black/20' : 'border-black/10 group-hover:border-black/40'
-                           }`}>
-                             <img src={item.image} alt={item.name} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                           </div>
-                           <span className={`text-[9px] md:text-xs font-black uppercase tracking-wider text-center w-full whitespace-normal leading-tight ${
-                             isActive ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/70 group-hover:text-black'
-                           }`}>
-                             {item.name}
-                           </span>
-                         </button>
-                       );
-                     })}
-                   </div>
+                  {/* Primary Filter Bubbles (Circular Photo Bubbles like reference image) */}
+                  <div className="flex flex-nowrap justify-start sm:justify-center md:justify-center gap-3 md:gap-4 overflow-x-auto no-scrollbar scroll-smooth py-2 px-1 snap-x snap-mandatory w-full">
+                    {[
+                      { name: 'Type', image: 'https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=300&q=80', filterKey: 'By Type' },
+                      { name: 'Ingredient', image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=300&q=80', filterKey: 'By Ingredient' },
+                      { name: 'Concern', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=300&q=80', filterKey: 'By Concern' },
+                      { name: 'Trending', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=300&q=80', filterKey: 'Trending' },
+                      { name: 'Pregnancy-safe', image: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=300&q=80', filterKey: 'Pregnancy-safe' }
+                    ].map(item => {
+                      const isActive = (primaryFilter === 'By Type' && (subFilter === item.filterKey || (item.filterKey === 'By Type' && subFilter === 'All'))) || primaryFilter === item.filterKey;
+                      return (
+                        <button
+                          key={item.name}
+                          onClick={() => {
+                            if (item.filterKey === 'By Type') {
+                              setPrimaryFilter('By Type');
+                              setSubFilter('All');
+                            } else {
+                              setPrimaryFilter(item.filterKey);
+                              setSubFilter('all');
+                            }
+                          }}
+                          className="flex flex-col items-center gap-1.5 shrink-0 snap-start group cursor-pointer w-20 sm:w-24 md:w-28 text-center"
+                        >
+                          <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-md mx-auto ${
+                            isActive ? 'border-black scale-105 shadow-lg ring-2 ring-black/20' : 'border-black/10 group-hover:border-black/40'
+                          }`}>
+                            <img src={item.image} alt={item.name} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                          </div>
+                          <span className={`text-[9px] md:text-xs font-black uppercase tracking-wider text-center w-full whitespace-normal leading-tight ${
+                            isActive ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/70 group-hover:text-black'
+                          }`}>
+                            {item.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
                   {/* Sub-bar Filter based on Primary Filter */}
                   {(primaryFilter === 'By Type' || primaryFilter === 'Pregnancy-safe') && (
-                    <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+                    <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
                       {['All', 'Cleanser', 'SPF', 'Cream', 'Serum', 'Toner', 'Retinol', 'Moisturizer'].map((type) => (
                         <button
                           key={type}
                           onClick={() => setSubFilter(type)}
-                          className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${subFilter.toLowerCase() === type.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
+                          className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === type.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
                         >
                           {type}
                         </button>
@@ -3699,12 +3602,12 @@ export default function App() {
                   )}
 
                   {primaryFilter === 'By Ingredient' && (
-                    <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+                    <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
                       {['all', 'Retinols', 'Hyaluronic Acid', 'PDRN', 'Collagen', 'Niacinamide', 'Salicylic Acid', 'Vitamin C', 'Vitamin E', 'Glycolic Acid', 'Peptides', 'Ceramides', 'AHA/BHA'].map((ing) => (
                         <button
                           key={ing}
                           onClick={() => setSubFilter(ing)}
-                          className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${subFilter.toLowerCase() === ing.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
+                          className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === ing.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
                         >
                           {ing}
                         </button>
@@ -3713,12 +3616,12 @@ export default function App() {
                   )}
 
                   {primaryFilter === 'By Concern' && (
-                    <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+                    <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
                       {['all', 'Blemish-prone skin', 'Redness', 'Dry Skin', 'Aging skin'].map((concern) => (
                         <button
                           key={concern}
                           onClick={() => setSubFilter(concern)}
-                          className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${subFilter.toLowerCase() === concern.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
+                          className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === concern.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
                         >
                           {concern}
                         </button>
@@ -3727,12 +3630,12 @@ export default function App() {
                   )}
 
                   {primaryFilter === 'Trending' && (
-                    <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+                    <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
                       {['all', 'K-Beauty', 'J-Beauty', 'Glass Skin', 'PDRN', 'Natural', 'Winter Care'].map((trend) => (
                         <button
                           key={trend}
                           onClick={() => setSubFilter(trend)}
-                          className={`text-[10px] font-black uppercase transition-all whitespace-nowrap ${subFilter.toLowerCase() === trend.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
+                          className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === trend.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
                         >
                           {trend}
                         </button>
@@ -3748,11 +3651,11 @@ export default function App() {
                      style={{ display: "none" }}
                      className="w-full bg-transparent border-t border-black/10 pt-3 text-xs font-black uppercase text-black placeholder:text-black/40 outline-none hidden"
                    />
-                  {isSearching && <div className="text-[9px] font-black uppercase text-venus-accent animate-pulse">Searching...</div>}
+                  {isSearching && <div className="text-[9px] font-black uppercase text-venus-accent animate-pulse text-center w-full">Searching...</div>}
                 </div>
 
                 {products.length === 0 ? (
-                  <div className="text-center py-20 clean-card border-dashed border-2 border-black/5 bg-white/50">
+                  <div className="text-center py-20 clean-card border-dashed border-2 border-black/5 bg-white/50 w-full">
                     <ShoppingBag className="w-12 h-12 text-black/10 mx-auto mb-4" />
                     <p className="text-black/30 text-sm font-black uppercase tracking-widest mb-6">Database currently indexing...</p>
                     {user?.email === 'mv.botez@gmail.com' && (
@@ -3769,11 +3672,9 @@ export default function App() {
                               .insert(payload);
                             
                             if (error) {
-                               console.error('FAILED CALL:', { table: 'products', action: 'INSERT', errorCode: error.code, message: error.message, details: error.details, hint: error.hint });
                                throw error;
                             }
                           } catch (err: any) {
-                            console.error(err);
                             btn.innerText = "Sync Failed - Retry";
                             btn.disabled = false;
                           }
@@ -3785,7 +3686,7 @@ export default function App() {
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-3 md:gap-4 w-full">
                     {(() => {
                       const baseList = searchQuery ? searchResults : products;
                       const filtered = baseList.filter(p => {
@@ -3838,7 +3739,7 @@ export default function App() {
 
                       if (filtered.length === 0) {
                         return (
-                          <div className="col-span-2 py-12 text-center text-black/40 text-xs uppercase font-black tracking-widest clean-card bg-white/50">
+                          <div className="col-span-2 sm:col-span-4 md:col-span-4 py-12 text-center text-black/40 text-xs uppercase font-black tracking-widest clean-card bg-white/50 w-full">
                             No products match this filter.
                           </div>
                         );
@@ -3850,7 +3751,7 @@ export default function App() {
                           <div 
                             key={p.id} 
                             onClick={() => openProductCard(String(p.id))} 
-                            className="cursor-pointer clean-card p-3 border-2 bg-white border-black/5 hover:border-black transition-all flex flex-col items-center text-center gap-2 relative group"
+                            className="cursor-pointer clean-card p-3 border-2 bg-white border-black/5 hover:border-black transition-all flex flex-col items-center text-center justify-between gap-2 relative group w-full"
                             data-product-id={p.id}
                           >
                             {p.photo_url ? (
@@ -3858,18 +3759,18 @@ export default function App() {
                                 src={p.photo_url} 
                                 alt={p.name || p.Name || p.ProductName || p['Product Name'] || 'Product'} 
                                 referrerPolicy="no-referrer"
-                                className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-black/10 flex-shrink-0 group-hover:scale-105 transition-transform" 
+                                className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-black/10 flex-shrink-0 group-hover:scale-105 transition-transform mx-auto" 
                               />
                             ) : (
-                              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black/5 rounded-xl border border-black/10 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40">
+                              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black/5 rounded-xl border border-black/10 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40 mx-auto">
                                 No Image
                               </div>
                             )}
-                            <div className="w-full min-w-0">
-                              <div className="text-[9px] font-black uppercase tracking-widest text-venus-accent mb-0.5 whitespace-normal break-words">
+                            <div className="w-full min-w-0 text-center">
+                              <div className="text-[9px] font-black uppercase tracking-widest text-venus-accent mb-0.5 whitespace-normal break-words text-center">
                                 {p.brand || p.Brand || 'Unknown'}
                               </div>
-                              <h3 className="text-[10px] md:text-xs font-black text-black uppercase leading-tight whitespace-normal break-words">
+                              <h3 className="text-[10px] md:text-xs font-black text-black uppercase leading-tight whitespace-normal break-words text-center">
                                 {p.name || p.Name || p.ProductName || p['Product Name'] || 'Unnamed'}
                               </h3>
                             </div>
@@ -4421,7 +4322,7 @@ export default function App() {
                   {/* Breakout Types Card */}
                   <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
                     <h4 className="text-xs font-black uppercase tracking-wider text-black/50 mb-4 flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-purple-500" />
+                      <Shield className="w-4 h-4 text-purple-500" />
                       Breakout Characteristics
                     </h4>
                     {Array.isArray(userProfile.breakout_type) && userProfile.breakout_type.length > 0 ? (
@@ -4444,6 +4345,127 @@ export default function App() {
                     ) : (
                       <p className="text-xs text-black/40 italic">No specific breakout characteristics specified.</p>
                     )}
+                  </div>
+
+                  {/* Skin Progress Tracker & Photo Journal */}
+                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm space-y-6">
+                    <div className="flex items-center justify-between border-b border-black/5 pb-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <History className="w-4 h-4 text-venus-accent" />
+                          <h4 className="text-xs font-black uppercase tracking-wider text-black">Skin Progress & Photo Journal</h4>
+                        </div>
+                        <p className="text-[11px] text-black/50 font-medium">Log your daily skin condition and track visual changes over time.</p>
+                      </div>
+                      <button 
+                        onClick={() => progressInputRef.current?.click()}
+                        className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2 bg-black/5 hover:bg-black/10 px-3 py-1.5 rounded-xl cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Add Photo</span>
+                      </button>
+                      <input 
+                        type="file" 
+                        style={{ display: 'none' }}
+                        accept="image/*" 
+                        ref={progressInputRef} 
+                        onChange={handleProgressUpload} 
+                      />
+                    </div>
+
+                    {/* Skin Rating Section */}
+                    <div>
+                      <h5 className="font-black text-black uppercase text-xs tracking-tight mb-3">Rate your skin today</h5>
+                      {!isRatingExpanded ? (
+                        <div className="flex justify-center gap-4 text-3xl">
+                          {[1, 2, 3, 4, 5].map((rating) => (
+                            <button 
+                              key={rating}
+                              onClick={() => { setSelectedRating(rating); setIsRatingExpanded(true); }}
+                              className="hover:scale-125 transition-transform cursor-pointer"
+                              title={`Rate ${rating}/5`}
+                            >
+                              {['😡', '😢', '😐', '🙂', '🤩'][rating - 1]}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-3 bg-black/[0.02] p-4 rounded-xl border border-black/5">
+                          <p className="text-center font-bold text-sm">
+                            {['Urghhhh', 'Kinda poopy day', 'Meh, could be better', 'Feeling myself!', 'Everything is awesome!'][selectedRating! - 1]}
+                          </p>
+                          <p className="font-black text-black uppercase text-xs tracking-tight">Any notes?</p>
+                          <textarea 
+                            value={ratingNote} 
+                            onChange={(e) => setRatingNote(e.target.value)}
+                            className="w-full border border-black/15 bg-white rounded-xl p-3 text-xs outline-none focus:border-black/30 transition-all font-medium"
+                            placeholder="Add your notes..."
+                            rows={3}
+                          />
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={handleSaveRating} 
+                              className="flex-1 bg-black text-white py-2.5 rounded-xl text-xs uppercase font-black tracking-widest hover:bg-venus-accent transition-colors cursor-pointer"
+                            >
+                              Save Log
+                            </button>
+                            <button 
+                              onClick={() => setIsRatingExpanded(false)} 
+                              className="px-4 py-2.5 rounded-xl text-xs uppercase font-black tracking-widest bg-black/5 hover:bg-black/10 transition-colors cursor-pointer text-black/60"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Photos Grid */}
+                    <div className="space-y-3 pt-2 border-t border-black/5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-black/40">Photo History ({progressPhotos.length})</span>
+                      </div>
+                      {progressPhotos.length === 0 ? (
+                        <div className="py-8 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-black/[0.01] w-full rounded-xl">
+                          <Camera className="w-6 h-6 text-black/20 mb-2" />
+                          <p className="text-black/40 text-xs font-black uppercase tracking-widest">No pictures added yet</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                          {progressPhotos.map((photo: any) => (
+                            <div key={photo.id} className="space-y-1.5">
+                              <div 
+                                onClick={() => setSelectedPhoto(photo)}
+                                className="aspect-[3/4] clean-card relative group overflow-hidden border border-black/5 bg-black/[0.02] cursor-pointer rounded-xl"
+                              >
+                                <img 
+                                  src={resolveImageUrl(photo.image_url)} 
+                                  alt="Progress" 
+                                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = 'https://placehold.co/600x600/white/black?text=Image+Not+Found';
+                                  }}
+                                />
+                                {/* Delete Button */}
+                                <button 
+                                  type="button"
+                                  onClick={(e) => {
+                                    handleDeletePhoto(photo, e);
+                                  }}
+                                  className="absolute top-1.5 right-1.5 z-[60] w-6 h-6 flex items-center justify-center bg-black/60 hover:bg-black backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer shadow-sm"
+                                  aria-label="Delete photo"
+                                >
+                                  <X className="w-3.5 h-3.5 pointer-events-none" />
+                                </button>
+                              </div>
+                              <p className="text-[9px] md:text-[10px] uppercase font-black tracking-widest text-black/60 text-center">
+                                {new Date(photo.timestamp || photo.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="pt-6 text-center">
@@ -4879,10 +4901,16 @@ export default function App() {
       )}
 
       {/* Bottom Nav Hint */}
-      {(appState === AppState.PROGRESS || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
+      {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
         <div className="fixed bottom-0 left-0 right-0 flex justify-center bg-gradient-to-t from-white to-transparent z-40">
           <div className="clean-card py-3 px-6 flex justify-between md:justify-center gap-6 md:gap-8 items-center w-full md:w-auto bg-white border-t-2 md:border-2 border-black/5 shadow-2xl md:rounded-3xl">
-            <Home className={`w-6 h-6 text-black cursor-pointer ${appState === AppState.DASHBOARD ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.DASHBOARD)} />
+            {user && (
+              <>
+                <Home className={`w-6 h-6 text-black cursor-pointer ${appState === AppState.DASHBOARD ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.DASHBOARD)} />
+                <div className="w-px h-4 bg-black/10 hidden md:block" />
+              </>
+            )}
+            <ShoppingBag className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.RANK ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.RANK)} />
             <div className="w-px h-4 bg-black/10 hidden md:block" />
             <button
               onClick={() => navFileInputRef.current?.click()}
@@ -4918,7 +4946,6 @@ export default function App() {
               .eq('id', newProductForComparison.id);
             
             if (error) {
-              console.error('Error updating score:', error);
               setError('Failed to update product ranking.');
             } else if (isBest) {
               // 2. Relative drifting: nudge lower items down
@@ -4930,7 +4957,7 @@ export default function App() {
                   p_exclude_id: newProductForComparison.id,
                   p_type: newProductForComparison.type
                 });
-              if (nudgeError) console.error('Nudge error:', nudgeError);
+              if (nudgeError) {}
             }
             // 3. Forced refresh after ranking update
             const { data: refreshedProducts } = await supabase.from('upp').select('*').eq('user_id', user?.id);
@@ -4971,7 +4998,7 @@ export default function App() {
           </motion.div>
         </div>
       )}
-      {error && <ErrorModal error={error} onClose={() => setError(null)} />}
+      {error && <ErrorModal error={typeof error === 'string' ? error : error?.message || String(error)} onClose={() => setError(null)} />}
       {authPromptModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full relative space-y-4 text-center">

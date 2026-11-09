@@ -27,8 +27,6 @@ export const getOAuthRedirectUrl = (): string => {
  */
 export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
-  console.log('[Auth] Initiating Google OAuth with redirectTo:', redirectTo);
-
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -37,7 +35,6 @@ export const signInWithGoogle = async () => {
   });
 
   if (error) {
-    console.error('[Auth] signInWithOAuth error:', error);
     throw error;
   }
 
@@ -81,7 +78,6 @@ export const parseAuthTokensFromUrl = (url: string): AuthTokens => {
 
     return { access_token, refresh_token, code, error, error_description };
   } catch (err) {
-    console.error('[Auth] Error parsing tokens from URL:', err);
     return {};
   }
 };
@@ -98,7 +94,6 @@ export const setSessionFromUrl = async (
 
   if (error || error_description) {
     const errorMsg = error_description || error || 'OAuth authentication failed';
-    console.error('[Auth] OAuth error received in URL:', errorMsg);
     onError?.(errorMsg);
     return false;
   }
@@ -106,7 +101,6 @@ export const setSessionFromUrl = async (
   // 1. Token session from hash fragment (access_token & refresh_token)
   if (access_token && refresh_token) {
     try {
-      console.log('[Auth] Setting Supabase session from hash tokens...');
       const { data, error: sessionError } = await supabase.auth.setSession({
         access_token,
         refresh_token,
@@ -114,20 +108,16 @@ export const setSessionFromUrl = async (
 
       if (sessionError) {
         if (sessionError.message?.includes('Refresh Token')) {
-          console.warn('[Auth] Stale refresh token encountered, clearing local session');
           await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         } else {
-          console.error('[Auth] Failed to setSession:', sessionError);
-        }
+          }
         onError?.(sessionError.message);
         return false;
       }
 
-      console.log('[Auth] Session successfully established:', data.session?.user?.id);
       onSuccess?.();
       return true;
     } catch (err: any) {
-      console.warn('[Auth] Exception while setting session:', err);
       await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       onError?.(err.message || 'Failed to set session from tokens');
       return false;
@@ -137,19 +127,15 @@ export const setSessionFromUrl = async (
   // 2. Authorization code exchange fallback (PKCE flow)
   if (code) {
     try {
-      console.log('[Auth] Exchanging auth code for session...');
       const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
       if (exchangeError) {
-        console.error('[Auth] Failed to exchange code for session:', exchangeError);
         onError?.(exchangeError.message);
         return false;
       }
 
-      console.log('[Auth] Code exchanged successfully for session:', data.session?.user?.id);
       onSuccess?.();
       return true;
     } catch (err: any) {
-      console.error('[Auth] Exception exchanging auth code:', err);
       onError?.(err.message || 'Failed to exchange auth code');
       return false;
     }
@@ -179,7 +165,6 @@ export const setupCapacitorDeepLinkAuth = (
       url.includes('auth-callback');
 
     if (isAuthCallback) {
-      console.log('[Auth] Deep link received matching auth-callback:', url);
       await setSessionFromUrl(url, onSuccess, onError);
     }
   };
@@ -192,17 +177,15 @@ export const setupCapacitorDeepLinkAuth = (
       }
     })
     .catch((err) => {
-      console.error('[Auth] Error getting launch URL:', err);
-    });
+      });
 
   // Listen for deep link events while the app is active or in background
   const listenerPromise = App.addListener('appUrlOpen', async (data: URLOpenListenerEvent) => {
-    console.log('[Auth] App URL opened event:', data.url);
     await handleDeepLinkUrl(data.url);
   });
 
   return () => {
-    listenerPromise.then((listener) => listener.remove()).catch(console.error);
+    listenerPromise.then((listener) => listener.remove()).catch(() => {});
   };
 };
 

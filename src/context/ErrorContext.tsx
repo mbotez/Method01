@@ -51,11 +51,9 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       lowerMsg.includes('connection refused') ||
       lowerMsg.includes('socket')
     ) {
-      console.warn('[Ignored Dev/WebSocket Error]:', message);
       return;
     }
 
-    console.error('[Global Error Caught]:', { message, code, tech, err });
     setError({ message, statusCode: code, details: tech });
   };
 

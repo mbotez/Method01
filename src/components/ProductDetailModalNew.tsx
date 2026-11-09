@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
 
 export const ProductDetailModalNew = ({ product, onClose }: { product: any, onClose: () => void }) => {
-  console.log('Rendering ProductDetailModalNew for:', product);
   const [isIngredientsExpanded, setIsIngredientsExpanded] = useState(false);
   if (!product) return null;
 
@@ -18,11 +17,36 @@ export const ProductDetailModalNew = ({ product, onClose }: { product: any, onCl
   const negativeMetrics = ['Breakouts', 'Irritation'];
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-[100] flex items-center justify-center p-4">
-      <div className="bg-white/90 rounded-2xl p-6 shadow-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto">
-        <button className="absolute top-4 right-4" onClick={onClose}><X className="w-5 h-5"/></button>
-        <p className="text-[10px] font-black uppercase tracking-widest text-venus-accent mb-1">{product.brand || product.Brand || 'Unknown'}</p>
-        <h2 className="text-xl font-black mb-4 text-black">{product.name || product.product_name || product.Name || product.ProductName || product['Product Name'] || 'Unnamed'}</h2>
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-[200] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto border border-gray-100" onClick={(e) => e.stopPropagation()}>
+        <button 
+          type="button" 
+          aria-label="Close" 
+          className="absolute top-3.5 right-3.5 z-20 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer" 
+          onClick={onClose}
+        >
+          <X className="w-4 h-4"/>
+        </button>
+
+        <div className="flex items-start gap-4 pr-10 pt-1 mb-4">
+          {(product.photo_url || product.image_url || product.image) && (
+            <img 
+              src={product.photo_url || product.image_url || product.image} 
+              alt={product.name || 'Product'} 
+              referrerPolicy="no-referrer"
+              className="w-16 h-16 object-cover rounded-2xl flex-shrink-0 border border-black/5 bg-gray-50 shadow-xs" 
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-black/40 mb-0.5">{product.brand || product.Brand || 'Unknown'}</p>
+            <h2 className="text-sm font-black text-black leading-tight break-words">{product.name || product.product_name || product.Name || product.ProductName || product['Product Name'] || 'Unnamed'}</h2>
+            {product.type && (
+              <span className="text-[10px] font-bold text-black/60 bg-gray-100 px-2 py-0.5 rounded-md inline-block mt-1">
+                {product.type}
+              </span>
+            )}
+          </div>
+        </div>
 
         <div className="mb-4">
           <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Benefits</p>

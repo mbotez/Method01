@@ -60,7 +60,6 @@ JSON schema:
     return res.json({ success: true, ...result });
 
   } catch (err: any) {
-    console.error("Error verifying face:", err);
     return res.status(500).json({ success: false, error: err.message || "An error occurred during face scan." });
   }
 }

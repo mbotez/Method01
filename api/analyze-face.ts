@@ -143,7 +143,6 @@ Return ONLY a JSON response conforming to this exact schema (no markdown wrappin
     return res.json({ success: true, ...result });
 
   } catch (err: any) {
-    console.error("Error in /api/analyze-face:", err);
     return res.status(500).json({ success: false, error: err.message || "Failed to analyze skin image." });
   }
 }

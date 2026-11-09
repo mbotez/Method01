@@ -328,7 +328,6 @@ export const ChatQuestionnaire = ({
         videoRef.current.srcObject = stream;
       }
     } catch (err) {
-      console.log("Error accessing camera:", err);
       setCameraError("Camera access denied or unavailable. Please check your browser permissions, ensure a camera is connected, or try opening the app in a new tab if you are using an embedded preview.");
     }
   };

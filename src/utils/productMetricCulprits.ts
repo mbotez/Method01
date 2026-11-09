@@ -288,13 +288,11 @@ export async function fetchProductCulprits(productId: string | number): Promise<
       .eq('product_id', targetId);
 
     if (error) {
-      console.warn(`[product_metric_culprits] Query warning for product_id=${targetId}:`, error);
       return { culprits: [], error };
     }
 
     return { culprits: (data || []) as ProductMetricCulprit[], error: null };
   } catch (err) {
-    console.warn('[product_metric_culprits] Unexpected error during fetch:', err);
     return { culprits: [], error: err };
   }
 }

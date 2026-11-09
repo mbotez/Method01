@@ -34,13 +34,11 @@ export const InlineTrackerControls: React.FC<InlineTrackerControlsProps> = ({
         .eq('id', item.id);
       
       if (error) {
-        console.error('Update failed:', error);
-      } else {
+        } else {
         onRefresh();
       }
     } catch (err) {
-      console.error('Update failed:', err);
-    } finally {
+      } finally {
       setIsUpdating(false);
     }
   };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, AlertTriangle, X, Loader2, Sparkles, AlertCircle, Database, HelpCircle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, X, Loader2, FlaskConical, AlertCircle, Database, HelpCircle } from 'lucide-react';
 import {
   ProductMetricCulprit,
   ProductMetricName,
@@ -143,7 +143,7 @@ export const FlagCulpritsPanel: React.FC<FlagCulpritsPanelProps> = ({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-gray-500 mb-1">
               <span className="flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-purple-600" />
+                <FlaskConical className="w-3 h-3 text-purple-600" />
                 Associated Ingredients from product_metric_culprits ({matchedCulprits.length})
               </span>
               <span className="text-[9px] font-mono text-gray-400">product_id: {productId}</span>

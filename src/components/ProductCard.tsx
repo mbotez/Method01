@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronDown, ChevronUp, Loader2, CheckCircle2, AlertTriangle, Heart, RefreshCw, Calendar, HelpCircle, Trash2, Shield } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Loader2, CheckCircle2, AlertTriangle, Heart, RefreshCw, Calendar, HelpCircle, Trash2, Shield, ShoppingBag, ArrowLeftRight, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
+import { Login } from './Login';
+import { ProductComparisonTable } from './ProductComparisonTable';
 
 // Concern ID mapping dictionary for displaying user-friendly text labels
 const CONCERN_MAP: Record<number, string> = {
@@ -26,20 +28,33 @@ export function computeProductKeyBenefits(product: any, scores: any, rpcBenefits
   const name = (p.name || p.product_name || p.Name || '').toLowerCase();
   const desc = (p.description || '').toLowerCase();
 
-  // 1. Calms facial redness
-  if (
-    s.calm_redness_dry_skin > 0 ||
-    s.calm_redness_oily_skin > 0 ||
-    s.calm_redness_combi_skin > 0 ||
-    s.has_vascular_calmer ||
-    name.includes('redness') ||
-    desc.includes('redness') ||
-    name.includes('calming') ||
-    desc.includes('calming') ||
-    name.includes('soothing') ||
-    desc.includes('soothing')
-  ) {
-    benefits.push('Calms facial redness');
+  // Extract category 2 (cat2) from product or scores
+  const rawCat2 = (
+    p.cat2 ||
+    s.cat2 ||
+    p.product_scores?.cat2 ||
+    (Array.isArray(p.product_scores) ? p.product_scores[0]?.cat2 : '') ||
+    ''
+  ).toString().trim().toLowerCase();
+
+  const isTreatment = rawCat2 === 'treatment';
+
+  // 1. Calms facial redness - Rule: No product of cat2 = Treatment can have the 'Calms facial redness' flag
+  if (!isTreatment) {
+    if (
+      s.calm_redness_dry_skin > 0 ||
+      s.calm_redness_oily_skin > 0 ||
+      s.calm_redness_combi_skin > 0 ||
+      s.has_vascular_calmer ||
+      name.includes('redness') ||
+      desc.includes('redness') ||
+      name.includes('calming') ||
+      desc.includes('calming') ||
+      name.includes('soothing') ||
+      desc.includes('soothing')
+    ) {
+      benefits.push('Calms facial redness');
+    }
   }
 
   // 2. Repairs skin barrier
@@ -168,17 +183,26 @@ export function computeProductKeyBenefits(product: any, scores: any, rpcBenefits
 
     for (const b of rpcBenefits) {
       const normalized = RPC_BENEFIT_MAP[b] || b;
+      // Rule: no product of cat2 = Treatment can have the 'Calms facial redness' flag
+      if (isTreatment && normalized.toLowerCase() === 'calms facial redness') {
+        continue;
+      }
       if (!benefits.includes(normalized)) {
         benefits.push(normalized);
       }
     }
   }
 
-  if (benefits.length === 0) {
-    benefits.push('Balances skin & maintains health');
+  // Final check: Filter out 'Calms facial redness' if treatment
+  let finalBenefits = isTreatment
+    ? benefits.filter(b => b.toLowerCase() !== 'calms facial redness')
+    : benefits;
+
+  if (finalBenefits.length === 0) {
+    finalBenefits.push('Balances skin & maintains health');
   }
 
-  return benefits;
+  return finalBenefits;
 }
 
 export function computeProductPotentialIrritants(scores: any, rpcSafetyConcerns?: string[]): string[] {
@@ -274,7 +298,7 @@ export function getMetricNamesForFlag(flagName: string): string[] {
 
 
 
-const RatingSlider = ({ 
+export const RatingSlider = ({ 
   label, 
   value, 
   onChange, 
@@ -329,7 +353,22 @@ const RatingSlider = ({
   );
 };
 
-export const ProductCardContent = ({ productId, trackerItem, onClose }: { productId: string, trackerItem?: any, onClose: () => void }) => {
+export const ProductCardContent = ({ 
+  productId, 
+  trackerItem, 
+  onClose,
+  isCompared = false,
+  comparedSide,
+  onCompareWith
+}: { 
+  productId: string;
+  trackerItem?: any;
+  onClose: () => void;
+  isCompared?: boolean;
+  comparedSide?: 'left' | 'right';
+  onCompareWith?: (newCompareId: string) => void;
+}) => {
+  const { openComparison } = useProductCard();
   const [product, setProduct] = useState<any>(null);
   const [scores, setScores] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -348,6 +387,120 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
   const [isUpdating, setIsUpdating] = useState(false);
   const [ratings, setRatings] = useState({ dwis: 0, price_value: 0, feel: 0, layer: 0 });
 
+  const [imageError, setImageError] = useState(false);
+
+  // Comparison popup states
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isAuthModalSignUp, setIsAuthModalSignUp] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [initialSuggestions, setInitialSuggestions] = useState<any[]>([]);
+
+  const loadInitialSuggestions = async () => {
+    try {
+      const { data } = await supabase
+        .from('products')
+        .select('id, brand, name, type, photo_url')
+        .order('id', { ascending: false })
+        .limit(10);
+      const filtered = (data || []).filter(item => String(item.id) !== String(productId));
+      setInitialSuggestions(filtered);
+      if (!searchQuery.trim()) {
+        setSearchResults(filtered);
+      }
+    } catch {
+      // silent
+    }
+  };
+
+  const handleCompareClick = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const authed = !!session?.user?.id;
+    setIsAuthenticated(authed);
+    if (!authed) {
+      setShowAuthModal(true);
+    } else {
+      setShowSearchModal(true);
+      loadInitialSuggestions();
+    }
+  };
+
+  const performSearch = async (queryText: string) => {
+    const q = queryText.trim();
+    if (!q) {
+      setSearchResults(initialSuggestions);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const words = q
+        .split(/\s+/)
+        .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
+        .filter(w => w.length > 0)
+        .map(w => `${w}:*`);
+
+      const formattedQuery = words.length > 0 ? words.join(' & ') : '';
+      let results: any[] = [];
+
+      if (formattedQuery) {
+        const { data, error } = await supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url')
+          .textSearch('fts_search', formattedQuery, { config: 'english' })
+          .limit(15);
+        if (!error && data && data.length > 0) {
+          results = data;
+        }
+      }
+
+      if (results.length === 0) {
+        const { data: webData } = await supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url')
+          .textSearch('fts_search', q, { config: 'english', type: 'websearch' })
+          .limit(15);
+        if (webData && webData.length > 0) {
+          results = webData;
+        } else {
+          const { data: ilikeData } = await supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url')
+            .or(`brand.ilike.%${q}%,name.ilike.%${q}%`)
+            .limit(15);
+          results = ilikeData || [];
+        }
+      }
+
+      const filtered = (results || []).filter(item => String(item.id) !== String(productId));
+      setSearchResults(filtered);
+    } catch (err) {
+      console.error('Comparison search error:', err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showSearchModal) return;
+    const timer = setTimeout(() => {
+      performSearch(searchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery, showSearchModal]);
+
+  const handleSelectCompareProduct = (selectedId: string | number) => {
+    setShowSearchModal(false);
+    if (onCompareWith) {
+      onCompareWith(String(selectedId));
+    } else {
+      openComparison(String(productId), String(selectedId));
+    }
+  };
+
   useEffect(() => {
     if (trackerItem) {
       setLocalSize(trackerItem.size || '');
@@ -361,31 +514,19 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
     try {
       await supabase.from('tracker').update({ [field]: value }).eq('id', trackerItem.id);
     } catch (err) {
-      console.error('Update failed:', err);
-    } finally {
+      } finally {
       setIsUpdating(false);
     }
   };
 
   const handleUpdateRating = async (field: string, value: number) => {
-    console.log(`[ProductCard] Updating rating for ${field} to ${value}`);
     setRatings(prev => ({ ...prev, [field]: value }));
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) {
-      console.log('[ProductCard] No user session found. Cannot save rating.');
       return;
     }
     
     try {
-      console.log(`[ProductCard] Upserting rating to Supabase...`, {
-        product_id: productId,
-        user_id: session.user.id,
-        dwis: field === 'dwis' ? value : ratings.dwis || null,
-        price_value: field === 'price_value' ? value : ratings.price_value || null,
-        feel: field === 'feel' ? value : ratings.feel || null,
-        layer: field === 'layer' ? value : ratings.layer || null
-      });
-
       const { data, error } = await supabase
         .from('product_user_ratings')
         .upsert({
@@ -402,13 +543,10 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
         .select();
         
       if (error) {
-        console.error('[ProductCard] Supabase rating update error:', error);
-      } else {
-        console.log('[ProductCard] Supabase rating updated successfully:', data);
-      }
+        } else {
+        }
     } catch (err) {
-      console.error('[ProductCard] Rating update failed with exception:', err);
-    }
+      }
   };
 
   const handleDeleteTracker = async () => {
@@ -418,7 +556,6 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
       await supabase.from('tracker').delete().eq('id', trackerItem.id);
       onClose();
     } catch (err) {
-      console.error('Delete failed:', err);
       setIsUpdating(false);
     }
   };
@@ -434,6 +571,7 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
       }
       setLoading(true);
       setRpcErrorObj(null);
+      setImageError(false);
       setExpandedBenefitFlag(null);
       setExpandedIrritantFlag(null);
       setCulprits([]);
@@ -448,13 +586,36 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
         const targetUserId = session?.user?.id || '00000000-0000-0000-0000-000000000000';
 
         const numericId = Number(productId);
-        const culpritsPromise = !isNaN(numericId)
+        const isValidNumeric = !isNaN(numericId) && numericId > 0;
+        const targetProductId = isValidNumeric
+          ? numericId
+          : (trackerItem?.product_id && !isNaN(Number(trackerItem.product_id)) ? Number(trackerItem.product_id) : null);
+
+        const culpritsPromise = targetProductId != null
           ? supabase
               .from('product_metric_culprits')
               .select('product_id, metric_name, ingredient_name, position, ingredient_id')
-              .eq('product_id', numericId)
+              .eq('product_id', targetProductId)
               .order('position', { ascending: true })
           : Promise.resolve({ data: [], error: null });
+
+        // Query product row from products table directly so photo_url and metadata are guaranteed
+        const productTablePromise = targetProductId != null
+          ? supabase
+              .from('products')
+              .select('*')
+              .eq('id', targetProductId)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null });
+
+        // Query product_scores to guarantee cat2 category for the Calms facial redness exclusion rule
+        const scoreTablePromise = targetProductId != null
+          ? supabase
+              .from('product_scores')
+              .select('cat2, cat3')
+              .eq('product_id', targetProductId)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null });
 
         // Always invoke database engine calculation via RPC for both auth and unauth users
         const rpcPromise = supabase.rpc('evaluate_product_compatibility', {
@@ -462,46 +623,69 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
           p_product_id: productId
         });
 
-        const [rpcResult, culpritsResult] = await Promise.all([rpcPromise, culpritsPromise]);
+        const [rpcResult, culpritsResult, productTableResult, scoreTableResult] = await Promise.all([
+          rpcPromise,
+          culpritsPromise,
+          productTablePromise,
+          scoreTablePromise
+        ]);
         if (!active) return;
-
-        if (culpritsResult?.error) {
-          console.error('[ProductCard] Error querying product_metric_culprits from Supabase:', culpritsResult.error);
-        } else {
-          console.log(`[ProductCard] product_metric_culprits query for product #${numericId} returned ${culpritsResult?.data?.length || 0} rows:`, culpritsResult?.data);
-          if ((culpritsResult?.data?.length || 0) === 0) {
-            console.warn(`[ProductCard] product_metric_culprits returned 0 rows for product #${numericId}. If data was inserted, check if RLS (Row Level Security) is blocking read access for anon/authenticated roles.`);
-          }
-        }
 
         if (culpritsResult?.data) {
           setCulprits(culpritsResult.data);
         }
 
+        const tableProd = productTableResult?.data || null;
+        const fetchedCat2 = scoreTableResult?.data?.cat2 || tableProd?.cat2 || trackerItem?.cat2 || '';
+        if (tableProd) {
+          tableProd.cat2 = fetchedCat2;
+        }
+
         const { data, error } = rpcResult;
 
         if (error) {
-          console.error('[ProductCard] Supabase RPC failed with error:', error);
-          setRpcErrorObj({
-            error: error.message,
-            code: error.code,
-            stuck_at_step: 'Postgres Driver / RPC Invocation'
-          });
-          return;
+          // If the RPC failed but direct product row exists, gracefully display the product
+          if (tableProd) {
+            const formulaBenefits = computeProductKeyBenefits(tableProd, null);
+            setProduct({
+              ...tableProd,
+              cat2: fetchedCat2,
+              photo_url: tableProd.photo_url || trackerItem?.photo_url || null,
+            });
+            setComp({
+              skinTypeFit: 'General Fit',
+              conflicts: [],
+              benefits: formulaBenefits,
+              safetyConcerns: []
+            });
+            setScores(null);
+            setRpcErrorObj(null);
+          } else {
+            setRpcErrorObj({
+              error: error.message,
+              code: error.code,
+              stuck_at_step: 'Postgres Driver / RPC Invocation'
+            });
+            return;
+          }
         }
 
         if (data) {
           if (data.error) {
-            console.error('[ProductCard] Database engine returned diagnostic error:', data);
             // Attempt to gracefully load product info from products table directly so UI isn't blocked
-            const { data: directProduct } = await supabase
+            const directProduct = tableProd || (isValidNumeric ? (await supabase
               .from('products')
               .select('*')
-              .eq('id', productId)
-              .maybeSingle();
+              .eq('id', numericId)
+              .maybeSingle()).data : null);
 
             if (directProduct) {
-              setProduct(directProduct);
+              directProduct.cat2 = fetchedCat2;
+              setProduct({
+                ...directProduct,
+                cat2: fetchedCat2,
+                photo_url: directProduct.photo_url || trackerItem?.photo_url || null,
+              });
               setComp({
                 skinTypeFit: 'General Fit',
                 conflicts: [],
@@ -513,6 +697,7 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               setRpcErrorObj(data);
             }
           } else {
+            const finalCat2 = fetchedCat2 || data?.scores?.cat2 || data?.product?.cat2 || '';
             const effectiveScores = data.scores || {
               oil_free: true,
               sulfate_free: true,
@@ -521,8 +706,10 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               has_yeast_trigger: false,
               night: false
             };
+            effectiveScores.cat2 = finalCat2;
 
             const p = data.product || {};
+            p.cat2 = finalCat2;
 
             // Inherent key benefits computed from formula properties regardless of user profile
             const formulaBenefits = computeProductKeyBenefits(p, effectiveScores, data.compatibility?.benefits);
@@ -537,7 +724,20 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
               safetyConcerns: formulaConcerns
             };
 
-            setProduct(data.product);
+            // Merge table product with RPC product
+            const mergedProduct = {
+              ...(tableProd || {}),
+              ...p,
+              cat2: finalCat2,
+              photo_url: p.photo_url || tableProd?.photo_url || trackerItem?.photo_url || null,
+              ingredients: p.ingredients || tableProd?.ingredients || [],
+              name: p.name || tableProd?.name || trackerItem?.product_name || 'Product Name',
+              brand: p.brand || tableProd?.brand || trackerItem?.brand || 'Brand',
+              type: p.type || tableProd?.type || trackerItem?.product_type || 'Skincare',
+              description: p.description || tableProd?.description || ''
+            };
+
+            setProduct(mergedProduct);
             setScores(effectiveScores);
             setUserProfile(data.user_meta);
             setComp(effectiveComp);
@@ -571,8 +771,7 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
           setRatings({ dwis: 0, price_value: 0, feel: 0, layer: 0 });
         }
       } catch (error) {
-        console.error('Ecosystem RPC execution failed:', error);
-      } finally {
+        } finally {
         if (active) {
           setLoading(false);
         }
@@ -587,7 +786,15 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
   }, [productId]);
 
   if (loading) return (
-    <div className="bg-white/95 rounded-2xl p-12 shadow-2xl max-w-md w-full flex flex-col items-center justify-center gap-4 border border-black/5 min-h-[350px]">
+    <div className="bg-white/95 rounded-3xl p-12 shadow-2xl max-w-md w-full relative flex flex-col items-center justify-center gap-4 border border-black/5 min-h-[350px]">
+      <button 
+        type="button" 
+        aria-label="Close" 
+        className="absolute top-3.5 right-3.5 z-20 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer" 
+        onClick={onClose}
+      >
+        <X className="w-4 h-4"/>
+      </button>
       <Loader2 className="w-10 h-10 animate-spin text-purple-600" />
       <div className="text-center">
         <p className="text-sm font-black uppercase tracking-wider text-black">Analyzing Ingredients...</p>
@@ -597,11 +804,16 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
   );
 
   if (rpcErrorObj) return (
-    <div className="bg-white/95 rounded-2xl p-4 shadow-2xl max-w-md w-full relative border border-red-500/10">
-      <button className="absolute top-4 right-4 text-gray-400 hover:text-black transition" onClick={onClose}>
-        <X className="w-5 h-5"/>
+    <div className="bg-white/95 rounded-3xl p-6 shadow-2xl max-w-md w-full relative border border-red-500/10">
+      <button 
+        type="button" 
+        aria-label="Close" 
+        className="absolute top-3.5 right-3.5 z-20 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer" 
+        onClick={onClose}
+      >
+        <X className="w-4 h-4"/>
       </button>
-      <div className="flex flex-col gap-3 text-left">
+      <div className="flex flex-col gap-3 text-left pr-8">
         <div className="flex items-center gap-2 text-red-600">
           <AlertTriangle className="w-5 h-5" />
           <h3 className="font-sans font-black text-sm uppercase tracking-wider">Database Engine Error</h3>
@@ -619,9 +831,14 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
   );
 
   if (!product) return (
-    <div className="p-6 relative text-center font-bold">
-      <button className="absolute top-4 right-4 text-gray-400 hover:text-black transition" onClick={onClose}>
-        <X className="w-5 h-5"/>
+    <div className="bg-white rounded-3xl p-8 relative text-center font-bold max-w-md w-full shadow-2xl border border-gray-100">
+      <button 
+        type="button" 
+        aria-label="Close" 
+        className="absolute top-3.5 right-3.5 z-20 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer" 
+        onClick={onClose}
+      >
+        <X className="w-4 h-4"/>
       </button>
       Product not found.
     </div>
@@ -631,74 +848,77 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
 
   return (
     <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto border border-gray-100 space-y-3">
-      <button className="absolute top-4 right-4 text-gray-400 hover:text-black transition" onClick={onClose}>
-        <X className="w-5 h-5"/>
+      {/* Dedicated close button with circular touch target and high z-index */}
+      <button 
+        type="button"
+        aria-label="Close modal"
+        className="absolute top-3.5 right-3.5 z-20 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer shadow-2xs" 
+        onClick={onClose}
+      >
+        <X className="w-4 h-4"/>
       </button>
       
-      {/* Unauthenticated banner prompt matching photo search card */}
+      {/* Unauthenticated banner prompt - fits neatly on top with clear spacing so it is not obstructed by the close button */}
       {!isAuthenticated && (
-        <div className="pb-4 border-b border-gray-200 text-center space-y-2 mb-2">
-          <p className="text-sm font-bold text-black">
+        <div className="pb-4 border-b border-gray-100 text-center space-y-2.5 mb-2 pt-1 px-4 sm:px-6">
+          <p className="text-sm font-bold text-black leading-snug max-w-[270px] mx-auto">
             Take skin quiz or log in to find out if these products fit your skin
           </p>
           <button
+            type="button"
             onClick={() => {
               onClose();
               window.dispatchEvent(new CustomEvent('open-quiz-or-login'));
             }}
-            className="w-full bg-black text-white py-3 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black/80 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+            className="w-full bg-black text-white py-3 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black/80 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer shadow-xs"
           >
             Take skin quiz
           </button>
-          <div className="text-center pt-1">
-            <span
+          <div className="text-center pt-0.5">
+            <button
+              type="button"
               onClick={() => {
                 onClose();
                 window.dispatchEvent(new CustomEvent('open-login-modal'));
               }}
-              className="text-xs font-bold text-black underline hover:text-venus-accent cursor-pointer"
+              className="text-xs font-bold text-black underline hover:text-venus-accent cursor-pointer bg-transparent border-none p-0 inline-block"
             >
               Log in
-            </span>
+            </button>
           </div>
         </div>
       )}
 
-      {/* Product Header (Image left, Brand/Name/Type right) */}
+      {/* Product Header (Image left, Brand/Name/Type right) with right padding to clear the close button */}
       {(() => {
-        const imgSrc = product.photo_url || trackerItem?.photo_url || product.image_url || product.image || product.photo;
-        console.log('[ProductCard] Opening product card / modal for product:', product?.name || productId, 'image URL source:', imgSrc, product);
+        const imgSrc = !imageError && (product.photo_url || trackerItem?.photo_url || product.image_url || product.image || product.photo);
         return (
-          <div className="flex items-start gap-4">
+          <div className="flex items-start gap-4 pr-10 pt-1">
             {imgSrc ? (
               <img
                 src={imgSrc}
-                alt={product.name || 'Product'}
+                alt={product.name || trackerItem?.product_name || 'Product'}
                 referrerPolicy="no-referrer"
-                onLoad={() => console.log('[ProductCard] Image loaded successfully:', imgSrc)}
-                onError={(e) => console.error('[ProductCard] Image failed to load:', imgSrc, e)}
-                className="w-16 h-16 object-cover rounded-xl border-2 border-black/15 flex-shrink-0"
+                onError={() => setImageError(true)}
+                className="w-16 h-16 object-cover rounded-2xl flex-shrink-0 border border-black/5 bg-gray-50 shadow-xs"
               />
             ) : (
-              <div className="w-16 h-16 bg-black/5 rounded-xl border-2 border-black/15 flex items-center justify-center flex-shrink-0 text-[10px] text-black/40 font-bold">
-                No Image
+              <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-400 border border-black/5">
+                <ShoppingBag className="w-6 h-6" />
               </div>
             )}
-
-        <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-          <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">
-            {product.brand || product.Brand || 'Unknown Brand'}
-          </span>
-          <span className="text-sm text-black font-black uppercase break-words">
-            {product.name || product.product_name || product.Name || product.ProductName || product['Product Name'] || 'Unnamed'}
-          </span>
-          {(product.type || product.Type) && (
-            <span className="text-[10px] text-black/50 font-semibold uppercase">
-              {product.type || product.Type}
-            </span>
-          )}
-        </div>
-      </div>
+            <div className="flex-1 min-w-0">
+              <span className="text-[10px] font-black uppercase tracking-widest text-black/40 block mb-0.5">
+                {product.brand || trackerItem?.brand || 'Brand'}
+              </span>
+              <h3 className="text-sm font-black text-black leading-tight break-words">
+                {product.name || trackerItem?.product_name || 'Product Name'}
+              </h3>
+              <span className="text-[10px] font-bold text-black/60 bg-gray-100 px-2 py-0.5 rounded-md inline-block mt-1">
+                {product.type || trackerItem?.product_type || 'Skincare'}
+              </span>
+            </div>
+          </div>
         );
       })()}
 
@@ -708,6 +928,24 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
           {product.description}
         </p>
       )}
+
+      {/* Discrete Compare Button */}
+      <div className="pt-0.5 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={handleCompareClick}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 hover:text-black rounded-lg transition-colors border border-gray-200/80 cursor-pointer shadow-2xs group"
+          title="Compare this product side-by-side with another"
+        >
+          <ArrowLeftRight className="w-3 h-3 text-gray-500 group-hover:text-black transition-colors" />
+          <span>Compare</span>
+        </button>
+        {isCompared && (
+          <span className="text-[9px] font-mono uppercase tracking-wider text-purple-700 bg-purple-50 border border-purple-200/70 px-2 py-0.5 rounded-md font-bold">
+            {comparedSide === 'left' ? 'Product A' : 'Product B'}
+          </span>
+        )}
+      </div>
 
       {/* Key Benefits */}
       {comp?.benefits && comp.benefits.length > 0 && (() => {
@@ -738,16 +976,10 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
                     type="button"
                     key={idx}
                     onClick={() => {
-                      console.log(`[ProductCard] Clicked on Key Benefit: "${benefit}"`);
-                      console.log(`[ProductCard] Mapped metrics for "${benefit}":`, getMetricNamesForFlag(benefit));
-                      console.log(`[ProductCard] Total culprits loaded for product #${productId}:`, culprits.length, culprits);
-                      console.log(`[ProductCard] Matched unique ingredients (${matchedIngs.length}):`, matchedIngs);
-
                       if (isClickable) {
                         setExpandedBenefitFlag(isExpanded ? null : benefit);
                       } else {
-                        console.warn(`[ProductCard] Flag "${benefit}" has 0 matching ingredients in product_metric_culprits.`);
-                      }
+                        }
                     }}
                     className={`border rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
                       isExpanded
@@ -846,16 +1078,10 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
                     type="button"
                     key={idx}
                     onClick={() => {
-                      console.log(`[ProductCard] Clicked on Potential Irritant: "${concern}"`);
-                      console.log(`[ProductCard] Mapped metrics for "${concern}":`, getMetricNamesForFlag(concern));
-                      console.log(`[ProductCard] Total culprits loaded for product #${productId}:`, culprits.length, culprits);
-                      console.log(`[ProductCard] Matched unique ingredients (${matchedIngs.length}):`, matchedIngs);
-
                       if (isClickable) {
                         setExpandedIrritantFlag(isExpanded ? null : concern);
                       } else {
-                        console.warn(`[ProductCard] Flag "${concern}" has 0 matching ingredients in product_metric_culprits.`);
-                      }
+                        }
                     }}
                     className={`border rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
                       isExpanded
@@ -1124,12 +1350,190 @@ export const ProductCardContent = ({ productId, trackerItem, onClose }: { produc
           </div>
         </div>
       )}
+      {/* Unauthenticated Compare Auth Popup */}
+      {showAuthModal && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[250] flex items-center justify-center p-4 overflow-y-auto"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowAuthModal(false);
+          }}
+        >
+          <div 
+            className="relative w-full max-w-md my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 bg-black text-white py-2 px-4 rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ArrowLeftRight className="w-3.5 h-3.5 text-purple-400" />
+                <span>Sign in or Sign Up to compare products</span>
+              </div>
+              <button 
+                type="button" 
+                aria-label="Close" 
+                onClick={() => setShowAuthModal(false)}
+                className="w-6 h-6 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="relative">
+              <button 
+                type="button" 
+                aria-label="Close" 
+                onClick={() => setShowAuthModal(false)}
+                className="absolute top-4 right-4 z-30 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <Login
+                isSignUp={isAuthModalSignUp}
+                setIsSignUp={setIsAuthModalSignUp}
+                onSuccess={() => {
+                  setShowAuthModal(false);
+                  setIsAuthenticated(true);
+                  setShowSearchModal(true);
+                  loadInitialSuggestions();
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Authenticated Compare Search Bar Popup (using fts_search) */}
+      {showSearchModal && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[250] flex items-center justify-center p-4"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowSearchModal(false);
+          }}
+        >
+          <div 
+            className="bg-white rounded-3xl p-6 shadow-2xl max-w-lg w-full relative max-h-[85vh] flex flex-col border border-gray-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              type="button" 
+              aria-label="Close search" 
+              onClick={() => setShowSearchModal(false)}
+              className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="pr-8 mb-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0">
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                </div>
+                <h3 className="text-sm font-black uppercase tracking-wider text-black">
+                  Compare Products
+                </h3>
+              </div>
+              <p className="text-xs text-black/60">
+                Search our product catalog to compare side-by-side with <span className="font-bold text-black">{product?.name || 'this product'}</span>
+              </p>
+            </div>
+
+            {/* Search Input Bar */}
+            <div className="relative mb-3">
+              <Search className="w-4 h-4 text-black/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by brand or product name (fts_search)..."
+                className="w-full bg-black/5 border-2 border-transparent focus:border-black rounded-2xl pl-10 pr-9 py-2.5 text-xs font-semibold outline-none transition-all placeholder:text-black/40 text-black"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-black/40 hover:text-black p-0.5 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Live Search Results using fts_search */}
+            <div className="flex-1 overflow-y-auto space-y-1.5 min-h-[160px] max-h-[45vh] pr-1">
+              {isSearching ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center gap-2 text-black/40">
+                  <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Searching database...</span>
+                </div>
+              ) : searchResults.length > 0 ? (
+                searchResults.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleSelectCompareProduct(item.id)}
+                    className="w-full p-2.5 bg-gray-50 hover:bg-purple-50/70 border border-gray-100 hover:border-purple-200 rounded-2xl flex items-center gap-3 transition-all text-left cursor-pointer group"
+                  >
+                    {item.photo_url ? (
+                      <img
+                        src={item.photo_url}
+                        alt={item.name}
+                        referrerPolicy="no-referrer"
+                        className="w-11 h-11 object-cover rounded-xl border border-black/5 flex-shrink-0 bg-white"
+                      />
+                    ) : (
+                      <div className="w-11 h-11 rounded-xl bg-white border border-black/5 flex items-center justify-center flex-shrink-0 text-gray-400">
+                        <ShoppingBag className="w-4 h-4" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block truncate">
+                        {item.brand || 'Brand'}
+                      </span>
+                      <h4 className="text-xs font-bold text-black truncate group-hover:text-purple-700 transition-colors">
+                        {item.name}
+                      </h4>
+                      {item.type && (
+                        <span className="text-[8px] font-bold text-black/60 bg-white border border-black/5 px-1.5 py-0.2 rounded-md inline-block mt-0.5">
+                          {item.type}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-shrink-0">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-100 group-hover:bg-purple-200 px-2.5 py-1 rounded-xl transition-colors">
+                        Compare
+                      </span>
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="py-10 text-center text-black/40 text-xs font-medium">
+                  {searchQuery ? (
+                    <>No products found matching "{searchQuery}". Try searching for another brand or product name.</>
+                  ) : (
+                    <>Type a brand or product name to search...</>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export const ProductCard = () => {
-  const { isOpen, closeProductCard, productId, trackerItem } = useProductCard();
+  const { 
+    isOpen, 
+    closeProductCard, 
+    productId, 
+    compareProductId, 
+    trackerItem,
+    closeComparison,
+    openProductCard,
+    openComparison
+  } = useProductCard();
 
   useEffect(() => {
     const handleEscapeKey = (e: KeyboardEvent) => {
@@ -1143,12 +1547,32 @@ export const ProductCard = () => {
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-xs z-[200] flex items-center justify-center p-4"
+      className={`fixed inset-0 bg-black/50 backdrop-blur-xs z-[200] flex items-center justify-center ${
+        compareProductId ? 'p-1 sm:p-4' : 'p-3 sm:p-4'
+      } overflow-y-auto`}
       onClick={closeProductCard}
     >
-      <div onClick={(e) => e.stopPropagation()}>
-        <ProductCardContent productId={productId} trackerItem={trackerItem} onClose={closeProductCard} />
-      </div>
+      {compareProductId ? (
+        <ProductComparisonTable
+          productId1={String(productId)}
+          productId2={String(compareProductId)}
+          trackerItem1={trackerItem}
+          onClose={closeProductCard}
+          onCloseProduct1={() => openProductCard(String(compareProductId))}
+          onCloseProduct2={closeComparison}
+          onSwapProduct={(targetSlot, newId) => {
+            if (targetSlot === 'product1') {
+              openComparison(newId, String(compareProductId));
+            } else {
+              openComparison(String(productId), newId);
+            }
+          }}
+        />
+      ) : (
+        <div className="w-full max-w-md flex justify-center" onClick={(e) => e.stopPropagation()}>
+          <ProductCardContent productId={String(productId)} trackerItem={trackerItem} onClose={closeProductCard} />
+        </div>
+      )}
     </div>
   );
 };

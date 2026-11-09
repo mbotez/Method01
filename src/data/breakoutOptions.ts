@@ -6,49 +6,49 @@ export const BREAKOUT_PHOTO_OPTIONS = [
     value: 1,
     title: 'Surface Whiteheads',
     fullTitle: 'Blocked pores with closed white heads on the surface',
-    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Whiteheads2.png'
+    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/1.png'
   },
   {
     value: 2,
     title: 'Surface Blackheads',
     fullTitle: 'Blocked pores with open dark heads on the surface',
-    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Blackheads.webp'
+    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/2.jpg'
   },
   {
     value: 3,
     title: 'Post-Blemish Red Marks',
     fullTitle: 'Pink or red marks left after blemishes heal',
-    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/PIE.png'
+    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/3.png'
   },
   {
     value: 4,
     title: 'Post-Blemish Dark Spots',
     fullTitle: 'Dark spots left after blemishes heal',
-    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/PIH.png'
+    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/4.png'
   },
   {
     value: 5,
     title: 'Surface Bumps',
     fullTitle: 'Small surface bumps without visible heads',
-    img: '/assets/surface_bumps.png'
+    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/5.png'
   },
   {
     value: 6,
     title: 'General Congestion',
     fullTitle: 'Textured or clogged skin areas',
-    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/Conglobate.png'
+    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/6.png'
   },
   {
     value: 7,
     title: 'Surface Blemishes',
     fullTitle: 'Blemishes with visible surface heads',
-    img: '/assets/surface_blemishes.png'
+    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/7.png'
   },
   {
     value: 8,
     title: 'Deep & Tender Bumps',
     fullTitle: 'Deep or firm congestion',
-    img: ''
+    img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/Website%20art/8.png'
   }
 ];
 

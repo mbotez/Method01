@@ -368,7 +368,6 @@ async function getRecommendedAddition(concernNum: number, userProfile: UserProfi
 
     const { data, error } = await query;
     if (error || !data) {
-      console.warn(`[getRecommendedAddition] Failed to query suggested products for concern ${concernNum}`, error);
       return [];
     }
 
@@ -379,7 +378,6 @@ async function getRecommendedAddition(concernNum: number, userProfile: UserProfi
     });
     return filtered.slice(0, 2).map(p => String(p.product_id));
   } catch (err) {
-    console.error("[getRecommendedAddition] Exception thrown in suggestion query:", err);
     return [];
   }
 }
@@ -513,7 +511,6 @@ export async function checkRoutine(
     if (iError) throw iError;
     ingredientsData = iData || [];
   } catch (err) {
-    console.error("[checkRoutine] Database connection or select query failed:", err);
     warnings.push("Could not complete routine check due to database connection errors.");
   }
 

@@ -90,8 +90,6 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('[product-sort API] --- STARTING PRODUCT SORT ---');
-
     // EXECUTE RPC CALL WITH DIRECT QUERY FALLBACK
     let rawProducts: any[] | null = null;
     let rawLockedProducts: any[] | null = null;
@@ -154,8 +152,6 @@ serve(async (req) => {
     }
 
     if (rpcError) {
-      console.warn('[product-sort EdgeFn] RPC failed, falling back to direct table query:', rpcError.message);
-      
       try {
         let baseQuery = supabase
           .from('products')
@@ -204,7 +200,6 @@ serve(async (req) => {
           rawLockedProducts = [];
         }
       } catch (fallbackErr: any) {
-        console.error('Error in fallback query:', fallbackErr);
         return new Response(
           JSON.stringify({ route, barrier_level, products: [], locked_products: [], prescriptions: [], alerts: ['Error fetching products: ' + fallbackErr.message] }),
           {
@@ -217,8 +212,6 @@ serve(async (req) => {
 
     const filteredProducts = rawProducts || [];
     const lockedProductsList = rawLockedProducts || [];
-    console.log(`[product-sort API] Returned ${filteredProducts.length} products and ${lockedProductsList.length} locked products.`);
-
     // PARSE INTO PRODUCTS & PRESCRIPTIONS
     const standardProducts = filteredProducts.filter((p: any) => !p.is_prescription);
     const prescriptionProducts = filteredProducts.filter((p: any) => p.is_prescription);
@@ -249,7 +242,6 @@ serve(async (req) => {
     );
 
   } catch (error: any) {
-    console.error('product-sort EdgeFn error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       {

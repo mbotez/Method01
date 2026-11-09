@@ -1,7 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageCircle, Users, Heart, Share2, MoreVertical, X, Search, Plus, Send, SlidersHorizontal, Camera, ArrowRight, ChevronDown } from 'lucide-react';
-import imageCompression from 'browser-image-compression';
+import { 
+  MessageCircle, 
+  Users, 
+  Heart, 
+  Share2, 
+  X, 
+  Search, 
+  SlidersHorizontal, 
+  Camera, 
+  ArrowRight, 
+  ChevronRight,
+  Bookmark,
+  CheckCircle2,
+  AlertCircle,
+  BookOpen,
+  FlaskConical,
+  Sun,
+  Shield,
+  Layers
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
 
@@ -28,13 +46,189 @@ interface VideoItem {
   video_products: VideoProduct[];
 }
 
+export interface SkincareGuide {
+  id: string;
+  category: 'Layering' | 'Actives' | 'Barrier' | 'Acne' | 'Sun Care' | 'Sensitive';
+  title: string;
+  readTime: string;
+  subtitle: string;
+  summary: string;
+  keyRule: string;
+  steps: { title: string; desc: string }[];
+  dos: string[];
+  donts: string[];
+  recommendedActives: string[];
+}
+
+export const SKINCARE_GUIDES: SkincareGuide[] = [
+  {
+    id: 'layering-mastery',
+    category: 'Layering',
+    title: 'The Ultimate Skincare Layering Order',
+    readTime: '4 min read',
+    subtitle: 'From molecular density to occlusive barrier seal',
+    summary: 'Master the exact order of application from thinnest water-based textures to richest lipid creams to guarantee maximum dermal absorption without pilling or flushing.',
+    keyRule: 'Rule of Viscosity: Water-based hydrators first, viscous treatment serums second, lipid emulsions third, and sun protection or oils last.',
+    steps: [
+      { title: 'Step 1: Cleanse Thoroughly', desc: 'In AM, splash with lukewarm water or use a gentle non-foaming wash. In PM, double-cleanse with an oil cleanser to dissolve SPF and makeup, followed by a pH-balanced cleanser.' },
+      { title: 'Step 2: Hydrating Toner or Essence', desc: 'Apply to damp skin within 30 seconds of cleansing. Humectants like hyaluronic acid and glycerin pull surface moisture deeper.' },
+      { title: 'Step 3: Lightweight Active Serums', desc: 'Apply water-soluble actives such as Vitamin C, Niacinamide, or Azelaic acid. Allow 60 seconds for absorption.' },
+      { title: 'Step 4: Heavier Treatment Emulsions', desc: 'Introduce peptides, retinol, or barrier lipid complexes. Keep active combinations focused.' },
+      { title: 'Step 5: Barrier Cream & Moisturiser', desc: 'Seal active ingredients into the stratum corneum with ceramides, squalane, and cholesterol.' },
+      { title: 'Step 6: Daytime SPF 50+ / Night Facial Oil', desc: 'Never apply sunscreen under moisturiser. SPF must form an uninterrupted shield over all products.' }
+    ],
+    dos: [
+      'Apply hydrating humectants to slightly damp skin',
+      'Wait 60–90 seconds between potent active layers',
+      'Warm facial creams between fingertips before pressing into skin'
+    ],
+    donts: [
+      'Never mix sunscreen directly with moisturiser or foundation',
+      'Avoid layering multiple direct exfoliating acids concurrently',
+      'Do not apply pure essential oils onto dry or compromised barriers'
+    ],
+    recommendedActives: ['Hyaluronic Acid', 'Ceramides NP/AP', 'Niacinamide', 'Squalane']
+  },
+  {
+    id: 'actives-compatibility',
+    category: 'Actives',
+    title: 'Active Ingredients Compatibility Matrix',
+    readTime: '5 min read',
+    subtitle: 'Synergy, antagonism, and conflict avoidance',
+    summary: 'A clinical reference table explaining which dermatological actives can be combined in the same regimen, and which combinations cause chemical degradation or micro-inflammation.',
+    keyRule: 'Rule of Separation: Powerful actives that alter cellular turnover (retinoids, AHA/BHA, benzoyl peroxide) should be spaced into opposite routines (AM vs PM) or alternating days.',
+    steps: [
+      { title: 'Retinoids + Niacinamide (Gold Synergy)', desc: 'Niacinamide up-regulates ceramide synthesis, counteracting retinoid flaking and redness. Safe to layer together.' },
+      { title: 'Vitamin C + SPF (Daytime Photoprotection)', desc: 'L-ascorbic acid neutralizes reactive oxygen species that penetrate UV filters, boosting overall defense.' },
+      { title: 'Retinol + AHA/BHA (Dangerous Conflict)', desc: 'Layering glycolic or salicylic acid directly with retinol overwhelms the barrier. Alternate evenings instead.' },
+      { title: 'Benzoyl Peroxide + Pure Retinol (Oxidation Alert)', desc: 'Benzoyl peroxide can oxidize retinol molecules, reducing their efficacy. Use Benzoyl Peroxide in AM and Retinol in PM.' },
+      { title: 'Copper Peptides + Direct Vitamin C (Chelation)', desc: 'Direct acidic vitamin C (low pH) can destabilize peptide bonds and oxidize copper ions. Separate by 12 hours.' }
+    ],
+    dos: [
+      'Pair retinoids with barrier-replenishing humectants and ceramides',
+      'Use pure L-ascorbic acid on dry skin in the morning',
+      'Introduce only one new active ingredient every 3 to 4 weeks'
+    ],
+    donts: [
+      'Never stack high-concentration BHA and physical scrubs in the same routine',
+      'Do not use prescription tretinoin immediately after hot showers',
+      'Avoid applying direct Vitamin C onto already irritated or peeling patches'
+    ],
+    recommendedActives: ['Niacinamide', 'Azelaic Acid', 'Tetrahexyldecyl Ascorbate', 'Retinal']
+  },
+  {
+    id: 'barrier-repair-protocol',
+    category: 'Barrier',
+    title: 'Barrier Repair Emergency Protocol',
+    readTime: '3 min read',
+    subtitle: 'The 14-day reset for stinging and sensitized skin',
+    summary: 'When your skin barrier is damaged, moisture escapes and irritants enter, causing burning, tightness, rough texture, and sudden breakouts. Follow this 14-day reset.',
+    keyRule: 'Rule of Subtraction: The quickest way to repair a compromised skin barrier is stopping what damaged it, not adding more products.',
+    steps: [
+      { title: 'Days 1–3: The Complete Active Fast', desc: 'Cease all exfoliants (AHA/BHA), retinoids, vitamin C, essential oils, and clays. Cleanse only with lukewarm water or soap-free milk.' },
+      { title: 'Days 4–7: Physiological Lipid Restoration', desc: 'Apply a moisturiser containing the 3:1:1 physiological ratio of ceramides, cholesterol, and free fatty acids. Add panthenol (Pro-Vitamin B5).' },
+      { title: 'Days 8–11: Slug & Soothe', desc: 'In PM, seal vulnerable areas (cheeks, around nose and mouth) with a thin film of squalane oil or medical-grade petrolatum ointment.' },
+      { title: 'Days 12–14: Barrier Evaluation Check', desc: 'Assess skin: no stinging upon applying gentle lotion, zero tight pulling sensation. Maintain simple routine for 1 more week before considering actives.' }
+    ],
+    dos: [
+      'Pat dry gently with a clean microfibre towel; never rub',
+      'Stick to 100% mineral zinc oxide sunscreen while barrier is healing',
+      'Keep showers lukewarm; avoid direct high-pressure shower stream on face'
+    ],
+    donts: [
+      'Never peel off flaking skin or use physical exfoliating tools',
+      'Do not try new sheet masks or scented facial mists during repair phase',
+      'Avoid fragrance, denatured alcohol, and botanical essential oils'
+    ],
+    recommendedActives: ['Ceramides 1, 3, 6-II', 'Panthenol (B5)', 'Centella Asiatica', 'Colloidal Oat']
+  },
+  {
+    id: 'purging-vs-breakouts',
+    category: 'Acne',
+    title: 'Purging vs. Breakouts: The Diagnostic Blueprint',
+    readTime: '4 min read',
+    subtitle: 'How to distinguish accelerated turnover from clogged pores',
+    summary: 'When introducing an active that speeds cell turnover, skin may undergo a temporary purge. Learn how to tell if a reaction is a normal purge or an inflammatory breakout.',
+    keyRule: 'Rule of Location & Lifecycle: Purging occurs where you routinely experience blemishes and clears quickly. Breakouts in brand new areas indicate product rejection.',
+    steps: [
+      { title: 'Location Check', desc: 'Purging appears strictly where you have pre-existing microcomedones (usually T-zone). If you suddenly break out on your neck or cheeks where you are normally clear, it is a negative reaction.' },
+      { title: 'Timeline & Speed', desc: 'Purge blemishes surface, mature, and disappear much faster than typical acne (usually within 3–5 days per spot). Total purge cycle lasts 4–6 weeks.' },
+      { title: 'Ingredient Culprit Check', desc: 'Only cell-turnover accelerants cause purging (Retinoids, AHAs, BHAs, Vitamin C, Benzoyl Peroxide). Hydrating serums, oils, and moisturisers CANNOT cause purging—they simply clog or irritate.' },
+      { title: 'Action Plan', desc: 'If purging: decrease frequency (e.g., from daily to every 3rd night) and support hydration. If breaking out: discontinue the suspect product immediately.' }
+    ],
+    dos: [
+      'Track photos in your Profile Progress journal weekly to observe blemish turnover',
+      'Continue daily gentle hydration and broad-spectrum sun protection',
+      'Keep hands off blemishes to prevent post-inflammatory hyperpigmentation (PIH)'
+    ],
+    donts: [
+      'Do not pick, squeeze, or attempt DIY extraction of purge whiteheads',
+      'Do not panic and introduce multiple anti-acne spot treatments simultaneously',
+      'Do not conclude a product has failed before week 6 if symptoms fit a true purge'
+    ],
+    recommendedActives: ['Salicylic Acid (BHA)', 'Adapalene', 'Zinc PCA', 'Madecassoside']
+  },
+  {
+    id: 'sun-protection-mastery',
+    category: 'Sun Care',
+    title: 'Sun Protection Mastery: Mineral vs. Chemical',
+    readTime: '4 min read',
+    subtitle: 'UVA/UVB filtration, application quantity, and reapplication',
+    summary: 'Sunscreen is the single most potent anti-aging and anti-pigmentation tool. Understand the critical distinctions between inorganic and modern organic UV filters.',
+    keyRule: 'Rule of Quantity: 2 milligrams per square centimetre of skin—equivalent to 2 full finger lengths for the face and ears alone.',
+    steps: [
+      { title: 'Mineral / Inorganic (Zinc Oxide, Titanium Dioxide)', desc: 'Sit on skin surface and reflect/absorb radiation. Non-irritating, immediate protection, ideal for rosacea, post-laser, and eczema-prone skin.' },
+      { title: 'Chemical / Organic (Tinosorb, Uvinul, Mexoryl)', desc: 'Modern European & Asian filters absorb UV and convert it into benign heat. Ultralight, non-greasy, completely transparent across all skin tones.' },
+      { title: 'UVA vs. UVB Coverage', desc: 'UVB causes surface burns; UVA causes deep collagen destruction and hyperpigmentation. Always look for PA++++ or European UVA circle logo.' },
+      { title: 'Reapplication Strategy', desc: 'UV filters degrade under sun exposure. Reapply every 2 hours of direct sun or after heavy sweating using an SPF cushion or mist.' }
+    ],
+    dos: [
+      'Apply SPF as the final step of your morning skincare routine',
+      'Cover ears, hairline, eyelids, and back of the neck',
+      'Wear SPF indoors if seated near windows receiving direct daylight'
+    ],
+    donts: [
+      'Never rely on the SPF in liquid foundation or powder alone',
+      'Do not store sunscreen bottles in hot parked vehicles (degrades filters)',
+      'Do not skip sunscreen on overcast or rainy days—UVA penetrates clouds'
+    ],
+    recommendedActives: ['Zinc Oxide', 'Tinosorb S/M', 'Ectoin', 'Tocopherol (Vitamin E)']
+  },
+  {
+    id: 'sensitive-skin-rosacea',
+    category: 'Sensitive',
+    title: 'The Sensitive & Rosacea-Prone Protocol',
+    readTime: '3 min read',
+    subtitle: 'Vascular stabilization, thermal control, and barrier comfort',
+    summary: 'A dermatological guide to reducing chronic erythema, transient neurovascular flushing, and cutaneous burning while maintaining active skin rejuvenation.',
+    keyRule: 'Rule of Thermal & Chemical Restraint: Minimize extreme temperature shifts and eliminate vascular irritants like ethanol, menthol, and synthetic dyes.',
+    steps: [
+      { title: 'Vascular Calming with Azelaic Acid', desc: 'Azelaic acid (10–15%) reduces inflammatory cathelicidins and visibly calms micro-vascular dilation without triggering photosensitivity.' },
+      { title: 'Eliminate Thermal Triggers', desc: 'Avoid face-steaming, ice-rolling (can cause rebound vasodilation), and hot baths directly before skincare application.' },
+      { title: 'Gentle Cleansing Routine', desc: 'Use non-surfactant cleansing lotions. Pat dry with ultra-soft cotton, never terrycloth.' },
+      { title: 'Targeted Barrier Reinforcement', desc: 'Incorporate beta-glucan and ectoin, which stabilize cell membranes and reduce trans-epidermal water loss.' }
+    ],
+    dos: [
+      'Always patch test any new product behind the ear for 48 hours',
+      'Choose fragrance-free, essential-oil-free mineral sunscreens',
+      'Store soothing serums in a cool spot for gentle anti-inflammatory relief'
+    ],
+    donts: [
+      'Avoid high-foaming SLS/SLES cleansers and alcohol-based astringents',
+      'Do not use rotating brush cleansing devices or scrub beads',
+      'Avoid high-heat saunas, extreme spice, and sudden hot-cold transitions'
+    ],
+    recommendedActives: ['Azelaic Acid', 'Centella Asiatica', 'Allantoin', 'Ectoin']
+  }
+];
+
 interface SocialProps {
   isFollowsOpen?: boolean;
   setIsFollowsOpen?: (open: boolean) => void;
   socialTab?: 'Messages' | 'Friends';
   setSocialTab?: (tab: 'Messages' | 'Friends') => void;
-  activeMainTab?: 'videos' | 'articles' | 'community';
-  setActiveMainTab?: (tab: 'videos' | 'articles' | 'community') => void;
+  activeMainTab?: 'videos' | 'articles' | 'guides' | 'community';
+  setActiveMainTab?: (tab: 'videos' | 'articles' | 'guides' | 'community') => void;
 }
 
 export const Social = ({
@@ -48,7 +242,6 @@ export const Social = ({
   const { openProductCard } = useProductCard();
   const [internalSocialTab, internalSetSocialTab] = useState<'Messages' | 'Friends'>('Friends');
   const [internalIsFollowsOpen, internalSetIsFollowsOpen] = useState(false);
-  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
 
   const socialTab = externalSocialTab !== undefined ? externalSocialTab : internalSocialTab;
   const setSocialTab = externalSetSocialTab !== undefined ? externalSetSocialTab : internalSetSocialTab;
@@ -56,14 +249,9 @@ export const Social = ({
   const isFollowsOpen = externalIsFollowsOpen !== undefined ? externalIsFollowsOpen : internalIsFollowsOpen;
   const setIsFollowsOpen = externalSetIsFollowsOpen !== undefined ? externalSetIsFollowsOpen : internalSetIsFollowsOpen;
 
-  const [posts, setPosts] = useState<any[]>([]);
   const [articles, setArticles] = useState<any[]>([]);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [follows, setFollows] = useState<any[]>([]);
-  const [comments, setComments] = useState<{[key: string]: any[]}>({});
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<'All' | 'Following' | 'Saved'>('All');
 
   const [videos, setVideos] = useState<VideoItem[]>([]);
 
@@ -84,9 +272,8 @@ export const Social = ({
           )
         `)
         .order('created_at', { ascending: false });
-      if (error) console.error('Error fetching videos:', error);
-      else {
-        const mappedVideos: VideoItem[] = (data || []).map((v: any) => ({
+      if (!error && data) {
+        const mappedVideos: VideoItem[] = data.map((v: any) => ({
           id: v.id,
           video_id: v.video_id,
           url: v.video_url,
@@ -102,10 +289,10 @@ export const Social = ({
     fetchVideos();
   }, []);
 
-  // Video Feed States
-  const [internalActiveMainTab, internalSetActiveMainTab] = useState<'videos' | 'articles' | 'community'>('videos');
+  const [internalActiveMainTab, internalSetActiveMainTab] = useState<'videos' | 'articles' | 'guides' | 'community'>('videos');
   const activeMainTab = externalActiveMainTab !== undefined ? externalActiveMainTab : internalActiveMainTab;
   const setActiveMainTab = externalSetActiveMainTab !== undefined ? externalSetActiveMainTab : internalSetActiveMainTab;
+
   const [videoCategoryFilter, setVideoCategoryFilter] = useState<'All' | 'Glass skin' | 'Routine' | 'Educational'>('All');
   const [isVideoCategoryDropdownOpen, setIsVideoCategoryDropdownOpen] = useState(false);
   const [expandedVideoProducts, setExpandedVideoProducts] = useState<Record<string, boolean>>({});
@@ -119,6 +306,19 @@ export const Social = ({
     "7629345393230318862": 51200,
     "7341849029694737696": 12800
   });
+
+  // Guides States
+  const [guideCategoryFilter, setGuideCategoryFilter] = useState<string>('All');
+  const [isGuideCategoryDropdownOpen, setIsGuideCategoryDropdownOpen] = useState(false);
+  const [selectedGuide, setSelectedGuide] = useState<SkincareGuide | null>(null);
+  const [savedGuideIds, setSavedGuideIds] = useState<string[]>([]);
+
+  const toggleSaveGuide = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSavedGuideIds(prev => 
+      prev.includes(id) ? prev.filter(gId => gId !== id) : [...prev, id]
+    );
+  };
 
   const toggleLikeVideo = (id: string) => {
     setLikedVideos(prev => {
@@ -141,69 +341,66 @@ export const Social = ({
     }));
   };
   
-  // New: User Search
+  // User Search
   const [userSearch, setUserSearch] = useState('');
   const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
+  const [follows, setFollows] = useState<any[]>([]);
+
   const MessagesTab = () => {
-      const [chats, setChats] = useState<{ [key: string]: { partnerName: string, messages: any[] } }>({});
-      const [expandedChat, setExpandedChat] = useState<string | null>(null);
+    const [chats, setChats] = useState<{ [key: string]: { partnerName: string, messages: any[] } }>({});
+    const [expandedChat, setExpandedChat] = useState<string | null>(null);
 
-      useEffect(() => {
-          const fetchMessages = async () => {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (!user) return;
+    useEffect(() => {
+      const fetchMessages = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-              const { data, error } = await supabase
-                  .from('messages')
-                  .select('*, sender:users!messages_sender_id_fkey(username), receiver:users!messages_receiver_id_fkey(username)')
-                  .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-                  .order('timestamp', { ascending: true });
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*, sender:users!messages_sender_id_fkey(username), receiver:users!messages_receiver_id_fkey(username)')
+          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+          .order('timestamp', { ascending: true });
 
-              if (error) {
-                  console.error('Error fetching messages:', error);
-                  return;
-              }
+        if (error || !data) return;
 
-              const grouped: { [key: string]: { partnerName: string, messages: any[] } } = {};
-              data.forEach(m => {
-                  const chatId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-                  const chatPartner = m.sender_id === user.id ? m.receiver?.username : m.sender?.username;
-                  if (!grouped[chatId]) grouped[chatId] = { partnerName: chatPartner || 'Unknown', messages: [] };
-                  grouped[chatId].messages.push(m);
-              });
-              setChats(grouped);
-          };
-          fetchMessages();
-      }, []);
+        const grouped: { [key: string]: { partnerName: string, messages: any[] } } = {};
+        data.forEach(m => {
+          const chatId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
+          const chatPartner = m.sender_id === user.id ? m.receiver?.username : m.sender?.username;
+          if (!grouped[chatId]) grouped[chatId] = { partnerName: chatPartner || 'Unknown', messages: [] };
+          grouped[chatId].messages.push(m);
+        });
+        setChats(grouped);
+      };
+      fetchMessages();
+    }, []);
 
-      return (
-          <div className="space-y-4 flex-1 overflow-y-auto">
-              {Object.entries(chats).map(([chatId, chatData]: [string, { partnerName: string, messages: any[] }]) => (
-                  <div key={chatId} className="bg-black/5 rounded-xl overflow-hidden">
-                      <button 
-                        onClick={() => setExpandedChat(expandedChat === chatId ? null : chatId)}
-                        className="w-full text-left p-3 font-black uppercase text-xs hover:bg-black/10 transition-colors"
-                      >
-                          {chatData.partnerName}
-                      </button>
-                      {expandedChat === chatId && (
-                          <div className="p-3 bg-white border-t border-black/5 space-y-2">
-                              {chatData.messages.map((m: any) => (
-                                  <div key={m.id} className={`text-[10px] p-2 rounded-lg ${m.sender_id === chatData.messages[0].sender_id ? 'bg-venus-accent/10' : 'bg-black/5'}`}>
-                                      <p className="font-black uppercase">{m.sender_id === chatData.messages[0].sender_id ? 'You' : chatData.partnerName}:</p>
-                                      <p>{m.message}</p>
-                                  </div>
-                              ))}
-                          </div>
-                      )}
+    return (
+      <div className="space-y-4 flex-1 overflow-y-auto">
+        {Object.entries(chats).map(([chatId, chatData]: [string, { partnerName: string, messages: any[] }]) => (
+          <div key={chatId} className="bg-black/5 rounded-xl overflow-hidden">
+            <button 
+              onClick={() => setExpandedChat(expandedChat === chatId ? null : chatId)}
+              className="w-full text-left p-3 font-black uppercase text-xs hover:bg-black/10 transition-colors"
+            >
+              {chatData.partnerName}
+            </button>
+            {expandedChat === chatId && (
+              <div className="p-3 bg-white border-t border-black/5 space-y-2">
+                {chatData.messages.map((m: any) => (
+                  <div key={m.id} className={`text-[10px] p-2 rounded-lg ${m.sender_id === chatData.messages[0].sender_id ? 'bg-venus-accent/10' : 'bg-black/5'}`}>
+                    <p className="font-black uppercase">{m.sender_id === chatData.messages[0].sender_id ? 'You' : chatData.partnerName}:</p>
+                    <p>{m.message}</p>
                   </div>
-              ))}
+                ))}
+              </div>
+            )}
           </div>
-      );
+        ))}
+      </div>
+    );
   };
 
-
-  // Follow user
   async function handleFollow(following_id: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -215,202 +412,41 @@ export const Social = ({
         following_id: following_id,
       });
 
-    if (error) {
-      console.error('Error following user:', error);
-      return;
-    }
+    if (error) return;
 
-    // Refresh data
     fetchInitialData();
     setUserSearch('');
     setUserSearchResults([]);
   }
 
-  // New Comment State
-  const [commentsOpenPostId, setCommentsOpenPostId] = useState<string | null>(null);
-  const [newCommentText, setNewCommentText] = useState('');
-  const [isArticle, setIsArticle] = useState(false);
-
-  // New Post State
-  const [postTitle, setPostTitle] = useState('');
-  const [postContent, setPostContent] = useState('');
-  const [postImage, setPostImage] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  async function handleComment(post_id: string) {
-    if (!newCommentText.trim()) return;
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { error } = await supabase
-        .from('comments')
-        .insert({
-          post_id: post_id,
-          user_id: user.id,
-          content: newCommentText,
-        });
-
-      if (!error) {
-        setNewCommentText('');
-        setCommentsOpenPostId(null);
-        fetchInitialData();
-      }
-    } catch (err) {
-      console.error('Error adding comment:', err);
-    }
-  }
-
-
-  useEffect(() => {
-    fetchInitialData();
-  }, [filter]);
-
-  // New: Search Users
-  useEffect(() => {
-    const searchUsers = async () => {
-      if (userSearch.length > 0) {
-        const { data, error } = await supabase
-          .from('users')
-          .select('id, username')
-          .ilike('username', `%${userSearch}%`)
-          .limit(5);
-        if (error) {
-          console.error('User search error:', error);
-        } else {
-          setUserSearchResults(data || []);
-        }
-      } else {
-        setUserSearchResults([]);
-      }
-    };
-    searchUsers();
-  }, [userSearch]);
-
   async function fetchInitialData() {
     setLoading(true);
     try {
-      // Fetch Posts
-      const { data: postsData, error: pError } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          users (
-            username
-          )
-        `)
-        .order('timestamp', { ascending: false })
-        .limit(20);
-      
-      if (pError) console.error('Posts fetch error:', pError);
-      setPosts(postsData || []);
-
-      // Fetch Articles
-      const { data: articlesData, error: aError } = await supabase
+      const { data: articleData } = await supabase
         .from('articles')
         .select('*')
         .order('created_at', { ascending: false });
-      if (aError) console.error('Articles fetch error:', aError);
-      setArticles(articlesData || []);
 
-      // Fetch Comments only for the loaded posts
-      if (postsData && postsData.length > 0) {
-        const postIds = postsData.map(p => p.post_id);
-        const { data: commentsData, error: cError } = await supabase
-          .from('comments')
-          .select(`
-            *,
-            users(username)
-          `)
-          .in('post_id', postIds);
-        
-        if (cError) console.error('Comments fetch error:', cError);
-        if (commentsData) {
-          const commentsByPost: {[key: string]: any[]} = {};
-          commentsData.forEach(c => {
-            if (!commentsByPost[c.post_id]) commentsByPost[c.post_id] = [];
-            commentsByPost[c.post_id].push(c);
-          });
-          setComments(commentsByPost);
-        }
-      } else {
-        setComments({});
-      }
+      if (articleData) setArticles(articleData);
 
-      // Fetch Follows
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: followsData, error: fError } = await supabase
+        const { data: followsData } = await supabase
           .from('follows')
-          .select(`
-            id,
-            following_id,
-            following:users!following_id(username)
-          `)
+          .select('*, following:users!follows_following_id_fkey(username, skin_type)')
           .eq('follower_id', user.id);
-        
-        if (fError) console.error('Follows error:', fError);
-        setFollows(followsData || []);
+        if (followsData) setFollows(followsData);
       }
-    } catch (err) {
-      console.error('Error fetching social data:', err);
+    } catch {
+      // quiet fallback
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleCreatePost() {
-    if (!postContent.trim()) return;
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      let postMediaUrl = null;
-      if (postImage) {
-        const fileExt = postImage.name.split('.').pop();
-        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-        
-        const compressedFile = await imageCompression(postImage, {
-          maxSizeMB: 1,
-          maxWidthOrHeight: 1024,
-          useWebWorker: false,
-          fileType: 'image/webp'
-        });
-
-        const { error: uploadError } = await supabase.storage
-          .from('Post_pics')
-          .upload(fileName, compressedFile);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('Post_pics')
-          .getPublicUrl(fileName);
-        
-        postMediaUrl = publicUrl;
-      }
-
-      const { error } = await supabase
-        .from('posts')
-        .insert({
-          user_id: user.id,
-          title: postTitle.trim() || null,
-          content: postContent,
-          post_media: postMediaUrl,
-        });
-
-      if (!error) {
-        setPostTitle('');
-        setPostContent('');
-        setPostImage(null);
-        fetchInitialData();
-      }
-    } catch (err) {
-      console.error('Error creating post:', err);
-    }
-  }
+  useEffect(() => {
+    fetchInitialData();
+  }, []);
 
   const filteredVideos = videos.filter(video => {
     const matchesSearch = searchQuery.trim() === '' || 
@@ -419,9 +455,8 @@ export const Social = ({
       (video.tags && video.tags.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase())));
       
     const matchesCategory = videoCategoryFilter === 'All' || video.category === videoCategoryFilter;
-    const matchesTag = !selectedTag || (video.tags && video.tags.map(t => t.toLowerCase()).includes(selectedTag.toLowerCase()));
     
-    return matchesSearch && matchesCategory && matchesTag;
+    return matchesSearch && matchesCategory;
   });
 
   const filteredArticles = articles.filter(article => {
@@ -429,96 +464,46 @@ export const Social = ({
       article.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
       article.article_content?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (article.tags && article.tags.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase())));
-      
-    const matchesTag = !selectedTag || (article.tags && article.tags.map(t => t.toLowerCase()).includes(selectedTag.toLowerCase()));
 
-    return matchesSearch && matchesTag;
+    return matchesSearch;
   });
 
-  const baseFilteredPosts = posts.filter(p => 
-    p.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    p.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (p.tags && p.tags.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase())))
-  );
+  const filteredGuides = SKINCARE_GUIDES.filter(guide => {
+    const matchesCategory = guideCategoryFilter === 'All' || guide.category === guideCategoryFilter;
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch = !query || 
+      guide.title.toLowerCase().includes(query) ||
+      guide.subtitle.toLowerCase().includes(query) ||
+      guide.summary.toLowerCase().includes(query) ||
+      guide.recommendedActives.some(a => a.toLowerCase().includes(query));
 
-  const tagFilteredPosts = selectedTag 
-    ? baseFilteredPosts.filter(p => p.tags && p.tags.map(t => t.toLowerCase()).includes(selectedTag.toLowerCase()))
-    : baseFilteredPosts;
-
-  const displayPosts = filter === 'Following' 
-    ? tagFilteredPosts.filter(p => follows.some(f => f.following_id === p.user_id))
-    : tagFilteredPosts;
-
-  const availableTags = Array.from(new Set([
-    'Glass skin', 'Routine', 'Educational', 'Skincare', 'Sensitive',
-    ...videos.flatMap(v => v.tags || []),
-    ...articles.flatMap(a => a.tags || []),
-    ...posts.flatMap(p => p.tags || [])
-  ])).filter(Boolean);
+    return matchesCategory && matchesSearch;
+  });
 
   return (
-    <div className="flex h-full w-full w-[70%] mx-auto">
-      {/* Panel 1: Topics (New Left Panel) - 3/10 width on desktop */}
-      <div className={`hidden md:block w-[30%] border-r-2 border-black/5 pr-8 h-full overflow-y-auto`}>
-        <div className="flex items-center justify-between mb-8 mt-2">
-          <h2 className="text-xl font-black uppercase italic tracking-tighter">Topics</h2>
-        </div>
-
-        <div className="space-y-4">
-          {availableTags.map(topic => (
-            <div 
-              key={topic} 
-              onClick={() => {
-                setSelectedTag(selectedTag === topic ? null : topic);
-              }}
-              className={`p-3 rounded-xl transition-all cursor-pointer border ${
-                selectedTag === topic 
-                  ? 'bg-black text-white border-black font-black' 
-                  : 'hover:bg-black/[0.02] border-transparent hover:border-black/5 text-black/80'
-              }`}
-            >
-              <p className="text-[14px] font-black uppercase tracking-tight truncate">#{topic}</p>
-            </div>
-          ))}
-          {(selectedTag || searchQuery || videoCategoryFilter !== 'All') && (
-            <button 
-              onClick={() => {
-                setSelectedTag(null);
-                setSearchQuery('');
-                setVideoCategoryFilter('All');
-              }}
-              className="w-full text-left p-3 text-[10px] font-black uppercase tracking-widest text-venus-accent hover:opacity-80"
-            >
-              Reset Filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Panel 2: Feed - 7/10 width on desktop */}
-      <div className="w-full md:w-[70%] md:pl-10 h-full overflow-y-auto">
-        
+    <div className="w-full max-w-4xl mx-auto h-full px-2 sm:px-4">
+      <div className="w-full h-full">
         {/* Main Tab Switcher */}
-        <div className="flex justify-center gap-6 border-b border-black/5 pb-2.5 mb-6">
+        <div className="flex justify-center gap-8 md:gap-12 border-b border-black/5 pb-2.5 mb-6">
           <button 
             onClick={() => {
               setActiveMainTab('videos');
               setSearchQuery('');
             }} 
-            className={`text-[10px] font-black uppercase tracking-widest relative pb-2 transition-all ${
+            className={`text-xs md:text-sm font-black uppercase tracking-widest relative pb-2 transition-all cursor-pointer ${
               activeMainTab === 'videos' 
                 ? 'text-black font-black border-b-2 border-black' 
                 : 'text-black/40 hover:text-black/60'
             }`}
           >
-            Social media
+            Trending
           </button>
           <button 
             onClick={() => {
               setActiveMainTab('articles');
               setSearchQuery('');
             }} 
-            className={`text-[10px] font-black uppercase tracking-widest relative pb-2 transition-all ${
+            className={`text-xs md:text-sm font-black uppercase tracking-widest relative pb-2 transition-all cursor-pointer ${
               activeMainTab === 'articles' 
                 ? 'text-black font-black border-b-2 border-black' 
                 : 'text-black/40 hover:text-black/60'
@@ -528,29 +513,35 @@ export const Social = ({
           </button>
           <button 
             onClick={() => {
-              setActiveMainTab('community');
+              setActiveMainTab('guides');
               setSearchQuery('');
             }} 
-            className={`text-[10px] font-black uppercase tracking-widest relative pb-2 transition-all ${
-              activeMainTab === 'community' 
+            className={`text-xs md:text-sm font-black uppercase tracking-widest relative pb-2 transition-all cursor-pointer ${
+              activeMainTab === 'guides' || (activeMainTab as any) === 'community'
                 ? 'text-black font-black border-b-2 border-black' 
                 : 'text-black/40 hover:text-black/60'
             }`}
           >
-            Chatter Q&A
+            Guides
           </button>
         </div>
 
-        {/* Search Bar (Shared for both tabs) */}
+        {/* Search Bar */}
         <div className="flex items-center gap-2 mb-6 max-w-xl mx-auto w-full">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-black/30" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-black/30 pointer-events-none" />
             <input 
               type="text" 
-              placeholder={activeMainTab === 'videos' ? "Search video tutorials..." : activeMainTab === 'articles' ? "Search articles..." : "Search chatter feed..."}
+              placeholder={
+                activeMainTab === 'videos' 
+                  ? "Search trending tutorials..." 
+                  : activeMainTab === 'articles' 
+                  ? "Search articles..." 
+                  : "Search skincare guides & ingredients..."
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-black/5 border-none rounded-lg py-2 pl-9 pr-4 text-[10px] font-bold focus:ring-2 focus:ring-black/10 outline-none transition-all placeholder:uppercase placeholder:tracking-tighter"
+              className="w-full bg-black/5 border-none rounded-xl py-2 pl-9 pr-4 text-[10px] md:text-xs font-bold focus:ring-2 focus:ring-black/10 outline-none transition-all placeholder:uppercase placeholder:tracking-tighter"
             />
           </div>
 
@@ -559,10 +550,10 @@ export const Social = ({
             <div className="relative">
               <button 
                 onClick={() => setIsVideoCategoryDropdownOpen(!isVideoCategoryDropdownOpen)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-black/5 hover:bg-black/10 text-black rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
+                className="flex items-center gap-1.5 px-3 py-2 bg-black/5 hover:bg-black/10 text-black rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shrink-0"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Category: {videoCategoryFilter}</span>
+                <span>{videoCategoryFilter}</span>
               </button>
               
               <AnimatePresence>
@@ -576,7 +567,7 @@ export const Social = ({
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 5 }}
-                      className="absolute right-0 mt-1 w-36 bg-white border border-black/5 rounded-lg shadow-xl z-20 py-1"
+                      className="absolute right-0 mt-1 w-36 bg-white border border-black/5 rounded-xl shadow-xl z-20 py-1"
                     >
                       {(['All', 'Glass skin', 'Routine', 'Educational'] as const).map((cat) => (
                         <button
@@ -585,7 +576,7 @@ export const Social = ({
                             setVideoCategoryFilter(cat);
                             setIsVideoCategoryDropdownOpen(false);
                           }}
-                          className={`w-full text-left px-3 py-2 text-[9px] font-black uppercase tracking-wider hover:bg-black/5 transition-all ${videoCategoryFilter === cat ? 'text-venus-accent font-black' : 'text-black/60'}`}
+                          className={`w-full text-left px-3 py-2 text-[9px] font-black uppercase tracking-wider hover:bg-black/5 transition-all cursor-pointer ${videoCategoryFilter === cat ? 'text-venus-accent font-black' : 'text-black/60'}`}
                         >
                           {cat}
                         </button>
@@ -597,40 +588,40 @@ export const Social = ({
             </div>
           )}
 
-          {activeMainTab === 'community' && (
-            /* Filter button and dropdown for Community */
+          {(activeMainTab === 'guides' || (activeMainTab as any) === 'community') && (
+            /* Filter dropdown for Guides */
             <div className="relative">
               <button 
-                onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-black/5 hover:bg-black/10 text-black rounded-lg text-[10px] font-black uppercase tracking-wider transition-all"
+                onClick={() => setIsGuideCategoryDropdownOpen(!isGuideCategoryDropdownOpen)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-black/5 hover:bg-black/10 text-black rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shrink-0"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Filter: {filter}</span>
+                <span>{guideCategoryFilter}</span>
               </button>
               
               <AnimatePresence>
-                {isFilterDropdownOpen && (
+                {isGuideCategoryDropdownOpen && (
                   <>
                     <div 
                       className="fixed inset-0 z-10" 
-                      onClick={() => setIsFilterDropdownOpen(false)} 
+                      onClick={() => setIsGuideCategoryDropdownOpen(false)} 
                     />
                     <motion.div 
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 5 }}
-                      className="absolute right-0 mt-1 w-32 bg-white border border-black/5 rounded-lg shadow-xl z-20 py-1"
+                      className="absolute right-0 mt-1 w-40 bg-white border border-black/5 rounded-xl shadow-xl z-20 py-1"
                     >
-                      {(['All', 'Following', 'Saved'] as const).map((t) => (
+                      {(['All', 'Layering', 'Actives', 'Barrier', 'Acne', 'Sun Care', 'Sensitive'] as const).map((cat) => (
                         <button
-                          key={t}
+                          key={cat}
                           onClick={() => {
-                            setFilter(t);
-                            setIsFilterDropdownOpen(false);
+                            setGuideCategoryFilter(cat);
+                            setIsGuideCategoryDropdownOpen(false);
                           }}
-                          className={`w-full text-left px-3 py-2 text-[9px] font-black uppercase tracking-wider hover:bg-black/5 transition-all ${filter === t ? 'text-venus-accent font-black' : 'text-black/60'}`}
+                          className={`w-full text-left px-3 py-2 text-[9px] font-black uppercase tracking-wider hover:bg-black/5 transition-all cursor-pointer ${guideCategoryFilter === cat ? 'text-venus-accent font-black' : 'text-black/60'}`}
                         >
-                          {t}
+                          {cat}
                         </button>
                       ))}
                     </motion.div>
@@ -641,59 +632,61 @@ export const Social = ({
           )}
         </div>
 
+        {/* Tab 1: TRENDING (VIDEOS) */}
         {activeMainTab === 'videos' ? (
-          /* VIDEO TUTORIALS TAB CONTENT */
-          <div className="space-y-6">
-            {/* Video List Feed */}
+          <div className="space-y-6 pb-32">
             {filteredVideos.length === 0 ? (
-              <div className="text-center py-12 bg-black/[0.02] rounded-xl border border-dashed border-black/10">
-                <p className="text-xs text-black/40 font-bold uppercase italic">No videos match your search or filters</p>
+              <div className="text-center py-12 bg-black/[0.02] rounded-2xl border border-dashed border-black/10">
+                <p className="text-xs text-black/40 font-bold uppercase italic">No trending videos match your filters</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2 md:gap-3 pb-32">
-                {filteredVideos.map(video => {
-                  const isLiked = likedVideos[video.id];
-                  const isSaved = savedVideos[video.id];
-                  const likesCount = videoLikesCount[video.id] || 0;
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {filteredVideos.map((video) => {
+                  const isExpanded = !!expandedVideoProducts[video.id];
+                  const isLiked = !!likedVideos[video.id];
+                  const isSaved = !!savedVideos[video.id];
+                  const likesCount = videoLikesCount[video.video_id] || 1200;
 
                   return (
-                    <div 
-                      key={video.id} 
-                      className="bg-white border border-black/5 rounded-xl overflow-hidden hover:border-black/20 hover:shadow-md transition-all duration-300 flex flex-col h-full justify-between"
-                    >
-                      <div className="p-1 flex flex-col h-full justify-between gap-1">
-                        {/* Video Title */}
-                        <h3 className="text-xs font-black uppercase tracking-tight text-black leading-tight min-h-[2rem] flex items-center">
-                          {video.title}
-                        </h3>
-
-                        {/* Video Player Box */}
+                    <div key={video.id} className="clean-card bg-white border border-black/5 rounded-2xl overflow-hidden hover:border-black/20 hover:shadow-md transition-all flex flex-col justify-between">
+                      {/* Video Player */}
+                      <div className="relative aspect-[9/16] max-h-[460px] bg-black rounded-t-xl overflow-hidden">
                         {video.platform === 'youtube' ? (
-                          <div className="w-full aspect-[9/16] relative rounded-xl overflow-hidden border border-black/5 bg-black/5 shadow-inner">
-                            <iframe
-                              src={video.url}
-                              className="absolute inset-0 w-full h-[100%] top-1/2 -translate-y-1/2"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                          </div>
+                          <iframe
+                            src={`https://www.youtube.com/embed/${video.video_id}`}
+                            title={video.title}
+                            className="w-full h-full border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
                         ) : (
-                          <div className="flex justify-center w-full bg-black/[0.02] py-0 rounded-xl border border-black/5">
-                            <div className="w-full max-w-[273px] aspect-[9/16] relative rounded-xl overflow-hidden shadow-lg bg-black">
-                              <iframe
-                                src={video.url}
-                                className="absolute inset-0 w-full h-full"
-                                allow="fullscreen"
-                                scrolling="no"
-                                style={{ overflow: 'hidden' }}
-                              />
-                            </div>
-                          </div>
+                          <iframe
+                            src={`https://www.tiktok.com/embed/v2/${video.video_id}`}
+                            title={video.title}
+                            className="w-full h-full border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
                         )}
+                      </div>
 
-                        {/* Products */}
-                        {video.video_products.length > 0 && (
-                          <div className="pt-2 pb-2 border-t border-black/5">
+                      {/* Video Info */}
+                      <div className="p-4 flex flex-col flex-1 justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-xs text-black/40 font-medium">
+                            <span>{video.category}</span>
+                            <span className="uppercase text-[9px] font-black px-1.5 py-0.5 bg-black/5 rounded">
+                              {video.platform}
+                            </span>
+                          </div>
+                          <h3 className="text-sm font-black uppercase tracking-tight text-black line-clamp-2">
+                            {video.title}
+                          </h3>
+                        </div>
+
+                        {/* Products Featured in Video */}
+                        {video.video_products && video.video_products.length > 0 && (
+                          <div className="border-t border-black/5 pt-2">
                             <button
                               onClick={() => {
                                 setExpandedVideoProducts(prev => ({
@@ -701,77 +694,60 @@ export const Social = ({
                                   [video.id]: !prev[video.id]
                                 }));
                               }}
-                              className="flex items-center justify-between w-full p-2 bg-black/5 hover:bg-black/10 rounded-xl transition-colors text-left text-[10px] font-black uppercase tracking-wider"
+                              className="text-[10px] font-black uppercase tracking-wider text-venus-accent hover:opacity-80 flex items-center justify-between w-full cursor-pointer"
                             >
-                              <span>Products ({video.video_products.length})</span>
-                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expandedVideoProducts[video.id] ? 'rotate-180' : ''}`} />
+                              <span>Featured Products ({video.video_products.length})</span>
+                              <span>{isExpanded ? 'Hide' : 'Show'}</span>
                             </button>
 
-                            {expandedVideoProducts[video.id] && (
-                              <div className="space-y-2 pt-2">
-                                {video.video_products.map((vp) => (
-                                  <button
-                                    key={vp.product_id}
-                                    onClick={() => openProductCard(vp.product_id)}
-                                    className="flex items-center gap-3 w-full p-2 bg-black/5 rounded-xl hover:bg-venus-accent/10 transition-colors text-left"
-                                  >
-                                    {vp.products.photo_url && (
-                                      <img 
-                                        src={vp.products.photo_url} 
-                                        alt={vp.products.name} 
-                                        className="w-12 h-12 object-cover rounded-lg flex-shrink-0"
-                                      />
-                                    )}
-                                    <div className="flex flex-col justify-center overflow-hidden">
-                                      <span className="text-xs font-black uppercase tracking-wider text-black">{vp.products.brand}</span>
-                                      <span className="text-[10px] font-bold text-black/60 truncate">{vp.products.name}</span>
+                            {isExpanded && (
+                              <div className="mt-2 space-y-2">
+                                {video.video_products.map((vp: any) => {
+                                  const prod = vp.products;
+                                  if (!prod) return null;
+                                  return (
+                                    <div 
+                                      key={vp.product_id}
+                                      onClick={() => openProductCard(prod.id)}
+                                      className="flex items-center gap-2 p-1.5 rounded-lg bg-black/[0.02] hover:bg-black/5 transition-colors cursor-pointer"
+                                    >
+                                      {prod.photo_url ? (
+                                        <img src={prod.photo_url} alt={prod.name} className="w-8 h-8 rounded object-cover border border-black/5" />
+                                      ) : (
+                                        <div className="w-8 h-8 rounded bg-black/5 flex items-center justify-center text-[8px] font-black">
+                                          P
+                                        </div>
+                                      )}
+                                      <div className="flex-1 min-w-0 text-left">
+                                        <p className="text-[9px] font-black uppercase tracking-wider text-venus-accent truncate">{prod.brand}</p>
+                                        <p className="text-[10px] font-bold text-black truncate">{prod.name}</p>
+                                      </div>
                                     </div>
-                                  </button>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
                         )}
 
-                        {video.tags && video.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1 pb-2">
-                            {video.tags.map((tag: string) => (
-                              <button
-                                key={tag}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedTag(selectedTag === tag ? null : tag);
-                                }}
-                                className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors ${
-                                  selectedTag === tag 
-                                    ? 'bg-black text-white' 
-                                    : 'bg-black/5 hover:bg-black/10 text-black/70'
-                                }`}
-                              >
-                                #{tag}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Footer: Like and bookmark buttons */}
+                        {/* Footer: Like & Share */}
                         <div className="flex items-center gap-4 pt-2 border-t border-black/5 mt-auto">
                           <button 
                             onClick={() => toggleLikeVideo(video.id)}
-                            className={`flex items-center gap-1.5 transition-colors ${
+                            className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
                               isLiked ? 'text-red-500' : 'text-black/40 hover:text-red-500'
                             }`}
                           >
-                            <Heart className={`w-3 h-3 ${isLiked ? 'fill-current' : ''}`} />
+                            <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}`} />
                             <span className="text-[9px] font-black">{likesCount.toLocaleString()}</span>
                           </button>
                           <button 
                             onClick={() => toggleSaveVideo(video.id)}
-                            className={`flex items-center gap-1.5 transition-colors ${
+                            className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
                               isSaved ? 'text-venus-accent font-black' : 'text-black/40 hover:text-venus-accent'
                             }`}
                           >
-                            <Share2 className="w-3 h-3" />
+                            <Share2 className="w-3.5 h-3.5" />
                             <span className="text-[9px] font-black">{isSaved ? 'Saved' : 'Save'}</span>
                           </button>
                         </div>
@@ -783,52 +759,32 @@ export const Social = ({
             )}
           </div>
         ) : activeMainTab === 'articles' ? (
-          /* ARTICLES TAB CONTENT */
+          /* Tab 2: ARTICLES */
           <div className="space-y-4 pb-32">
             {filteredArticles.length === 0 ? (
-              <div className="text-center py-12 bg-black/[0.02] rounded-xl border border-dashed border-black/10">
-                <p className="text-xs text-black/40 font-bold uppercase italic">No articles match your search or tag filters</p>
+              <div className="text-center py-12 bg-black/[0.02] rounded-2xl border border-dashed border-black/10">
+                <p className="text-xs text-black/40 font-bold uppercase italic">No articles match your search query</p>
               </div>
             ) : (
               filteredArticles.map(article => (
-                <div key={article.article_id || article.id} className="bg-white border border-black/5 p-5 rounded-2xl hover:border-black/20 hover:shadow-sm transition-all space-y-3">
+                <div key={article.article_id || article.id} className="clean-card bg-white border border-black/5 p-6 rounded-2xl hover:border-black/20 hover:shadow-sm transition-all space-y-3">
                   {article.image_url && (
-                    <div className="rounded-lg overflow-hidden border border-black/5 mb-3">
-                      <img src={article.image_url} alt={article.title} className="w-full max-h-48 object-cover" />
+                    <div className="rounded-xl overflow-hidden border border-black/5 mb-3 max-h-56">
+                      <img src={article.image_url} alt={article.title} className="w-full h-full object-cover" />
                     </div>
                   )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-black uppercase tracking-wider px-2.5 py-1 bg-black/5 rounded-full text-black/70">Article</span>
-                    <span className="text-[9px] font-bold text-black/40">{new Date(article.created_at).toLocaleDateString()}</span>
+                  <div className="flex items-center justify-between text-xs text-black/40">
+                    <span className="font-black uppercase tracking-wider text-[10px] text-venus-accent">Clinical Editorial</span>
+                    <span>{new Date(article.created_at).toLocaleDateString()}</span>
                   </div>
-                  <h3 className="text-sm font-black uppercase tracking-tight text-black hover:text-venus-accent transition-colors cursor-pointer">
+                  <h3 className="text-base font-black uppercase tracking-tight text-black hover:text-venus-accent transition-colors">
                     {article.title}
                   </h3>
-                  <p className="text-xs text-black/70 leading-relaxed font-medium">
+                  <p className="text-xs md:text-sm text-black/70 leading-relaxed font-medium">
                     {article.article_content}
                   </p>
-                  {article.tags && article.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-2">
-                      {article.tags.map((tag: string) => (
-                        <button
-                          key={tag}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedTag(selectedTag === tag ? null : tag);
-                          }}
-                          className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors ${
-                            selectedTag === tag 
-                              ? 'bg-black text-white' 
-                              : 'bg-black/5 hover:bg-black/10 text-black/70'
-                          }`}
-                        >
-                          #{tag}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="pt-2 flex items-center justify-between border-t border-black/5">
-                    <a href={article.article_link || '#'} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black uppercase tracking-widest text-black hover:underline flex items-center gap-1">
+                  <div className="pt-3 flex items-center justify-between border-t border-black/5">
+                    <a href={article.article_link || '#'} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black uppercase tracking-widest text-black hover:underline flex items-center gap-1.5">
                       <span>Read Full Article</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </a>
@@ -839,163 +795,239 @@ export const Social = ({
             )}
           </div>
         ) : (
-          /* COMMUNITY TAB CONTENT */
-          <>
-            {/* Inline Post Bar */}
-            <div className="bg-black/5 p-4 rounded-xl mb-6">
-              <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-black/60">Ask a question to the chatter feed</p>
-              <input 
-                type="text"
-                placeholder="Post Title (Optional)"
-                value={postTitle}
-                onChange={(e) => setPostTitle(e.target.value)}
-                className="w-full bg-white border-none rounded-lg py-2 px-3 text-[11px] font-bold focus:ring-1 focus:ring-black outline-none mb-2"
-              />
-              <input 
-                type="text"
-                placeholder="What's on your mind?"
-                value={postContent}
-                onChange={(e) => setPostContent(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreatePost()}
-                className="w-full bg-white border-none rounded-lg py-2 px-3 text-[11px] font-bold focus:ring-1 focus:ring-black outline-none mb-3"
-              />
-              <div className="flex items-center justify-between">
-                <input 
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={(e) => setPostImage(e.target.files?.[0] || null)}
-                  className="hidden"
-                  accept="image/*"
-                />
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`flex items-center gap-2 text-[10px] font-black uppercase cursor-pointer ${postImage ? 'text-venus-accent' : 'text-black'}`}
+          /* Tab 3: GUIDES */
+          <div className="space-y-6 pb-32">
+            {/* Category Filter Pills (Functional Buttons) */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-2 no-scrollbar">
+              {['All', 'Layering', 'Actives', 'Barrier', 'Acne', 'Sun Care', 'Sensitive'].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setGuideCategoryFilter(cat)}
+                  className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all whitespace-nowrap cursor-pointer ${
+                    guideCategoryFilter === cat
+                      ? 'bg-black text-white shadow-sm'
+                      : 'bg-black/5 text-black/60 hover:bg-black/10 hover:text-black'
+                  }`}
                 >
-                  <Camera className="w-4 h-4" />
-                  {postImage ? 'Image Attached' : 'Attach Photo'}
+                  {cat}
                 </button>
-                <button 
-                  onClick={handleCreatePost}
-                  disabled={!postContent.trim()}
-                  className="text-[9px] font-black uppercase tracking-widest bg-black text-white px-6 py-2 rounded-lg hover:bg-venus-accent transition-all disabled:opacity-50"
-                >
-                  Post
-                </button>
+              ))}
+            </div>
+
+            {filteredGuides.length === 0 ? (
+              <div className="text-center py-12 bg-black/[0.02] rounded-2xl border border-dashed border-black/10">
+                <p className="text-xs text-black/40 font-bold uppercase italic">No guides found matching your criteria</p>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {filteredGuides.map((guide) => {
+                  const isSaved = savedGuideIds.includes(guide.id);
+                  return (
+                    <div 
+                      key={guide.id}
+                      onClick={() => setSelectedGuide(guide)}
+                      className="clean-card bg-white border border-black/5 rounded-2xl p-6 hover:border-black/20 hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs text-black/50">
+                            <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">{guide.category}</span>
+                            <span>·</span>
+                            <span>{guide.readTime}</span>
+                          </div>
+                          <button
+                            onClick={(e) => toggleSaveGuide(guide.id, e)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${isSaved ? 'text-venus-accent bg-venus-accent/10' : 'text-black/30 hover:text-black hover:bg-black/5'}`}
+                            title="Save guide"
+                          >
+                            <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-current' : ''}`} />
+                          </button>
+                        </div>
 
-            <div className="space-y-4 pb-32">
-              {loading ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map(i => <div key={i} className="h-32 bg-black/5 rounded-xl animate-pulse" />)}
-                </div>
-              ) : (
-                displayPosts.map(post => (
-                  <div key={post.post_id} className="bg-white border border-black/5 rounded-xl overflow-hidden hover:border-black/20 transition-all">
-                    <div className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-venus-accent/20 border border-black flex items-center justify-center text-[9px] font-black">
-                            {post.users?.username?.[0] || 'U'}
-                          </div>
-                          <div>
-                            <h4 className="text-[9px] font-black uppercase tracking-tight leading-none">{post.users?.username || 'Anonymous'}</h4>
-                            <p className="text-[7px] text-black/40 font-bold">@{post.users?.skin_type || 'member'} • {new Date(post.timestamp).toLocaleDateString()}</p>
-                          </div>
+                        <div>
+                          <h3 className="text-base font-black text-black uppercase tracking-tight group-hover:text-venus-accent transition-colors">
+                            {guide.title}
+                          </h3>
+                          <p className="text-[11px] text-black/50 font-medium italic mt-0.5">
+                            {guide.subtitle}
+                          </p>
                         </div>
-                        <button className="text-black/20 hover:text-black">
-                          <MoreVertical className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      
-                      {post.title && (
-                        <h3 className="text-[9px] font-black uppercase tracking-tight mb-0.5 text-venus-accent">{post.title}</h3>
-                      )}
-                      <p className="text-[11px] font-medium leading-normal mb-3 text-black/80">{post.content}</p>
-                      
-                      {post.post_media && (
-                        <div className="rounded-lg overflow-hidden border border-black/5 mb-3">
-                          <img src={post.post_media} className="w-full max-h-48 object-cover" alt="Post media" />
-                        </div>
-                      )}
-                      
-                      {post.tags && post.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pb-2">
-                          {post.tags.map((tag: string) => (
-                            <button
-                              key={tag}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedTag(selectedTag === tag ? null : tag);
-                              }}
-                              className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full transition-colors ${
-                                selectedTag === tag 
-                                  ? 'bg-black text-white' 
-                                  : 'bg-black/5 hover:bg-black/10 text-black/70'
-                              }`}
-                            >
-                              #{tag}
-                            </button>
-                          ))}
-                        </div>
-                      )}
 
-                      <div className="flex items-center gap-3 pt-2 border-t border-black/5">
-                        <button className="flex items-center gap-1 text-black/40 hover:text-venus-accent transition-colors">
-                          <Heart className="w-3 h-3" />
-                          <span className="text-[8px] font-black">0</span>
-                        </button>
-                        <button 
-                          onClick={() => setCommentsOpenPostId(commentsOpenPostId === post.post_id ? null : post.post_id)}
-                          className="flex items-center gap-1 text-black/40 hover:text-black transition-colors"
-                        >
-                          <MessageCircle className="w-3 h-3" />
-                          <span className="text-[8px] font-black">{comments[post.post_id]?.length || 0}</span>
-                        </button>
-                        <button className="flex items-center gap-1 text-black/40 hover:text-black transition-colors ml-auto">
-                          <Share2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                      
-                      {commentsOpenPostId === post.post_id && (
-                        <div className="mt-4 pt-4 border-t border-black/5 space-y-4">
-                          {comments[post.post_id]?.map(c => (
-                            <div key={c.id} className="text-[10px] bg-black/5 p-2 rounded-lg">
-                              <span className="font-black mr-1 uppercase">{c.users?.username || 'U'}:</span>
-                              {c.content}
-                            </div>
-                          ))}
-                          
-                          <div className="flex gap-2">
-                            <input 
-                              type="text"
-                              value={newCommentText}
-                              onChange={(e) => setNewCommentText(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && handleComment(post.post_id)}
-                              placeholder="Write a comment..."
-                              className="flex-1 bg-black/5 border-none rounded-lg py-2 px-3 text-[10px] font-bold focus:ring-1 focus:ring-black outline-none"
-                            />
-                            <button 
-                              onClick={() => handleComment(post.post_id)}
-                              className="px-3 py-2 bg-black text-white rounded-lg text-[10px] font-black uppercase hover:bg-venus-accent transition-colors"
-                            >
-                              Save
-                            </button>
+                        <p className="text-xs text-black/70 leading-relaxed font-medium line-clamp-3">
+                          {guide.summary}
+                        </p>
+
+                        {/* Key Rule Highlight Box */}
+                        <div className="p-3 rounded-xl bg-venus-accent/[0.04] border border-black/5 text-left space-y-1">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-black/40 block">Clinical Rule</span>
+                          <p className="text-[11px] font-bold text-black/80 leading-snug">
+                            {guide.keyRule}
+                          </p>
+                        </div>
+
+                        {/* Recommended Actives Badges */}
+                        <div className="space-y-1 pt-1">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-black/40 block">Key Actives</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {guide.recommendedActives.map((act) => (
+                              <span key={act} className="text-[9px] font-bold uppercase px-2 py-0.5 bg-black/5 rounded-md text-black/70">
+                                {act}
+                              </span>
+                            ))}
                           </div>
                         </div>
-                      )}
+                      </div>
+
+                      <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-wider text-black group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1.5">
+                          Read Protocol
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="text-[9px] font-bold text-black/40 uppercase tracking-widest">{guide.steps.length} Steps</span>
+                      </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Mobile Floating Action Button removed */}
+      {/* Guide Detail Modal */}
+      <AnimatePresence>
+        {selectedGuide && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedGuide(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative bg-white rounded-3xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 md:p-8 shadow-2xl z-10 border border-black/10 space-y-6"
+            >
+              {/* Modal Header */}
+              <div className="flex items-start justify-between gap-4 border-b border-black/5 pb-4">
+                <div>
+                  <div className="flex items-center gap-2 text-xs text-black/50 mb-1">
+                    <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">{selectedGuide.category}</span>
+                    <span>·</span>
+                    <span>{selectedGuide.readTime}</span>
+                  </div>
+                  <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black">
+                    {selectedGuide.title}
+                  </h2>
+                  <p className="text-xs text-black/60 font-medium italic mt-0.5">
+                    {selectedGuide.subtitle}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedGuide(null)}
+                  className="w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 text-black flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-      {/* Mobile Follows Sidebar */}
+              {/* Summary */}
+              <p className="text-xs md:text-sm text-black/80 leading-relaxed font-medium">
+                {selectedGuide.summary}
+              </p>
+
+              {/* Core Clinical Rule */}
+              <div className="p-4 rounded-2xl bg-venus-accent/[0.06] border border-black/5 text-left space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-black/50 block">Dermatological Governing Rule</span>
+                <p className="text-xs md:text-sm font-bold text-black leading-snug">
+                  {selectedGuide.keyRule}
+                </p>
+              </div>
+
+              {/* Step by Step Breakdown */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-black flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-venus-accent" />
+                  Clinical Application Roadmap
+                </h4>
+                <div className="space-y-2.5">
+                  {selectedGuide.steps.map((st, sIdx) => (
+                    <div key={sIdx} className="p-3.5 rounded-xl border border-black/5 bg-black/[0.01] flex items-start gap-3">
+                      <span className="w-5 h-5 rounded-full bg-black text-white text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                        {sIdx + 1}
+                      </span>
+                      <div className="space-y-0.5">
+                        <h5 className="text-xs font-black text-black uppercase tracking-tight">{st.title}</h5>
+                        <p className="text-[11px] text-black/70 leading-relaxed font-medium">{st.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dos & Don'ts */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/50 space-y-2">
+                  <h5 className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    Clinical Dos
+                  </h5>
+                  <ul className="space-y-1.5">
+                    {selectedGuide.dos.map((item, dIdx) => (
+                      <li key={dIdx} className="text-[11px] text-emerald-900/90 font-medium flex items-start gap-1.5">
+                        <span className="text-emerald-600 font-black">✓</span>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/50 space-y-2">
+                  <h5 className="text-xs font-black uppercase tracking-wider text-rose-800 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-rose-600" />
+                    Clinical Don'ts
+                  </h5>
+                  <ul className="space-y-1.5">
+                    {selectedGuide.donts.map((item, dIdx) => (
+                      <li key={dIdx} className="text-[11px] text-rose-900/90 font-medium flex items-start gap-1.5">
+                        <span className="text-rose-600 font-black">✕</span>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Recommended Actives */}
+              <div className="space-y-2 pt-2 border-t border-black/5">
+                <span className="text-[10px] font-black uppercase tracking-widest text-black/40 block">Key Recommended Formulations</span>
+                <div className="flex flex-wrap gap-2">
+                  {selectedGuide.recommendedActives.map((act) => (
+                    <span key={act} className="text-xs font-bold uppercase px-3 py-1 bg-black text-white rounded-xl shadow-xs">
+                      {act}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Close Button */}
+              <div className="pt-2">
+                <button
+                  onClick={() => setSelectedGuide(null)}
+                  className="w-full py-3 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors cursor-pointer"
+                >
+                  Close Guide
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Follows & Messages Drawer */}
       <AnimatePresence>
         {isFollowsOpen && (
           <React.Fragment key="social-modal">
@@ -1020,7 +1052,7 @@ export const Social = ({
                 </div>
                 <button 
                   onClick={() => setIsFollowsOpen(false)}
-                  className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center"
+                  className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center cursor-pointer hover:bg-black/10 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1028,62 +1060,62 @@ export const Social = ({
 
               {/* Tabs */}
               <div className="flex gap-4 mb-6">
-                  {['Messages', 'Friends'].map(t => (
-                      <button key={t} onClick={() => setSocialTab(t as 'Messages' | 'Friends')} className={`text-xs font-black uppercase tracking-tight ${socialTab === t ? 'text-black' : 'text-black/40'}`}>
-                          {t}
-                      </button>
-                  ))}
+                {['Messages', 'Friends'].map(t => (
+                  <button key={t} onClick={() => setSocialTab(t as 'Messages' | 'Friends')} className={`text-xs font-black uppercase tracking-tight cursor-pointer ${socialTab === t ? 'text-black' : 'text-black/40'}`}>
+                    {t}
+                  </button>
+                ))}
               </div>
 
-               {socialTab === 'Friends' ? (
-                 <>
-                   {/* User Search Bar */}
-                   <div className="relative mb-6">
-                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-black/30" />
-                     <input 
-                       type="text" 
-                       placeholder="Search users..."
-                       value={userSearch}
-                       onChange={(e) => setUserSearch(e.target.value)}
-                       className="w-full bg-black/5 border-none rounded-xl py-3 pl-10 pr-4 text-[11px] font-bold focus:ring-2 focus:ring-black/10 outline-none transition-all placeholder:uppercase placeholder:tracking-tighter"
-                     />
-                   </div>
+              {socialTab === 'Friends' ? (
+                <>
+                  {/* User Search Bar */}
+                  <div className="relative mb-6">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-black/30 pointer-events-none" />
+                    <input 
+                      type="text" 
+                      placeholder="Search users..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="w-full bg-black/5 border-none rounded-xl py-3 pl-10 pr-4 text-[11px] font-bold focus:ring-2 focus:ring-black/10 outline-none transition-all placeholder:uppercase placeholder:tracking-tighter"
+                    />
+                  </div>
 
-                 <div className="space-y-4 flex-1 overflow-y-auto">
-                   {userSearch ? (
-                       userSearchResults.length > 0 ? (
-                           userSearchResults.map(u => (
-                               <div key={u.id} className="flex items-center justify-between gap-3 p-3 hover:bg-black/5 rounded-xl transition-colors cursor-pointer border border-transparent">
-                                 <div className="flex items-center gap-3">
-                                   <div className="w-8 h-8 rounded-full border-2 border-black bg-venus-accent/10 flex items-center justify-center font-black">
-                                     {u.username?.[0] || '?'}
-                                   </div>
-                                   <p className="text-xs font-black uppercase tracking-tight">{u.username}</p>
-                                 </div>
-                                 <button onClick={() => handleFollow(u.id)} className="text-[9px] font-black uppercase py-1 px-3 bg-black text-white rounded-lg">Follow</button>
-                               </div>
-                              ))
-                       ) : (
-                           <p className="text-xs text-black/40 font-bold uppercase italic text-center p-4">No users found</p>
-                       )
-                   ) : (
-                       follows.map(f => (
-                       <div key={f.id} className="flex items-center gap-3 p-3 hover:bg-black/5 rounded-xl transition-colors cursor-pointer border border-transparent">
-                           <div className="w-10 h-10 rounded-full border-2 border-black bg-venus-accent/10 flex items-center justify-center font-black">
-                           {f.following?.username?.[0] || '?'}
-                           </div>
-                           <div>
-                           <p className="text-xs font-black uppercase tracking-tight">{f.following?.username || 'User'}</p>
-                           <p className="text-[10px] text-black/40 font-bold uppercase">{f.following?.skin_type || 'Friend'}</p>
-                           </div>
-                       </div>
-                       ))
-                   )}
-                 </div>
-                 </>
-               ) : (
-                 <MessagesTab />
-               )}
+                  <div className="space-y-4 flex-1 overflow-y-auto">
+                    {userSearch ? (
+                      userSearchResults.length > 0 ? (
+                        userSearchResults.map(u => (
+                          <div key={u.id} className="flex items-center justify-between gap-3 p-3 hover:bg-black/5 rounded-xl transition-colors cursor-pointer border border-transparent">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full border-2 border-black bg-venus-accent/10 flex items-center justify-center font-black">
+                                {u.username?.[0] || '?'}
+                              </div>
+                              <p className="text-xs font-black uppercase tracking-tight">{u.username}</p>
+                            </div>
+                            <button onClick={() => handleFollow(u.id)} className="text-[9px] font-black uppercase py-1 px-3 bg-black text-white rounded-lg cursor-pointer">Follow</button>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-black/40 font-bold uppercase italic text-center p-4">No users found</p>
+                      )
+                    ) : (
+                      follows.map(f => (
+                        <div key={f.id} className="flex items-center gap-3 p-3 hover:bg-black/5 rounded-xl transition-colors cursor-pointer border border-transparent">
+                          <div className="w-10 h-10 rounded-full border-2 border-black bg-venus-accent/10 flex items-center justify-center font-black">
+                            {f.following?.username?.[0] || '?'}
+                          </div>
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-tight">{f.following?.username || 'User'}</p>
+                            <p className="text-[10px] text-black/40 font-bold uppercase">{f.following?.skin_type || 'Friend'}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : (
+                <MessagesTab />
+              )}
             </motion.div>
           </React.Fragment>
         )}
@@ -1091,4 +1123,3 @@ export const Social = ({
     </div>
   );
 };
-

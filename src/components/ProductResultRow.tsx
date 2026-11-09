@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { MatchedProduct } from './photo_search';
-import { ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Shield } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Shield, ShoppingBag } from 'lucide-react';
 import { computeProductKeyBenefits, computeProductPotentialIrritants, getMetricNamesForFlag } from './ProductCard';
 
 interface ProductResultRowProps {
@@ -78,8 +78,7 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
             setCompatibility(effComp);
           }
         } catch (e) {
-          console.warn('Error fetching compatibility in ProductResultRow:', e);
-        }
+          }
       }
 
       setLoading(false);
@@ -92,7 +91,6 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
     <div className="p-4 border-2 border-black/10 rounded-2xl hover:border-black/25 transition-all bg-white space-y-3">
       {(() => {
         const imgSrc = product.photo_url || product.image_url || product.image || product.photo;
-        console.log('[ProductResultRow] Rendering product row:', product?.name, 'image URL source:', imgSrc, product);
         return (
           <div className="flex items-start gap-4">
             {imgSrc ? (
@@ -100,30 +98,25 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
                 src={imgSrc}
                 alt={product.name}
                 referrerPolicy="no-referrer"
-                onLoad={() => console.log('[ProductResultRow] Image loaded successfully:', imgSrc)}
-                onError={(e) => console.error('[ProductResultRow] Image failed to load:', imgSrc, e)}
-                className="w-16 h-16 object-cover rounded-xl border-2 border-black/15 flex-shrink-0"
+                className="w-16 h-16 object-cover rounded-2xl flex-shrink-0 border border-black/5"
               />
             ) : (
-              <div className="w-16 h-16 bg-black/5 rounded-xl border-2 border-black/15 flex items-center justify-center flex-shrink-0 text-[10px] text-black/40 font-bold">
-                No Image
+              <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-400">
+                <ShoppingBag className="w-6 h-6" />
               </div>
             )}
-
-        <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-          <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">
-            {product.brand}
-          </span>
-          <span className="text-sm text-black font-black uppercase break-words">
-            {product.name}
-          </span>
-          {product.type && (
-            <span className="text-[10px] text-black/50 font-semibold uppercase">
-              {product.type}
-            </span>
-          )}
-        </div>
-      </div>
+            <div className="flex-1 min-w-0">
+              <span className="text-[10px] font-black uppercase tracking-widest text-black/40 block mb-0.5">
+                {product.brand}
+              </span>
+              <h3 className="text-sm font-black text-black leading-tight truncate">
+                {product.name}
+              </h3>
+              <span className="text-[10px] font-bold text-black/60 bg-gray-100 px-2 py-0.5 rounded-md inline-block mt-1">
+                {product.type || 'Skincare'}
+              </span>
+            </div>
+          </div>
         );
       })()}
 
@@ -160,16 +153,10 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
                     type="button"
                     key={idx}
                     onClick={() => {
-                      console.log(`[ProductResultRow] Clicked on Key Benefit: "${benefit}"`);
-                      console.log(`[ProductResultRow] Mapped metrics for "${benefit}":`, getMetricNamesForFlag(benefit));
-                      console.log(`[ProductResultRow] Total culprits loaded for product #${product.id}:`, culprits.length, culprits);
-                      console.log(`[ProductResultRow] Matched ingredients (${matchedIngs.length}):`, matchedIngs);
-
                       if (isClickable) {
                         setExpandedBenefitFlag(isExpanded ? null : benefit);
                       } else {
-                        console.warn(`[ProductResultRow] Flag "${benefit}" has 0 matching ingredients in product_metric_culprits.`);
-                      }
+                        }
                     }}
                     className={`border rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
                       isExpanded
@@ -268,16 +255,10 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
                     type="button"
                     key={idx}
                     onClick={() => {
-                      console.log(`[ProductResultRow] Clicked on Potential Irritant: "${concern}"`);
-                      console.log(`[ProductResultRow] Mapped metrics for "${concern}":`, getMetricNamesForFlag(concern));
-                      console.log(`[ProductResultRow] Total culprits loaded for product #${product.id}:`, culprits.length, culprits);
-                      console.log(`[ProductResultRow] Matched ingredients (${matchedIngs.length}):`, matchedIngs);
-
                       if (isClickable) {
                         setExpandedIrritantFlag(isExpanded ? null : concern);
                       } else {
-                        console.warn(`[ProductResultRow] Flag "${concern}" has 0 matching ingredients in product_metric_culprits.`);
-                      }
+                        }
                     }}
                     className={`border rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
                       isExpanded
