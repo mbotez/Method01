@@ -59,6 +59,7 @@ import { TrackerSpreadsheetRow } from './components/TrackerSpreadsheetRow';
 import { checkRoutine, RoutineCheckResult, UserProfile } from './utils/RoutineCheck';
 import { BREAKOUT_PHOTO_OPTIONS, getBreakoutTitle, breakoutTypeStringToId } from './data/breakoutOptions';
 import { setupCapacitorDeepLinkAuth, handleWebAuthCallback, isNativePlatform } from './utils/auth';
+import { PrivacyPolicy } from './components/PrivacyPolicy';
 
 // --- Components ---
 
@@ -95,7 +96,8 @@ enum AppState {
   PROFILE,
   PROGRESS,
   PRODUCT_PAGE,
-  ROUTINES
+  ROUTINES,
+  PRIVACY_POLICY
 }
 
 const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
@@ -2817,27 +2819,38 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Bottom: Signed-in User Info & Log Out */}
-              {user && (
-                <div className="pt-4 border-t border-black/10 mt-6 flex flex-col gap-3">
-                  <div className="flex items-center gap-3 px-2 py-1 text-xs text-black/60">
-                    <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center font-black uppercase text-black text-xs shrink-0">
-                      {user.email ? user.email.charAt(0).toUpperCase() : 'U'}
+              {/* Bottom: User Info, Log Out & Privacy Policy */}
+              <div className="pt-4 border-t border-black/10 mt-6 flex flex-col gap-3">
+                {user && (
+                  <>
+                    <div className="flex items-center gap-3 px-2 py-1 text-xs text-black/60">
+                      <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center font-black uppercase text-black text-xs shrink-0">
+                        {user.email ? user.email.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <div className="truncate">
+                        <p className="font-bold text-black truncate">{profile?.username || user.email?.split('@')[0] || 'User'}</p>
+                        <p className="text-[10px] text-black/40 truncate">{user.email}</p>
+                      </div>
                     </div>
-                    <div className="truncate">
-                      <p className="font-bold text-black truncate">{profile?.username || user.email?.split('@')[0] || 'User'}</p>
-                      <p className="text-[10px] text-black/40 truncate">{user.email}</p>
-                    </div>
-                  </div>
+                    <button 
+                      onClick={() => { handleSignOut(); setIsMobileNavOpen(false); }}
+                      className="flex items-center gap-3 px-3 py-2.5 text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer text-xs font-black uppercase tracking-wider"
+                    >
+                      <LogOut className="w-4 h-4 shrink-0" />
+                      <span>Log Out</span>
+                    </button>
+                  </>
+                )}
+                <div className="pt-2 px-1 flex items-center justify-between text-[11px] text-black/50">
                   <button 
-                    onClick={() => { handleSignOut(); setIsMobileNavOpen(false); }}
-                    className="flex items-center gap-3 px-3 py-2.5 text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer text-xs font-black uppercase tracking-wider"
+                    onClick={() => { resetHeaderSearchState(); setAppState(AppState.PRIVACY_POLICY); setIsMobileNavOpen(false); }}
+                    className="hover:text-black underline cursor-pointer transition-colors font-semibold"
                   >
-                    <LogOut className="w-4 h-4 shrink-0" />
-                    <span>Log Out</span>
+                    Privacy Policy
                   </button>
+                  <span>© Canonic</span>
                 </div>
-              )}
+              </div>
             </motion.div>
           </>
         )}
@@ -3015,6 +3028,17 @@ export default function App() {
               onSuccess={() => setAppState(AppState.DASHBOARD)}
               onError={(err) => setError(err)}
             />
+          )}
+
+          {appState === AppState.PRIVACY_POLICY && (
+            <motion.div
+              key="privacy-policy"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+            >
+              <PrivacyPolicy onBack={() => setAppState(user ? AppState.DASHBOARD : AppState.LANDING)} />
+            </motion.div>
           )}
 
           {appState === AppState.SOCIAL && (
