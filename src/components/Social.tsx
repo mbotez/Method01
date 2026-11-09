@@ -67,24 +67,24 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
     title: 'The Ultimate Skincare Layering Order',
     readTime: '4 min read',
     subtitle: 'From molecular density to occlusive barrier seal',
-    summary: 'Master the exact order of application from thinnest water-based textures to richest lipid creams to guarantee maximum dermal absorption without pilling or flushing.',
-    keyRule: 'Rule of Viscosity: Water-based hydrators first, viscous treatment serums second, lipid emulsions third, and sun protection or oils last.',
+    summary: 'Master the exact order of application from thinnest water-based textures to richest lipid creams to guarantee maximum skin absorption without pilling or flushing.',
+    keyRule: 'Rule of Viscosity: Water-based hydrating products first, treatments and serums second, lipid emulsions third, and sun protection or oils last.',
     steps: [
       { title: 'Step 1: Cleanse Thoroughly', desc: 'In AM, splash with lukewarm water or use a gentle non-foaming wash. In PM, double-cleanse with an oil cleanser to dissolve SPF and makeup, followed by a pH-balanced cleanser.' },
       { title: 'Step 2: Hydrating Toner or Essence', desc: 'Apply to damp skin within 30 seconds of cleansing. Humectants like hyaluronic acid and glycerin pull surface moisture deeper.' },
-      { title: 'Step 3: Lightweight Active Serums', desc: 'Apply water-soluble actives such as Vitamin C, Niacinamide, or Azelaic acid. Allow 60 seconds for absorption.' },
-      { title: 'Step 4: Heavier Treatment Emulsions', desc: 'Introduce peptides, retinol, or barrier lipid complexes. Keep active combinations focused.' },
-      { title: 'Step 5: Barrier Cream & Moisturiser', desc: 'Seal active ingredients into the stratum corneum with ceramides, squalane, and cholesterol.' },
-      { title: 'Step 6: Daytime SPF 50+ / Night Facial Oil', desc: 'Never apply sunscreen under moisturiser. SPF must form an uninterrupted shield over all products.' }
+      { title: 'Step 3: Lightweight Active Serums', desc: 'Apply actives such as Vitamin C, Niacinamide, or Azelaic acid. Allow 60 seconds for absorption.' },
+      { title: 'Step 4: Heavier Treatment Emulsions', desc: 'Introduce peptides, retinol, or barrier lipid complexes if needed. Keep active combinations focused.' },
+      { title: 'Step 5: Barrier Cream & Moisturiser', desc: 'Seal active ingredients into the skin with ceramides, squalane, and cholesterol.' },
+      { title: 'Step 6: Daytime SPF 50+ / Night Facial Oil', desc: 'Sunscreen comes last. SPF must form an uninterrupted shield over all products.' }
     ],
     dos: [
-      'Apply hydrating humectants to slightly damp skin',
-      'Wait 60–90 seconds between potent active layers',
-      'Warm facial creams between fingertips before pressing into skin'
+      'Apply hydrating products to slightly damp skin',
+      'Wait 60–90 seconds between strong active layers',
+      'Warm face creams between fingertips before pressing into skin'
     ],
     donts: [
       'Never mix sunscreen directly with moisturiser or foundation',
-      'Avoid layering multiple direct exfoliating acids concurrently',
+      'Avoid layering multiple direct exfoliating acids',
       'Do not apply pure essential oils onto dry or compromised barriers'
     ],
     recommendedActives: ['Hyaluronic Acid', 'Ceramides NP/AP', 'Niacinamide', 'Squalane']
@@ -95,7 +95,7 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
     title: 'Active Ingredients Compatibility Matrix',
     readTime: '5 min read',
     subtitle: 'Synergy, antagonism, and conflict avoidance',
-    summary: 'A clinical reference table explaining which dermatological actives can be combined in the same regimen, and which combinations cause chemical degradation or micro-inflammation.',
+    summary: 'A reference table explaining which actives can be combined in the same routine, and which combinations can render them useless or cause irritation.',
     keyRule: 'Rule of Separation: Powerful actives that alter cellular turnover (retinoids, AHA/BHA, benzoyl peroxide) should be spaced into opposite routines (AM vs PM) or alternating days.',
     steps: [
       { title: 'Retinoids + Niacinamide (Gold Synergy)', desc: 'Niacinamide up-regulates ceramide synthesis, counteracting retinoid flaking and redness. Safe to layer together.' },
@@ -106,7 +106,7 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
     ],
     dos: [
       'Pair retinoids with barrier-replenishing humectants and ceramides',
-      'Use pure L-ascorbic acid on dry skin in the morning',
+      'Use pure L-ascorbic acid (Vitamin C) on dry skin in the morning',
       'Introduce only one new active ingredient every 3 to 4 weeks'
     ],
     donts: [
@@ -119,14 +119,14 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
   {
     id: 'barrier-repair-protocol',
     category: 'Barrier',
-    title: 'Barrier Repair Emergency Protocol',
+    title: 'Barrier Repair Emergency Rules',
     readTime: '3 min read',
     subtitle: 'The 14-day reset for stinging and sensitized skin',
     summary: 'When your skin barrier is damaged, moisture escapes and irritants enter, causing burning, tightness, rough texture, and sudden breakouts. Follow this 14-day reset.',
     keyRule: 'Rule of Subtraction: The quickest way to repair a compromised skin barrier is stopping what damaged it, not adding more products.',
     steps: [
       { title: 'Days 1–3: The Complete Active Fast', desc: 'Cease all exfoliants (AHA/BHA), retinoids, vitamin C, essential oils, and clays. Cleanse only with lukewarm water or soap-free milk.' },
-      { title: 'Days 4–7: Physiological Lipid Restoration', desc: 'Apply a moisturiser containing the 3:1:1 physiological ratio of ceramides, cholesterol, and free fatty acids. Add panthenol (Pro-Vitamin B5).' },
+      { title: 'Days 4–7: Lipid Restoration', desc: 'Apply a moisturiser containing a 3:1:1 ratio of ceramides, cholesterol, and free fatty acids. Add panthenol (Pro-Vitamin B5).' },
       { title: 'Days 8–11: Slug & Soothe', desc: 'In PM, seal vulnerable areas (cheeks, around nose and mouth) with a thin film of squalane oil or medical-grade petrolatum ointment.' },
       { title: 'Days 12–14: Barrier Evaluation Check', desc: 'Assess skin: no stinging upon applying gentle lotion, zero tight pulling sensation. Maintain simple routine for 1 more week before considering actives.' }
     ],
@@ -151,15 +151,15 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
     summary: 'When introducing an active that speeds cell turnover, skin may undergo a temporary purge. Learn how to tell if a reaction is a normal purge or an inflammatory breakout.',
     keyRule: 'Rule of Location & Lifecycle: Purging occurs where you routinely experience blemishes and clears quickly. Breakouts in brand new areas indicate product rejection.',
     steps: [
-      { title: 'Location Check', desc: 'Purging appears strictly where you have pre-existing microcomedones (usually T-zone). If you suddenly break out on your neck or cheeks where you are normally clear, it is a negative reaction.' },
-      { title: 'Timeline & Speed', desc: 'Purge blemishes surface, mature, and disappear much faster than typical acne (usually within 3–5 days per spot). Total purge cycle lasts 4–6 weeks.' },
+      { title: 'Location Check', desc: 'Purging appears strictly where you already have a predisposition to breakouts (usually T-zone). If you suddenly break out on your neck or cheeks where you are normally clear, it is a negative reaction.' },
+      { title: 'Timeline & Speed', desc: 'Purge blemishes surface, mature, and disappear much faster than typical breakouts (usually within 3–5 days per spot). Total purge cycle lasts 4–6 weeks.' },
       { title: 'Ingredient Culprit Check', desc: 'Only cell-turnover accelerants cause purging (Retinoids, AHAs, BHAs, Vitamin C, Benzoyl Peroxide). Hydrating serums, oils, and moisturisers CANNOT cause purging—they simply clog or irritate.' },
       { title: 'Action Plan', desc: 'If purging: decrease frequency (e.g., from daily to every 3rd night) and support hydration. If breaking out: discontinue the suspect product immediately.' }
     ],
     dos: [
-      'Track photos in your Profile Progress journal weekly to observe blemish turnover',
+      'Track photos to observe blemish turnover',
       'Continue daily gentle hydration and broad-spectrum sun protection',
-      'Keep hands off blemishes to prevent post-inflammatory hyperpigmentation (PIH)'
+      'Keep hands off blemishes to prevent dark spots'
     ],
     donts: [
       'Do not pick, squeeze, or attempt DIY extraction of purge whiteheads',
@@ -177,7 +177,7 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
     summary: 'Sunscreen is the single most potent anti-aging and anti-pigmentation tool. Understand the critical distinctions between inorganic and modern organic UV filters.',
     keyRule: 'Rule of Quantity: 2 milligrams per square centimetre of skin—equivalent to 2 full finger lengths for the face and ears alone.',
     steps: [
-      { title: 'Mineral / Inorganic (Zinc Oxide, Titanium Dioxide)', desc: 'Sit on skin surface and reflect/absorb radiation. Non-irritating, immediate protection, ideal for rosacea, post-laser, and eczema-prone skin.' },
+      { title: 'Mineral / Inorganic (Zinc Oxide, Titanium Dioxide)', desc: 'Sit on skin surface and reflect/absorb radiation. Non-irritating, immediate protection, ideal for sensitive skin.' },
       { title: 'Chemical / Organic (Tinosorb, Uvinul, Mexoryl)', desc: 'Modern European & Asian filters absorb UV and convert it into benign heat. Ultralight, non-greasy, completely transparent across all skin tones.' },
       { title: 'UVA vs. UVB Coverage', desc: 'UVB causes surface burns; UVA causes deep collagen destruction and hyperpigmentation. Always look for PA++++ or European UVA circle logo.' },
       { title: 'Reapplication Strategy', desc: 'UV filters degrade under sun exposure. Reapply every 2 hours of direct sun or after heavy sweating using an SPF cushion or mist.' }
