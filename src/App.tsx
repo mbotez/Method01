@@ -179,7 +179,77 @@ const DEFAULT_LANDING_ARTICLES = [
 
 export default function App() {
   const [isWeb, setIsWeb] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 640);
-  const [appState, setAppState] = useState<AppState>(AppState.LANDING);
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [appState, setAppState] = useState<AppState>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.startsWith('/privacy')) return AppState.PRIVACY_POLICY;
+      if (path.startsWith('/dashboard')) return AppState.DASHBOARD;
+      if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
+      if (path.startsWith('/tracker')) return AppState.TRACKER;
+      if (path.startsWith('/social')) return AppState.SOCIAL;
+      if (path.startsWith('/profile')) return AppState.PROFILE;
+      if (path.startsWith('/routines')) return AppState.ROUTINES;
+      if (path.startsWith('/onboarding')) return AppState.ONBOARDING_DETAILS;
+      if (path.startsWith('/auth')) return AppState.AUTH;
+    }
+    return AppState.LANDING;
+  });
+
+  const navigateTo = useCallback((newState: AppState, path?: string) => {
+    setAppState(newState);
+    if (typeof window !== 'undefined') {
+      let urlPath = '/';
+      switch (newState) {
+        case AppState.LANDING: urlPath = '/'; break;
+        case AppState.AUTH: urlPath = '/auth'; break;
+        case AppState.ONBOARDING_DETAILS: urlPath = '/onboarding'; break;
+        case AppState.CURATED_SELECTION: urlPath = '/selection'; break;
+        case AppState.DASHBOARD: urlPath = '/dashboard'; break;
+        case AppState.RANK: urlPath = '/products'; break;
+        case AppState.TRACKER: urlPath = '/tracker'; break;
+        case AppState.SOCIAL: urlPath = '/social'; break;
+        case AppState.PROFILE: urlPath = '/profile'; break;
+        case AppState.ROUTINES: urlPath = '/routines'; break;
+        case AppState.PRIVACY_POLICY: urlPath = '/privacy'; break;
+      }
+      if (path) urlPath = path;
+      window.history.pushState(null, '', urlPath);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        if (path.startsWith('/privacy')) {
+          setAppState(AppState.PRIVACY_POLICY);
+        } else if (path.startsWith('/dashboard')) {
+          setAppState(AppState.DASHBOARD);
+        } else if (path.startsWith('/products') || path.startsWith('/rank')) {
+          setAppState(AppState.RANK);
+        } else if (path.startsWith('/tracker')) {
+          setAppState(AppState.TRACKER);
+        } else if (path.startsWith('/social')) {
+          setAppState(AppState.SOCIAL);
+        } else if (path.startsWith('/profile')) {
+          setAppState(AppState.PROFILE);
+        } else if (path.startsWith('/routines')) {
+          setAppState(AppState.ROUTINES);
+        } else if (path.startsWith('/onboarding')) {
+          setAppState(AppState.ONBOARDING_DETAILS);
+        } else if (path.startsWith('/auth')) {
+          setAppState(AppState.AUTH);
+        } else {
+          setAppState(user ? AppState.DASHBOARD : AppState.LANDING);
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [user]);
+
   const [landingArticles, setLandingArticles] = useState<any[]>(DEFAULT_LANDING_ARTICLES);
 
   useEffect(() => {
@@ -208,8 +278,6 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   const { openProductCard } = useProductCard();
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [skinType, setSkinType] = useState('normal');
@@ -2843,7 +2911,7 @@ export default function App() {
                 )}
                 <div className="pt-2 px-1 flex items-center justify-between text-[11px] text-black/50">
                   <button 
-                    onClick={() => { resetHeaderSearchState(); setAppState(AppState.PRIVACY_POLICY); setIsMobileNavOpen(false); }}
+                    onClick={() => { resetHeaderSearchState(); navigateTo(AppState.PRIVACY_POLICY); setIsMobileNavOpen(false); }}
                     className="hover:text-black underline cursor-pointer transition-colors font-semibold"
                   >
                     Privacy Policy
@@ -3037,7 +3105,9 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
             >
-              <PrivacyPolicy onBack={() => setAppState(user ? AppState.DASHBOARD : AppState.LANDING)} />
+              <PrivacyPolicy onBack={() => {
+                navigateTo(user ? AppState.DASHBOARD : AppState.LANDING);
+              }} />
             </motion.div>
           )}
 
