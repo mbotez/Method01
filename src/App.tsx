@@ -1566,7 +1566,8 @@ export default function App() {
         AppState.TRACKER,
         AppState.SOCIAL,
         AppState.PRODUCT_PAGE,
-        AppState.DELETE_ACCOUNT
+        AppState.DELETE_ACCOUNT,
+        AppState.PRIVACY_POLICY
       ];
       if (!allowedStates.includes(appState)) {
         setAppState(AppState.LANDING);
