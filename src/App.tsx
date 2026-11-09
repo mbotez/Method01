@@ -97,7 +97,8 @@ enum AppState {
   PROGRESS,
   PRODUCT_PAGE,
   ROUTINES,
-  PRIVACY_POLICY
+  PRIVACY_POLICY,
+  DELETE_ACCOUNT
 }
 
 const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
@@ -185,6 +186,7 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
       if (path.startsWith('/privacy')) return AppState.PRIVACY_POLICY;
+      if (path.startsWith('/delete-account')) return AppState.DELETE_ACCOUNT;
       if (path.startsWith('/dashboard')) return AppState.DASHBOARD;
       if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
       if (path.startsWith('/tracker')) return AppState.TRACKER;
@@ -213,6 +215,7 @@ export default function App() {
         case AppState.PROFILE: urlPath = '/profile'; break;
         case AppState.ROUTINES: urlPath = '/routines'; break;
         case AppState.PRIVACY_POLICY: urlPath = '/privacy'; break;
+        case AppState.DELETE_ACCOUNT: urlPath = '/delete-account'; break;
       }
       if (path) urlPath = path;
       window.history.pushState(null, '', urlPath);
@@ -225,6 +228,8 @@ export default function App() {
         const path = window.location.pathname;
         if (path.startsWith('/privacy')) {
           setAppState(AppState.PRIVACY_POLICY);
+        } else if (path.startsWith('/delete-account')) {
+          setAppState(AppState.DELETE_ACCOUNT);
         } else if (path.startsWith('/dashboard')) {
           setAppState(AppState.DASHBOARD);
         } else if (path.startsWith('/products') || path.startsWith('/rank')) {
@@ -1068,6 +1073,48 @@ export default function App() {
   const [isSavingRoutineForm, setIsSavingRoutineForm] = useState(false);
   const [routineFormError, setRoutineFormError] = useState<string | null>(null);
 
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmationText !== 'DELETE') {
+      setError('Please type DELETE to confirm account deletion.');
+      return;
+    }
+    if (!user?.id) return;
+    setIsDeleting(true);
+    setError(null);
+    try {
+      const userId = user.id;
+      await supabase.from('user_profile').delete().eq('id', userId);
+      await supabase.from('user_contacts').delete().eq('user_id', userId);
+      await supabase.from('tracker').delete().eq('user_id', userId);
+      await supabase.from('routines').delete().eq('user_id', userId);
+      await supabase.from('progress').delete().eq('user_id', userId);
+      await supabase.from('upp').delete().eq('user_id', userId);
+      await supabase.from('product_user_ratings').delete().eq('user_id', userId);
+      await supabase.from('comments').delete().eq('user_id', userId);
+      await supabase.from('posts').delete().eq('user_id', userId);
+      await supabase.from('messages').delete().or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
+      await supabase.from('follows').delete().or(`follower_id.eq.${userId},following_id.eq.${userId}`);
+      await supabase.from('users').delete().eq('id', userId);
+
+      try {
+        await supabase.rpc('delete_user_account');
+      } catch {}
+
+      await supabase.auth.signOut();
+      setUser(null);
+      setProfile(null);
+      setUserProfile(null);
+      navigateTo(AppState.LANDING, '/');
+    } catch (err: any) {
+      setError(`Failed to delete account: ${err.message || err}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Search Hooks & Functions
   function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -1518,7 +1565,8 @@ export default function App() {
         AppState.RANK,
         AppState.TRACKER,
         AppState.SOCIAL,
-        AppState.PRODUCT_PAGE
+        AppState.PRODUCT_PAGE,
+        AppState.DELETE_ACCOUNT
       ];
       if (!allowedStates.includes(appState)) {
         setAppState(AppState.LANDING);
@@ -3108,6 +3156,106 @@ export default function App() {
               <PrivacyPolicy onBack={() => {
                 navigateTo(user ? AppState.DASHBOARD : AppState.LANDING);
               }} />
+            </motion.div>
+          )}
+
+          {appState === AppState.DELETE_ACCOUNT && (
+            <motion.div
+              key="delete-account"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-6 max-w-xl mx-auto pb-12 w-full pt-6"
+            >
+              <div className="clean-card bg-white border border-black/10 rounded-3xl p-8 shadow-sm space-y-6">
+                <div className="text-center space-y-3">
+                  <div className="inline-flex p-3 bg-red-50 rounded-full mb-2">
+                    <Trash2 className="w-8 h-8 text-red-600" />
+                  </div>
+                  <h2 className="text-3xl md:text-4xl font-sans font-black text-black uppercase tracking-tighter">
+                    Delete Account
+                  </h2>
+                  <p className="text-xs font-medium text-black/60 max-w-md mx-auto">
+                    Permanent Account & Data Removal Request
+                  </p>
+                </div>
+
+                {!user ? (
+                  <div className="space-y-6 text-center bg-black/[0.02] p-6 rounded-2xl border border-black/5">
+                    <p className="text-sm font-medium text-black/80">
+                      You are currently not signed in. To delete your account and associated records, please log in first.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setIsSignUp(false);
+                        setAppState(AppState.AUTH);
+                        window.history.pushState(null, '', '/auth');
+                      }}
+                      className="w-full bg-black text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-venus-accent transition-colors shadow-md cursor-pointer"
+                    >
+                      Log In to Proceed
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="bg-red-50 border border-red-200/60 p-5 rounded-2xl space-y-3">
+                      <h3 className="text-xs font-black uppercase tracking-wider text-red-800 flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-red-600" />
+                        Warning: Action is irreversible
+                      </h3>
+                      <p className="text-xs text-red-700 font-medium leading-relaxed">
+                        Deleting your account will permanently remove your profile data, skin questionnaire responses, skincare routines, progress photos, tracker items, and all associated records from the Supabase database. This action cannot be undone.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-xs font-black uppercase tracking-wider text-black">
+                        To confirm, type <span className="text-red-600 font-black">DELETE</span> below:
+                      </label>
+                      <input
+                        type="text"
+                        value={deleteConfirmationText}
+                        onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                        placeholder="Type DELETE"
+                        className="w-full border border-black/20 bg-white rounded-xl p-3 text-sm uppercase outline-none focus:border-red-600 font-black tracking-widest text-center"
+                      />
+                    </div>
+
+                    {error && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 font-medium text-center">
+                        {error}
+                      </div>
+                    )}
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={() => navigateTo(AppState.PROFILE, '/profile')}
+                        className="flex-1 bg-black/5 hover:bg-black/10 text-black py-3 rounded-xl text-xs uppercase font-black tracking-widest transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={deleteConfirmationText !== 'DELETE' || isDeleting}
+                        className={`flex-1 py-3 rounded-xl text-xs uppercase font-black tracking-widest transition-all cursor-pointer shadow-md ${
+                          deleteConfirmationText === 'DELETE' && !isDeleting
+                            ? 'bg-red-600 hover:bg-red-700 text-white'
+                            : 'bg-black/10 text-black/40 cursor-not-allowed shadow-none'
+                        }`}
+                      >
+                        {isDeleting ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Deleting...
+                          </span>
+                        ) : (
+                          'Permanently Delete'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </motion.div>
           )}
 
@@ -5105,13 +5253,20 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="pt-6 text-center">
+                  <div className="pt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
                     <button
                       onClick={handleSignOut}
-                      className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-red-600 hover:text-red-700 transition-colors bg-red-50 px-6 py-3 rounded-xl border border-red-200/50 cursor-pointer shadow-sm"
+                      className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-black/70 hover:text-black transition-colors bg-black/5 px-6 py-3 rounded-xl border border-black/10 cursor-pointer shadow-sm"
                     >
                       <LogOut className="w-4 h-4" />
                       Log Out
+                    </button>
+                    <button
+                      onClick={() => navigateTo(AppState.DELETE_ACCOUNT, '/delete-account')}
+                      className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-red-600 hover:text-red-700 transition-colors bg-red-50 px-6 py-3 rounded-xl border border-red-200/50 cursor-pointer shadow-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete Account
                     </button>
                   </div>
                 </div>
