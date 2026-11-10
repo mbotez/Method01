@@ -25,7 +25,7 @@ export const getOAuthRedirectUrl = (): string => {
 /**
  * 3. Call supabase.auth.signInWithOAuth using provider 'google' and the correct dynamic redirectTo option.
  */
-export const signInWithGoogle = async () => {
+/*export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -35,6 +35,32 @@ export const signInWithGoogle = async () => {
   });
 
   if (error) {
+    throw error;
+  }
+
+  return data;
+};
+*/
+
+export const signInWithGoogle = async () => {
+  const redirectTo = getOAuthRedirectUrl();
+  
+  // Console logs to debug the exact redirect URL and window origin
+  console.log("=== GOOGLE OAUTH DEBUG ===");
+  console.log("Current Window Origin:", typeof window !== 'undefined' ? window.location.origin : 'SSR');
+  console.log("Generated redirectTo URL:", redirectTo);
+  console.log("Supabase Client Project Ref:", supabase.supabaseUrl);
+  console.log("==========================");
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo,
+    },
+  });
+
+  if (error) {
+    console.error("Supabase OAuth Error:", error);
     throw error;
   }
 
