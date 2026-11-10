@@ -152,7 +152,7 @@ const DEFAULT_LANDING_ARTICLES = [
     category: 'Layering',
     readTime: '4 min read',
     article_content: 'Master the exact order of application from thinnest water-based textures to richest lipid creams to guarantee maximum dermal absorption without pilling or flushing.',
-    image_url: '/assets/editorial/art_1.png',
+    image_url: '/assets/g1.jpg',
     created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
     article_link: '#'
   },
@@ -162,7 +162,7 @@ const DEFAULT_LANDING_ARTICLES = [
     category: 'Actives',
     readTime: '5 min read',
     article_content: 'The go-to reference table explaining which dermatological actives can be combined in the same regimen, and which combinations cause chemical degradation or micro-inflammation.',
-    image_url: '/assets/editorial/art_2.jpg',
+    image_url: '/assets/g2.jpg',
     created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
     article_link: '#'
   },
@@ -172,7 +172,7 @@ const DEFAULT_LANDING_ARTICLES = [
     category: 'Barrier',
     readTime: '4 min read',
     article_content: 'How to identify an acid-mantle breakdown, eliminate micro-irritants, and rapidly restore compromised skin using physiological 3:1:1:1 lipid ratios.',
-    image_url: '/assets/editorial/art_3.png',
+    image_url: '/assets/g3.jpg',
     created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
     article_link: '#'
   }
@@ -278,7 +278,8 @@ export default function App() {
             steps: g.roadmap || [],
             dos: g.dos || [],
             donts: g.donts || [],
-            recommendedActives: g.recommended_formulations || []
+            recommendedActives: g.recommended_formulations || [],
+            imageUrl: g.image_url || '/assets/g1.jpg'
           });
         }
       } catch {
@@ -297,7 +298,11 @@ export default function App() {
           .order('created_at', { ascending: false })
           .limit(3);
         if (!error && data && data.length > 0) {
-          setLandingArticles(data);
+          const mappedArticles = data.map((art: any, idx: number) => ({
+            ...art,
+            image_url: art.image_url && !art.image_url.includes('supabase') ? art.image_url : `/assets/g${(idx % 6) + 1}.jpg`
+          }));
+          setLandingArticles(mappedArticles);
         }
       } catch {
         // Fallback already set
@@ -425,21 +430,7 @@ export default function App() {
   };
 
   const getActiveRoutineProducts = (products: any[], routineTime: string) => {
-    // If trackerData is not loaded yet but we have products, fallback to the raw list to avoid flashing empty lists
-    if (trackerData.length === 0 && loading) {
-      return products || [];
-    }
-    return (products || []).filter((p: any) => {
-      const trackerItem = trackerData.find((item: any) => {
-        const matchesId = p.id && item.product_id && String(item.product_id) === String(p.id);
-        const matchesName = !matchesId && 
-          item.brand?.toLowerCase() === p.brand?.toLowerCase() && 
-          item.product_name?.toLowerCase() === p.name?.toLowerCase();
-        return (matchesId || matchesName) && 
-               (item.routine_time === routineTime || item.routine_time === 'AM/PM');
-      });
-      return trackerItem ? !!trackerItem.in_use : false;
-    });
+    return products || [];
   };
 
   const toggleRoutineExpansion = (idx: number) => {
@@ -767,25 +758,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
     const fetchLastVideoAndPost = async () => {
       try {
-        const { data: videoData, error: videoError } = await supabase
+        const { data: videoData } = await supabase
           .from('blog_videos')
           .select('*')
           .order('created_at', { ascending: false })
-          .limit(3);
+          .limit(3)
+          .abortSignal(signal);
 
-        if (videoError) {
-          } else if (videoData) {
+        if (videoData && isMounted && !signal.aborted) {
           setLatestVideos(videoData);
         }
-      } catch (err) {
-        } finally {
-        setLoadingLatestVideos(false);
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || signal.aborted) return;
+      } finally {
+        if (isMounted) setLoadingLatestVideos(false);
       }
 
       try {
-        const { data: postData, error: postError } = await supabase
+        const { data: postData } = await supabase
           .from('posts')
           .select(`
             *,
@@ -795,33 +791,31 @@ export default function App() {
           `)
           .order('timestamp', { ascending: false })
           .limit(1)
+          .abortSignal(signal)
           .maybeSingle();
 
-        if (postError) {
-          } else if (postData) {
+        if (postData && isMounted && !signal.aborted) {
           setLastPost(postData);
         }
-      } catch (err) {
-        } finally {
-        setLoadingLastPost(false);
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || signal.aborted) return;
+      } finally {
+        if (isMounted) setLoadingLastPost(false);
       }
     };
 
     fetchLastVideoAndPost();
 
-    // Setup realtime subscription
-    const videosChannel = supabase.channel('blog-videos-rt')
+    // Setup single consolidated realtime subscription for blog/community content
+    const blogSyncChannel = supabase.channel('blog-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'blog_videos' }, async () => {
         const { data } = await supabase
           .from('blog_videos')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(3);
-        if (data) setLatestVideos(data);
+        if (data && isMounted) setLatestVideos(data);
       })
-      .subscribe();
-
-    const postsChannel = supabase.channel('posts-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, async () => {
         const { data } = await supabase
           .from('posts')
@@ -834,13 +828,14 @@ export default function App() {
           .order('timestamp', { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (data) setLastPost(data);
+        if (data && isMounted) setLastPost(data);
       })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(videosChannel);
-      supabase.removeChannel(postsChannel);
+      isMounted = false;
+      abortController.abort();
+      supabase.removeChannel(blogSyncChannel);
     };
   }, []);
 
@@ -1696,25 +1691,36 @@ export default function App() {
       }
     };
 
+    let isMounted = true;
+    const abortController = new AbortController();
+
     const fetchFilteredProducts = async () => {
-      const query = buildProductQuery();
-      const { data, error } = await query;
-      if (error) { }
-      if (data) setProducts(data);
+      try {
+        const query = buildProductQuery();
+        const { data, error } = await query.abortSignal(abortController.signal);
+        if (error) { }
+        if (data && isMounted && !abortController.signal.aborted) setProducts(data);
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || abortController.signal.aborted) return;
+      }
     };
 
     fetchFilteredProducts();
 
-    const productsChannel = supabase.channel('products-changes')
+    const channelId = `products-sync-${Date.now()}`;
+    const productsChannel = supabase.channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async () => {
-        const query = buildProductQuery();
-        const { data, error } = await query;
-        if (error) { }
-        if (data) setProducts(data);
+        try {
+          const query = buildProductQuery();
+          const { data } = await query;
+          if (data && isMounted) setProducts(data);
+        } catch {}
       })
       .subscribe();
 
     return () => {
+      isMounted = false;
+      abortController.abort();
       supabase.removeChannel(productsChannel);
     };
   }, [primaryFilter, subFilter]);
@@ -1774,6 +1780,7 @@ export default function App() {
       const newChecks: Record<string, RoutineCheckResult> = {};
 
       for (let rIdx = 0; rIdx < routines.length; rIdx++) {
+        if (!active) break;
         const rt = routines[rIdx];
         const key = rt.id || String(rIdx);
         const activeProducts = getActiveRoutineProducts(rt.products, rt.time);
@@ -1787,6 +1794,7 @@ export default function App() {
 
         try {
           const checkResult = await checkRoutine(mappedProfile, prodIds, timing);
+          if (!active) break;
           
           // Fetch names and brands for recommended additions if they exist
           if (checkResult.recommended_additions && checkResult.recommended_additions.length > 0) {
@@ -1796,7 +1804,7 @@ export default function App() {
                 .from('products')
                 .select('id, brand, name, type')
                 .in('id', recPids);
-              if (recProds) {
+              if (recProds && active) {
                 (checkResult as any).resolved_additions = checkResult.recommended_additions.map(ra => {
                   const found = recProds.find(rp => Number(rp.id) === Number(ra.product_id));
                   return {
@@ -1810,9 +1818,11 @@ export default function App() {
             }
           }
 
-          newChecks[key] = checkResult;
-        } catch (e) {
+          if (active) {
+            newChecks[key] = checkResult;
           }
+        } catch (e) {
+        }
       }
 
       if (active) {
@@ -1868,100 +1878,98 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
+    let isMounted = true;
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
     const fetchInitialData = async () => {
-      // Routines
-      const { data: routinesData, error: routinesError } = await supabase
-        .from('routines')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: true });
-      if (routinesError) { }
-      else { setRoutines(routinesData || []); }
+      try {
+        // Routines
+        const { data: routinesData, error: routinesError } = await supabase
+          .from('routines')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: true })
+          .abortSignal(signal);
+        if (!routinesError && routinesData && isMounted) {
+          setRoutines(routinesData);
+        }
 
-      // Progress
-      const { data: progressData, error: progressError } = await supabase
-        .from('progress')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('timestamp', { ascending: false });
-      if (progressError) { }
-      else { setProgressPhotos(progressData || []); }
+        // Progress
+        const { data: progressData, error: progressError } = await supabase
+          .from('progress')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('timestamp', { ascending: false })
+          .abortSignal(signal);
+        if (!progressError && progressData && isMounted) {
+          setProgressPhotos(progressData);
+        }
 
-      // Upp
-      const { data: uppData, error: uppError } = await supabase
-        .from('upp')
-        .select('*')
-        .eq('user_id', user.id);
-      if (uppError) { }
-      else { if (uppData) setUserProducts(uppData); }
+        // Upp
+        const { data: uppData, error: uppError } = await supabase
+          .from('upp')
+          .select('*')
+          .eq('user_id', user.id)
+          .abortSignal(signal);
+        if (!uppError && uppData && isMounted) {
+          setUserProducts(uppData);
+        }
 
-      // User Profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profile')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
-      if (profileError) { }
-      else { setUserProfile(profileData || null); }
+        // User Profile
+        const { data: profileData, error: profileError } = await supabase
+          .from('user_profile')
+          .select('*')
+          .eq('id', user.id)
+          .abortSignal(signal)
+          .maybeSingle();
+        if (!profileError && isMounted) {
+          setUserProfile(profileData || null);
+        }
 
-      // Tracker
-      fetchTrackerData();
+        // Tracker
+        if (isMounted) {
+          fetchTrackerData();
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || signal.aborted) return;
+      }
     };
 
     fetchInitialData();
 
-    // Set up real-time subscriptions
-    const routineChannel = supabase.channel('routine-changes')
+    // Set up a single consolidated real-time subscription for the current user's tables
+    const userSyncChannel = supabase.channel(`user-sync-${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'routines', filter: `user_id=eq.${user.id}` }, async () => {
-        const { data, error } = await supabase.from('routines').select('*').eq('user_id', user.id).order('updated_at', { ascending: true });
-        if (error) { }
-        if (data) setRoutines(data);
+        const { data } = await supabase.from('routines').select('*').eq('user_id', user.id).order('updated_at', { ascending: true });
+        if (data && isMounted) setRoutines(data);
       })
-      .subscribe();
-
-    const trackerChannel = supabase.channel('tracker-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tracker', filter: `user_id=eq.${user.id}` }, async () => {
-        const { data, error } = await supabase.from('tracker').select('*').eq('user_id', user.id);
-        if (error) if (data) setTrackerData(data);
+        const { data } = await supabase.from('tracker').select('*').eq('user_id', user.id);
+        if (data && isMounted) setTrackerData(data);
       })
-      .subscribe();
-
-    const progressChannel = supabase.channel('progress-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'progress', filter: `user_id=eq.${user.id}` }, async () => {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('progress')
           .select('*')
           .eq('user_id', user.id)
           .order('timestamp', { ascending: false });
-        if (error) { }
-        if (data) setProgressPhotos(data);
+        if (data && isMounted) setProgressPhotos(data);
       })
-      .subscribe();
-
-    const uppChannel = supabase.channel('upp-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'upp', filter: `user_id=eq.${user.id}` }, async (payload) => {
-        const { data, error } = await supabase.from('upp').select('*').eq('user_id', user.id);
-        if (error) { }
-        if (data) {
-          setUserProducts(data);
-        }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'upp', filter: `user_id=eq.${user.id}` }, async () => {
+        const { data } = await supabase.from('upp').select('*').eq('user_id', user.id);
+        if (data && isMounted) setUserProducts(data);
       })
-      .subscribe();
-
-    const userProfileChannel = supabase.channel('user_profile-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_profile', filter: `id=eq.${user.id}` }, async () => {
-        const { data, error } = await supabase.from('user_profile').select('*').eq('id', user.id).maybeSingle();
-        if (error) { }
-        if (data) setUserProfile(data);
+        const { data } = await supabase.from('user_profile').select('*').eq('id', user.id).maybeSingle();
+        if (data && isMounted) setUserProfile(data);
       })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(routineChannel);
-      supabase.removeChannel(trackerChannel);
-      supabase.removeChannel(progressChannel);
-      supabase.removeChannel(uppChannel);
-      supabase.removeChannel(userProfileChannel);
+      isMounted = false;
+      abortController.abort();
+      supabase.removeChannel(userSyncChannel);
     };
   }, [user]);
 
@@ -3446,15 +3454,13 @@ export default function App() {
                             <div className="space-y-3">
                               <div className="rounded-xl overflow-hidden border border-black/5 bg-[#F5F4F0] aspect-[16/10] w-full relative">
                                 <img 
-                                  src={article.image_url || `/assets/editorial/art_${idx + 1}.${idx === 1 ? 'jpg' : 'png'}`} 
+                                  src={article.image_url || `/assets/g${(idx % 6) + 1}.jpg`} 
                                   alt={article.title} 
                                   referrerPolicy="no-referrer"
                                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                   onError={(e) => {
                                     const target = e.currentTarget;
-                                    if (!target.src.includes(`/assets/editorial/art_${idx + 1}`)) {
-                                      target.src = `/assets/editorial/art_${idx + 1}.${idx === 1 ? 'jpg' : 'png'}`;
-                                    }
+                                    target.src = `/assets/g${(idx % 6) + 1}.jpg`;
                                   }}
                                 />
                               </div>
@@ -3918,8 +3924,7 @@ export default function App() {
                   <div className="py-16 flex flex-col items-center justify-center gap-3 bg-white/50 rounded-2xl border-2 border-black/5">
                     <Loader2 className="w-8 h-8 animate-spin text-venus-accent" />
                     <div className="text-center">
-                      <p className="text-xs font-black uppercase tracking-wider text-black">Running productSort Algorithm...</p>
-                      <p className="text-[9px] text-black/50 mt-1 font-mono">Analyzing database and skin compatibility</p>
+                      <p className="text-xs font-black uppercase tracking-wider text-black">Loading..</p>
                     </div>
                   </div>
                 ) : sortingError ? (
@@ -4256,8 +4261,13 @@ export default function App() {
                         setSocialActiveMainTab('guides');
                         setAppState(AppState.SOCIAL);
                       }}
-                      className="clean-card p-5 border-2 border-black/5 bg-white hover:border-black/20 hover:shadow-md transition-all max-w-xl space-y-3 cursor-pointer group rounded-2xl"
+                      className="clean-card p-5 border-2 border-black/5 bg-white hover:border-black/25 hover:shadow-md transition-all max-w-xl space-y-3 cursor-pointer group rounded-2xl"
                     >
+                      {landingGuide.imageUrl && (
+                        <div className="w-full h-36 rounded-xl overflow-hidden border border-black/5 bg-black/5">
+                          <img src={landingGuide.imageUrl} alt={landingGuide.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        </div>
+                      )}
                       <div className="flex items-center justify-between text-xs text-black/50">
                         <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">
                           {landingGuide.category}

@@ -25,34 +25,51 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ isOpen, onClos
   const comparisonCountRef = useRef(0);
 
   useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+
     if (isOpen && newProduct) {
+      const fetchProducts = async () => {
+        setLoading(true);
+        try {
+          const { data } = await supabase
+            .from('upp')
+            .select('id, product_name, personal_score, impression, type')
+            .eq('user_id', userId)
+            .eq('category', 'Used')
+            .eq('type', newProduct.type)
+            .eq('impression', newProduct.impression)
+            .neq('id', newProduct.id)
+            .order('personal_score', { ascending: true })
+            .abortSignal(abortController.signal);
+
+          if (!isMounted || abortController.signal.aborted) return;
+
+          if (data && data.length > 0) {
+            setProducts(data);
+            setLow(0);
+            setHigh(data.length - 1);
+            setMid(Math.floor((0 + data.length - 1) / 2));
+            comparisonCountRef.current = 0;
+          } else {
+            onComplete(5.0);
+          }
+        } catch (err: any) {
+          if (err?.name === 'AbortError' || abortController.signal.aborted) return;
+        } finally {
+          if (isMounted) {
+            setLoading(false);
+          }
+        }
+      };
       fetchProducts();
     }
-  }, [isOpen, newProduct]);
 
-  const fetchProducts = async () => {
-    const { data } = await supabase
-      .from('upp')
-      .select('id, product_name, personal_score, impression, type')
-      .eq('user_id', userId)
-      .eq('category', 'Used')
-      .eq('type', newProduct.type)
-      .eq('impression', newProduct.impression) // Ensure newProduct exists
-      .neq('id', newProduct.id) // Exclude the new product itself
-      .order('personal_score', { ascending: true });
-    
-    if (data && data.length > 0) {
-      setProducts(data);
-      setLow(0);
-      setHigh(data.length - 1);
-      setMid(Math.floor((0 + data.length - 1) / 2));
-      comparisonCountRef.current = 0;
-    } else {
-      // No products to compare against, assign default score
-      onComplete(5.0);
-    }
-    setLoading(false);
-  };
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
+  }, [isOpen, newProduct, userId]);
 
   const handleComparison = async (userChoosesNewProduct: boolean) => {
     comparisonCountRef.current += 1;

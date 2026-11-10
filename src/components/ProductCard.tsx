@@ -563,6 +563,8 @@ export const ProductCardContent = ({
 
   useEffect(() => {
     let active = true;
+    const abortController = new AbortController();
+    const signal = abortController.signal;
 
     const fetchEcosystemViaRPC = async () => {
       if (!productId) {
@@ -577,8 +579,9 @@ export const ProductCardContent = ({
       setCulprits([]);
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!active) return;
+        const sessionRes = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+        const session = sessionRes?.data?.session;
+        if (!active || signal.aborted) return;
         
         const isAuthed = !!session?.user?.id;
         setIsAuthenticated(isAuthed);
@@ -592,36 +595,65 @@ export const ProductCardContent = ({
           : (trackerItem?.product_id && !isNaN(Number(trackerItem.product_id)) ? Number(trackerItem.product_id) : null);
 
         const culpritsPromise = targetProductId != null
-          ? supabase
-              .from('product_metric_culprits')
-              .select('product_id, metric_name, ingredient_name, position, ingredient_id')
-              .eq('product_id', targetProductId)
-              .order('position', { ascending: true })
+          ? (async () => {
+              try {
+                return await supabase
+                  .from('product_metric_culprits')
+                  .select('product_id, metric_name, ingredient_name, position, ingredient_id')
+                  .eq('product_id', targetProductId)
+                  .order('position', { ascending: true })
+                  .abortSignal(signal);
+              } catch (err: any) {
+                return { data: [], error: err?.name === 'AbortError' ? null : err };
+              }
+            })()
           : Promise.resolve({ data: [], error: null });
 
         // Query product row from products table directly so photo_url and metadata are guaranteed
         const productTablePromise = targetProductId != null
-          ? supabase
-              .from('products')
-              .select('*')
-              .eq('id', targetProductId)
-              .maybeSingle()
+          ? (async () => {
+              try {
+                return await supabase
+                  .from('products')
+                  .select('*')
+                  .eq('id', targetProductId)
+                  .abortSignal(signal)
+                  .maybeSingle();
+              } catch (err: any) {
+                return { data: null, error: err?.name === 'AbortError' ? null : err };
+              }
+            })()
           : Promise.resolve({ data: null, error: null });
 
         // Query product_scores to guarantee cat2 category for the Calms facial redness exclusion rule
         const scoreTablePromise = targetProductId != null
-          ? supabase
-              .from('product_scores')
-              .select('cat2, cat3')
-              .eq('product_id', targetProductId)
-              .maybeSingle()
+          ? (async () => {
+              try {
+                return await supabase
+                  .from('product_scores')
+                  .select('cat2, cat3')
+                  .eq('product_id', targetProductId)
+                  .abortSignal(signal)
+                  .maybeSingle();
+              } catch (err: any) {
+                return { data: null, error: err?.name === 'AbortError' ? null : err };
+              }
+            })()
           : Promise.resolve({ data: null, error: null });
 
         // Always invoke database engine calculation via RPC for both auth and unauth users
-        const rpcPromise = supabase.rpc('evaluate_product_compatibility', {
-          p_user_id: targetUserId,
-          p_product_id: productId
-        });
+        const rpcPromise = (async () => {
+          try {
+            return await supabase
+              .rpc('evaluate_product_compatibility', {
+                p_user_id: targetUserId,
+                p_product_id: productId
+              })
+              .abortSignal(signal);
+          } catch (err: any) {
+            return { data: { error: err?.message || 'RPC Error' }, error: err };
+          }
+        })();
 
         const [rpcResult, culpritsResult, productTableResult, scoreTableResult] = await Promise.all([
           rpcPromise,
@@ -629,7 +661,7 @@ export const ProductCardContent = ({
           productTablePromise,
           scoreTablePromise
         ]);
-        if (!active) return;
+        if (!active || signal.aborted) return;
 
         if (culpritsResult?.data) {
           setCulprits(culpritsResult.data);
@@ -660,24 +692,41 @@ export const ProductCardContent = ({
             });
             setScores(null);
             setRpcErrorObj(null);
+          } else if (trackerItem) {
+            setProduct({
+              id: targetProductId || productId,
+              name: trackerItem.product_name || 'Product',
+              brand: trackerItem.brand || '',
+              type: trackerItem.product_type || 'Skincare',
+              photo_url: trackerItem.photo_url || null
+            });
+            setComp({ skinTypeFit: 'General Fit', conflicts: [], benefits: [], safetyConcerns: [] });
           } else {
             setRpcErrorObj({
               error: error.message,
               code: error.code,
               stuck_at_step: 'Postgres Driver / RPC Invocation'
             });
-            return;
           }
         }
 
         if (data) {
           if (data.error) {
             // Attempt to gracefully load product info from products table directly so UI isn't blocked
-            const directProduct = tableProd || (isValidNumeric ? (await supabase
-              .from('products')
-              .select('*')
-              .eq('id', numericId)
-              .maybeSingle()).data : null);
+            const directProductRes = isValidNumeric ? await (async () => {
+              try {
+                return await supabase
+                  .from('products')
+                  .select('*')
+                  .eq('id', numericId)
+                  .abortSignal(signal)
+                  .maybeSingle();
+              } catch {
+                return { data: null };
+              }
+            })() : { data: null };
+            if (!active || signal.aborted) return;
+            const directProduct = tableProd || directProductRes.data;
 
             if (directProduct) {
               directProduct.cat2 = fetchedCat2;
@@ -693,6 +742,15 @@ export const ProductCardContent = ({
                 safetyConcerns: []
               });
               setRpcErrorObj(null);
+            } else if (trackerItem) {
+              setProduct({
+                id: targetProductId || productId,
+                name: trackerItem.product_name || 'Product',
+                brand: trackerItem.brand || '',
+                type: trackerItem.product_type || 'Skincare',
+                photo_url: trackerItem.photo_url || null
+              });
+              setComp({ skinTypeFit: 'General Fit', conflicts: [], benefits: [], safetyConcerns: [] });
             } else {
               setRpcErrorObj(data);
             }
@@ -746,14 +804,22 @@ export const ProductCardContent = ({
         }
 
         if (session?.user?.id) {
-          const { data: ratingData } = await supabase
-            .from('product_user_ratings')
-            .select('*')
-            .eq('product_id', productId)
-            .eq('user_id', session.user.id)
-            .maybeSingle();
+          const ratingRes = await (async () => {
+            try {
+              return await supabase
+                .from('product_user_ratings')
+                .select('*')
+                .eq('product_id', productId)
+                .eq('user_id', session.user.id)
+                .abortSignal(signal)
+                .maybeSingle();
+            } catch {
+              return { data: null };
+            }
+          })();
             
-          if (!active) return;
+          if (!active || signal.aborted) return;
+          const ratingData = ratingRes?.data;
 
           if (ratingData) {
             setRatings({
@@ -770,8 +836,19 @@ export const ProductCardContent = ({
           // Reset ratings for unauthenticated view
           setRatings({ dwis: 0, price_value: 0, feel: 0, layer: 0 });
         }
-      } catch (error) {
-        } finally {
+      } catch (error: any) {
+        if (error?.name === 'AbortError' || signal.aborted) return;
+        if (trackerItem) {
+          setProduct({
+            id: productId,
+            name: trackerItem.product_name || 'Product',
+            brand: trackerItem.brand || '',
+            type: trackerItem.product_type || 'Skincare',
+            photo_url: trackerItem.photo_url || null
+          });
+          setComp({ skinTypeFit: 'General Fit', conflicts: [], benefits: [], safetyConcerns: [] });
+        }
+      } finally {
         if (active) {
           setLoading(false);
         }
@@ -782,6 +859,7 @@ export const ProductCardContent = ({
 
     return () => {
       active = false;
+      abortController.abort();
     };
   }, [productId]);
 

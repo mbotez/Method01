@@ -20,46 +20,55 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
   const [expandedIrritantFlag, setExpandedIrritantFlag] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
     const fetchDetailsAndCompatibility = async () => {
       setLoading(true);
       setExpandedBenefitFlag(null);
       setExpandedIrritantFlag(null);
       setCulprits([]);
-      
-      // 1. Fetch description & ingredients list
-      const { data: descData } = await supabase
-        .from('product_description')
-        .select('description, ingredients_list')
-        .eq('id', Number(product.id))
-        .maybeSingle();
 
-      if (descData) {
-        setDescription(descData.description);
-        setIngredients(descData.ingredients_list);
-      }
+      try {
+        // 1. Fetch description & ingredients list
+        const { data: descData } = await supabase
+          .from('product_description')
+          .select('description, ingredients_list')
+          .eq('id', Number(product.id))
+          .abortSignal(signal)
+          .maybeSingle();
 
-      // 2. Fetch culprits
-      const numericId = Number(product.id);
-      if (!isNaN(numericId)) {
-        supabase
-          .from('product_metric_culprits')
-          .select('product_id, metric_name, ingredient_name, position, ingredient_id')
-          .eq('product_id', numericId)
-          .order('position', { ascending: true })
-          .then(({ data: cData }) => {
-            if (cData) setCulprits(cData);
-          });
-      }
+        if (isMounted && !signal.aborted && descData) {
+          setDescription(descData.description);
+          setIngredients(descData.ingredients_list);
+        }
 
-      // 3. Fetch compatibility and scores for both logged in and unauthenticated users
-      if (product.id && !String(product.id).startsWith('custom-') && !String(product.id).startsWith('scanned-')) {
+        // 2. Fetch culprits
+        const numericId = Number(product.id);
+        if (!isNaN(numericId) && isMounted && !signal.aborted) {
+          const { data: cData } = await supabase
+            .from('product_metric_culprits')
+            .select('product_id, metric_name, ingredient_name, position, ingredient_id')
+            .eq('product_id', numericId)
+            .order('position', { ascending: true })
+            .abortSignal(signal);
 
-        try {
-          const { data: rpcData, error: rpcError } = await supabase.rpc('evaluate_product_compatibility', {
-            p_user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-            p_product_id: String(product.id)
-          });
-          if (!rpcError && rpcData) {
+          if (isMounted && !signal.aborted && cData) {
+            setCulprits(cData);
+          }
+        }
+
+        // 3. Fetch compatibility and scores for both logged in and unauthenticated users
+        if (product.id && !String(product.id).startsWith('custom-') && !String(product.id).startsWith('scanned-') && isMounted && !signal.aborted) {
+          const { data: rpcData, error: rpcError } = await supabase
+            .rpc('evaluate_product_compatibility', {
+              p_user_id: user?.id || '00000000-0000-0000-0000-000000000000',
+              p_product_id: String(product.id)
+            })
+            .abortSignal(signal);
+
+          if (isMounted && !signal.aborted && !rpcError && rpcData) {
             const s = rpcData.scores || {};
             const p = rpcData.product || product;
             const formulaBenefits = computeProductKeyBenefits(p, s, rpcData.compatibility?.benefits);
@@ -77,14 +86,22 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
 
             setCompatibility(effComp);
           }
-        } catch (e) {
-          }
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || signal.aborted) return;
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
-
-      setLoading(false);
     };
 
     fetchDetailsAndCompatibility();
+
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
   }, [product.id, user?.id]);
 
   return (

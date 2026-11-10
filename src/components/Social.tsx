@@ -58,6 +58,7 @@ export interface SkincareGuide {
   dos: string[];
   donts: string[];
   recommendedActives: string[];
+  imageUrl: string;
 }
 
 export const SKINCARE_GUIDES: SkincareGuide[] = [
@@ -87,7 +88,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Avoid layering multiple direct exfoliating acids',
       'Do not apply pure essential oils onto dry or compromised barriers'
     ],
-    recommendedActives: ['Hyaluronic Acid', 'Ceramides NP/AP', 'Niacinamide', 'Squalane']
+    recommendedActives: ['Hyaluronic Acid', 'Ceramides NP/AP', 'Niacinamide', 'Squalane'],
+    imageUrl: '/assets/g1.jpg'
   },
   {
     id: 'actives-compatibility',
@@ -114,7 +116,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Do not use prescription tretinoin immediately after hot showers',
       'Avoid applying direct Vitamin C onto already irritated or peeling patches'
     ],
-    recommendedActives: ['Niacinamide', 'Azelaic Acid', 'Tetrahexyldecyl Ascorbate', 'Retinal']
+    recommendedActives: ['Niacinamide', 'Azelaic Acid', 'Tetrahexyldecyl Ascorbate', 'Retinal'],
+    imageUrl: '/assets/g2.jpg'
   },
   {
     id: 'barrier-repair-protocol',
@@ -140,7 +143,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Do not try new sheet masks or scented facial mists during repair phase',
       'Avoid fragrance, denatured alcohol, and botanical essential oils'
     ],
-    recommendedActives: ['Ceramides 1, 3, 6-II', 'Panthenol (B5)', 'Centella Asiatica', 'Colloidal Oat']
+    recommendedActives: ['Ceramides 1, 3, 6-II', 'Panthenol (B5)', 'Centella Asiatica', 'Colloidal Oat'],
+    imageUrl: '/assets/g3.jpg'
   },
   {
     id: 'purging-vs-breakouts',
@@ -166,7 +170,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Do not panic and introduce multiple anti-acne spot treatments simultaneously',
       'Do not conclude a product has failed before week 6 if symptoms fit a true purge'
     ],
-    recommendedActives: ['Salicylic Acid (BHA)', 'Adapalene', 'Zinc PCA', 'Madecassoside']
+    recommendedActives: ['Salicylic Acid (BHA)', 'Adapalene', 'Zinc PCA', 'Madecassoside'],
+    imageUrl: '/assets/g4.jpg'
   },
   {
     id: 'sun-protection-mastery',
@@ -192,7 +197,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Do not store sunscreen bottles in hot parked vehicles (degrades filters)',
       'Do not skip sunscreen on overcast or rainy days—UVA penetrates clouds'
     ],
-    recommendedActives: ['Zinc Oxide', 'Tinosorb S/M', 'Ectoin', 'Tocopherol (Vitamin E)']
+    recommendedActives: ['Zinc Oxide', 'Tinosorb S/M', 'Ectoin', 'Tocopherol (Vitamin E)'],
+    imageUrl: '/assets/g5.jpg'
   },
   {
     id: 'sensitive-skin-rosacea',
@@ -218,7 +224,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Do not use rotating brush cleansing devices or scrub beads',
       'Avoid high-heat saunas, extreme spice, and sudden hot-cold transitions'
     ],
-    recommendedActives: ['Azelaic Acid', 'Centella Asiatica', 'Allantoin', 'Ectoin']
+    recommendedActives: ['Azelaic Acid', 'Centella Asiatica', 'Allantoin', 'Ectoin'],
+    imageUrl: '/assets/g6.jpg'
   }
 ];
 
@@ -256,10 +263,15 @@ export const Social = ({
   const [videos, setVideos] = useState<VideoItem[]>([]);
 
   useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+
     const fetchVideos = async () => {
-      const { data, error } = await supabase
-        .from('blog_videos')
-        .select(`
+      try {
+        const { data, error } = await supabase
+          .from('blog_videos')
+          .select(`
           *,
           video_products (
             product_id,
@@ -271,22 +283,31 @@ export const Social = ({
             )
           )
         `)
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        const mappedVideos: VideoItem[] = data.map((v: any) => ({
-          id: v.id,
-          video_id: v.video_id,
-          url: v.video_url,
-          platform: v.type,
-          title: v.title,
-          category: v.category,
-          tags: v.tags || [],
-          video_products: v.video_products || [],
-        }));
-        setVideos(mappedVideos);
+          .order('created_at', { ascending: false })
+          .abortSignal(signal);
+        if (!error && data && isMounted && !signal.aborted) {
+          const mappedVideos: VideoItem[] = data.map((v: any) => ({
+            id: v.id,
+            video_id: v.video_id,
+            url: v.video_url,
+            platform: v.type,
+            title: v.title,
+            category: v.category,
+            tags: v.tags || [],
+            video_products: v.video_products || [],
+          }));
+          setVideos(mappedVideos);
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || signal.aborted) return;
       }
     };
     fetchVideos();
+
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
   }, []);
 
   const [internalActiveMainTab, internalSetActiveMainTab] = useState<'videos' | 'articles' | 'guides' | 'community'>('videos');
@@ -421,22 +442,28 @@ export const Social = ({
     setUserSearchResults([]);
   }
 
-  async function fetchInitialData() {
+  async function fetchInitialData(signal?: AbortSignal, checkMounted?: () => boolean) {
     setLoading(true);
     try {
-      const { data: articleData } = await supabase
+      let articlesQuery = supabase
         .from('articles')
         .select('*')
         .order('created_at', { ascending: false });
+      if (signal) articlesQuery = articlesQuery.abortSignal(signal);
+      const { data: articleData } = await articlesQuery;
 
+      if (checkMounted && !checkMounted()) return;
       if (articleData) setArticles(articleData);
 
-      const { data: guideData } = await supabase
+      let guidesQuery = supabase
         .from('guides')
         .select('*');
+      if (signal) guidesQuery = guidesQuery.abortSignal(signal);
+      const { data: guideData } = await guidesQuery;
 
+      if (checkMounted && !checkMounted()) return;
       if (guideData && guideData.length > 0) {
-        const mappedGuides = guideData.map((g: any) => ({
+        const mappedGuides = guideData.map((g: any, idx: number) => ({
           id: g.id,
           category: g.category,
           title: g.title,
@@ -447,29 +474,44 @@ export const Social = ({
           steps: g.roadmap || [],
           dos: g.dos || [],
           donts: g.donts || [],
-          recommendedActives: g.recommended_formulations || []
+          recommendedActives: g.recommended_formulations || [],
+          imageUrl: g.image_url || `/assets/g${(idx % 6) + 1}.jpg`
         }));
         setGuides(mappedGuides);
       }
 
       const { data: { user } } = await supabase.auth.getUser();
+      if (checkMounted && !checkMounted()) return;
       if (user) {
-        const { data: followsData } = await supabase
+        let followsQuery = supabase
           .from('follows')
           .select('*, following:users!follows_following_id_fkey(username, skin_type)')
           .eq('follower_id', user.id);
+        if (signal) followsQuery = followsQuery.abortSignal(signal);
+        const { data: followsData } = await followsQuery;
+        if (checkMounted && !checkMounted()) return;
         if (followsData) setFollows(followsData);
       }
-    } catch {
-      // quiet fallback
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) return;
     } finally {
-      setLoading(false);
+      if (!checkMounted || checkMounted()) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    fetchInitialData();
+    let isMounted = true;
+    const abortController = new AbortController();
+    fetchInitialData(abortController.signal, () => isMounted);
+
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
   }, []);
+
 
   const filteredVideos = videos.filter(video => {
     const matchesSearch = searchQuery.trim() === '' || 
@@ -861,6 +903,11 @@ export const Social = ({
                       className="clean-card bg-white border border-black/5 rounded-2xl p-4 md:p-6 hover:border-black/20 hover:shadow-md transition-all flex flex-col justify-between cursor-pointer group"
                     >
                       <div className="space-y-2">
+                        {guide.imageUrl && (
+                          <div className="w-full h-32 rounded-xl overflow-hidden mb-3 border border-black/5 bg-black/5">
+                            <img src={guide.imageUrl} alt={guide.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                          </div>
+                        )}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 text-[10px] text-black/50">
                             <span className="font-black uppercase tracking-wider text-venus-accent">{guide.category}</span>
@@ -1015,6 +1062,12 @@ export const Social = ({
               </div>
 
               {/* Summary */}
+              {selectedGuide.imageUrl && (
+                <div className="w-full h-64 rounded-2xl overflow-hidden border border-black/5">
+                  <img src={selectedGuide.imageUrl} alt={selectedGuide.title} className="w-full h-full object-cover" />
+                </div>
+              )}
+
               <p className="text-xs md:text-sm text-black/80 leading-relaxed font-medium">
                 {selectedGuide.summary}
               </p>
