@@ -3305,10 +3305,10 @@ export default function App() {
                   className={`text-center flex flex-col items-center justify-between ${isNativePlatform() ? 'h-screen w-screen fixed inset-0 z-0' : 'w-full h-[calc(100dvh-65px)] relative z-10'} bg-[url('/assets/landing_banner.png')] bg-cover bg-center px-6 py-12`}
                 >
                   <div className="flex flex-col items-center gap-2 mb-2">
-                    <h1 className="text-6xl font-cursive font-bold leading-[0.8] text-venus-pink tracking-normal">
+                    <h1 className="text-6xl font-cursive font-bold leading-[0.8] text-white tracking-normal drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]">
                       Canonic
                     </h1>
-                    <p className="text-2xl font-cursive font-bold text-venus-pink tracking-normal">
+                    <p className="text-2xl font-cursive font-bold text-white tracking-normal drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]">
                       Beauty, Smarter
                     </p>
                   </div>
@@ -3371,7 +3371,7 @@ export default function App() {
                     title="Explore Products"
                   >
                     <img 
-                      src="/assets/landing_banner.png" 
+                      src="/assets/banner1.jpg" 
                       alt="Canonic" 
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover object-[center_46%] transition-transform duration-700 ease-out group-hover:scale-[1.01]" 
