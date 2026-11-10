@@ -41,7 +41,6 @@ export const getOAuthRedirectUrl = (): string => {
   return data;
 };
 */
-
 export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
   
@@ -49,36 +48,24 @@ export const signInWithGoogle = async () => {
   console.log("1. Frontend redirectTo:", redirectTo);
   console.log("2. Supabase Project URL:", supabase.supabaseUrl);
 
-  // Use skipBrowserRedirect: true to capture the generated Google OAuth URL
+  // Explicitly ensure options object is structured correctly for Supabase
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo,
-      skipBrowserRedirect: true, // Prevents immediate redirect
+      redirectTo: redirectTo,
+      skipBrowserRedirect: false,
     },
   });
 
   if (error) {
-    console.error("Supabase OAuth Initialization Error:", error);
+    console.error("Supabase OAuth Error:", error);
     throw error;
   }
 
   console.log("3. Generated Google OAuth URL Payload:", data?.url);
-  
-  if (data?.url) {
-    // Parse the URL to inspect query parameters
-    const parsedUrl = new URL(data.url);
-    console.log("   - Target Google Endpoint:", parsedUrl.origin + parsedUrl.pathname);
-    console.log("   - Client ID Sent:", parsedUrl.searchParams.get('client_id'));
-    console.log("   - Redirect URI Sent to Google:", parsedUrl.searchParams.get('redirect_uri'));
-    console.log("   - Final App Redirect (redirect_to):", parsedUrl.searchParams.get('redirect_to'));
-    
-    // Perform manual redirection after inspection
-    window.location.href = data.url;
-  }
-
   return data;
 };
+
 
 /**
  * Parses the access_token and refresh_token from the URL hash fragment (and query parameters fallback).
