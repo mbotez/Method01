@@ -56,13 +56,18 @@ export const signInWithGoogle = async () => {
     throw error;
   }
 
-  // This will print the full URL in the console AND pause execution via an alert popup
-  console.log("FULL SUPABASE OAUTH URL:", data?.url);
-  window.prompt("Copy your OAuth URL here:", data?.url); // Opens a copyable popup box!
 
   return data;
 };
 
+
+export interface AuthTokens {
+  access_token?: string;
+  refresh_token?: string;
+  code?: string;
+  error?: string;
+  error_description?: string;
+}
 
 /**
  * Parses the access_token and refresh_token from the URL hash fragment (and query parameters fallback).

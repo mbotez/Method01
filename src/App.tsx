@@ -1221,28 +1221,14 @@ export default function App() {
     }
     setIsSearchingRoutine(true);
     try {
-      const formattedQuery = query
-        .trim()
-        .split(/\s+/)
-        .filter(word => word.length > 0)
-        .map(word => `${word}:*`)
-        .join(' & ');
-
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .textSearch('fts_search', formattedQuery, {
-          config: 'english'
-        })
-        .limit(10);
-      
-      if (error) throw error;
+      const data = await searchProducts(query, 'All');
       if (currentId === routineSearchIdRef.current) {
         setRoutineSearchResults(data || []);
       }
     } catch (err) {
       if (currentId === routineSearchIdRef.current) {
-        }
+        setRoutineSearchResults([]);
+      }
     } finally {
       if (currentId === routineSearchIdRef.current) {
         setIsSearchingRoutine(false);
