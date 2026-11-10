@@ -44,16 +44,10 @@ export const getOAuthRedirectUrl = (): string => {
 export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
   
-  console.log("=== SUPABASE OAUTH DIAGNOSTIC ===");
-  console.log("1. Frontend redirectTo:", redirectTo);
-  console.log("2. Supabase Project URL:", supabase.supabaseUrl);
-
-  // Explicitly ensure options object is structured correctly for Supabase
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: redirectTo,
-      skipBrowserRedirect: false,
     },
   });
 
@@ -62,7 +56,8 @@ export const signInWithGoogle = async () => {
     throw error;
   }
 
-  console.log("3. Generated Google OAuth URL Payload:", data?.url);
+  // Print the complete full URL string to inspect the query parameters
+  console.log("FULL SUPABASE OAUTH URL:", data?.url);
   return data;
 };
 
