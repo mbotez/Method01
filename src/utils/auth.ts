@@ -56,8 +56,10 @@ export const signInWithGoogle = async () => {
     throw error;
   }
 
-  // Print the complete full URL string to inspect the query parameters
+  // This will print the full URL in the console AND pause execution via an alert popup
   console.log("FULL SUPABASE OAUTH URL:", data?.url);
+  window.prompt("Copy your OAuth URL here:", data?.url); // Opens a copyable popup box!
+
   return data;
 };
 
