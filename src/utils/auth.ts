@@ -45,35 +45,40 @@ export const getOAuthRedirectUrl = (): string => {
 export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
   
-  // Console logs to debug the exact redirect URL and window origin
-  console.log("=== GOOGLE OAUTH DEBUG ===");
-  console.log("Current Window Origin:", typeof window !== 'undefined' ? window.location.origin : 'SSR');
-  console.log("Generated redirectTo URL:", redirectTo);
-  console.log("Supabase Client Project Ref:", supabase.supabaseUrl);
-  console.log("==========================");
+  console.log("=== SUPABASE OAUTH DIAGNOSTIC ===");
+  console.log("1. Frontend redirectTo:", redirectTo);
+  console.log("2. Supabase Project URL:", supabase.supabaseUrl);
 
+  // Use skipBrowserRedirect: true to capture the generated Google OAuth URL
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo,
+      skipBrowserRedirect: true, // Prevents immediate redirect
     },
   });
 
   if (error) {
-    console.error("Supabase OAuth Error:", error);
+    console.error("Supabase OAuth Initialization Error:", error);
     throw error;
+  }
+
+  console.log("3. Generated Google OAuth URL Payload:", data?.url);
+  
+  if (data?.url) {
+    // Parse the URL to inspect query parameters
+    const parsedUrl = new URL(data.url);
+    console.log("   - Target Google Endpoint:", parsedUrl.origin + parsedUrl.pathname);
+    console.log("   - Client ID Sent:", parsedUrl.searchParams.get('client_id'));
+    console.log("   - Redirect URI Sent to Google:", parsedUrl.searchParams.get('redirect_uri'));
+    console.log("   - Final App Redirect (redirect_to):", parsedUrl.searchParams.get('redirect_to'));
+    
+    // Perform manual redirection after inspection
+    window.location.href = data.url;
   }
 
   return data;
 };
-
-export interface AuthTokens {
-  access_token?: string;
-  refresh_token?: string;
-  code?: string;
-  error?: string;
-  error_description?: string;
-}
 
 /**
  * Parses the access_token and refresh_token from the URL hash fragment (and query parameters fallback).
