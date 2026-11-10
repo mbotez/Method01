@@ -200,7 +200,7 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
     title: 'The Sensitive & Rosacea-Prone Protocol',
     readTime: '3 min read',
     subtitle: 'Vascular stabilization, thermal control, and barrier comfort',
-    summary: 'A dermatological guide to reducing chronic erythema, transient neurovascular flushing, and cutaneous burning while maintaining active skin rejuvenation.',
+    summary: 'An expert guide to reducing chronic redness, transient flushing, and skin irritation while maintaining active skin rejuvenation.',
     keyRule: 'Rule of Thermal & Chemical Restraint: Minimize extreme temperature shifts and eliminate vascular irritants like ethanol, menthol, and synthetic dyes.',
     steps: [
       { title: 'Vascular Calming with Azelaic Acid', desc: 'Azelaic acid (10–15%) reduces inflammatory cathelicidins and visibly calms micro-vascular dilation without triggering photosensitivity.' },
@@ -313,6 +313,7 @@ export const Social = ({
   const [selectedGuide, setSelectedGuide] = useState<SkincareGuide | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
   const [savedGuideIds, setSavedGuideIds] = useState<string[]>([]);
+  const [guides, setGuides] = useState<SkincareGuide[]>(SKINCARE_GUIDES);
 
   const toggleSaveGuide = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -430,6 +431,27 @@ export const Social = ({
 
       if (articleData) setArticles(articleData);
 
+      const { data: guideData } = await supabase
+        .from('guides')
+        .select('*');
+
+      if (guideData && guideData.length > 0) {
+        const mappedGuides = guideData.map((g: any) => ({
+          id: g.id,
+          category: g.category,
+          title: g.title,
+          readTime: g.read_time || '4 min read',
+          subtitle: g.subtitle,
+          summary: g.description,
+          keyRule: g.rule,
+          steps: g.roadmap || [],
+          dos: g.dos || [],
+          donts: g.donts || [],
+          recommendedActives: g.recommended_formulations || []
+        }));
+        setGuides(mappedGuides);
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: followsData } = await supabase
@@ -469,7 +491,7 @@ export const Social = ({
     return matchesSearch;
   });
 
-  const filteredGuides = SKINCARE_GUIDES.filter(guide => {
+  const filteredGuides = guides.filter(guide => {
     const matchesCategory = guideCategoryFilter === 'All' || guide.category === guideCategoryFilter;
     const query = searchQuery.trim().toLowerCase();
     const matchesSearch = !query || 
@@ -997,9 +1019,9 @@ export const Social = ({
                 {selectedGuide.summary}
               </p>
 
-              {/* Core Clinical Rule */}
+               {/* Core Routine Rule */}
               <div className="p-4 rounded-2xl bg-venus-accent/[0.06] border border-black/5 text-left space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-black/50 block">Dermatological Governing Rule</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-black/50 block">Skin Science Governing Rule</span>
                 <p className="text-xs md:text-sm font-bold text-black leading-snug">
                   {selectedGuide.keyRule}
                 </p>
@@ -1009,7 +1031,7 @@ export const Social = ({
               <div className="space-y-3">
                 <h4 className="text-xs font-black uppercase tracking-wider text-black flex items-center gap-2">
                   <Layers className="w-4 h-4 text-venus-accent" />
-                  Clinical Application Roadmap
+                  Routine Application Roadmap
                 </h4>
                 <div className="space-y-2.5">
                   {selectedGuide.steps.map((st, sIdx) => (
@@ -1031,7 +1053,7 @@ export const Social = ({
                 <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/50 space-y-2">
                   <h5 className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    Clinical Dos
+                    Expert Dos
                   </h5>
                   <ul className="space-y-1.5">
                     {selectedGuide.dos.map((item, dIdx) => (
@@ -1046,7 +1068,7 @@ export const Social = ({
                 <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/50 space-y-2">
                   <h5 className="text-xs font-black uppercase tracking-wider text-rose-800 flex items-center gap-1.5">
                     <AlertCircle className="w-4 h-4 text-rose-600" />
-                    Clinical Don'ts
+                    Day-to-Day Don'ts
                   </h5>
                   <ul className="space-y-1.5">
                     {selectedGuide.donts.map((item, dIdx) => (

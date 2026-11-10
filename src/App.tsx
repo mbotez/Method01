@@ -161,7 +161,7 @@ const DEFAULT_LANDING_ARTICLES = [
     title: 'Active Ingredients Compatibility Matrix',
     category: 'Actives',
     readTime: '5 min read',
-    article_content: 'A clinical reference table explaining which dermatological actives can be combined in the same regimen, and which combinations cause chemical degradation or micro-inflammation.',
+    article_content: 'The go-to reference table explaining which dermatological actives can be combined in the same regimen, and which combinations cause chemical degradation or micro-inflammation.',
     image_url: '/assets/editorial/art_2.jpg',
     created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
     article_link: '#'
@@ -256,6 +256,37 @@ export default function App() {
   }, [user]);
 
   const [landingArticles, setLandingArticles] = useState<any[]>(DEFAULT_LANDING_ARTICLES);
+  const [landingGuide, setLandingGuide] = useState<any>(SKINCARE_GUIDES[0]);
+
+  useEffect(() => {
+    const fetchLandingGuide = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('guides')
+          .select('*')
+          .limit(1);
+        if (!error && data && data.length > 0) {
+          const g = data[0];
+          setLandingGuide({
+            id: g.id,
+            category: g.category,
+            title: g.title,
+            readTime: g.read_time || '4 min read',
+            subtitle: g.subtitle,
+            summary: g.description,
+            keyRule: g.rule,
+            steps: g.roadmap || [],
+            dos: g.dos || [],
+            donts: g.donts || [],
+            recommendedActives: g.recommended_formulations || []
+          });
+        }
+      } catch {
+        // Fallback already set
+      }
+    };
+    fetchLandingGuide();
+  }, []);
 
   useEffect(() => {
     const fetchLandingArticles = async () => {
@@ -1367,7 +1398,7 @@ export default function App() {
         email: user?.email,
       }
     };
-    setError("Database Protocol Error: " + (err.message || "Unknown error"));
+    setError("Database Error: " + (err.message || "Unknown error"));
   };
 
   // Capacitor Deep Link & Web OAuth Callback Handler
@@ -3357,7 +3388,7 @@ export default function App() {
                     title="Explore Products"
                   >
                     <img 
-                      src="/assets/banner1.jpg" 
+                      src="/assets/b2.jpg" 
                       alt="Canonic" 
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover object-[center_46%] transition-transform duration-700 ease-out group-hover:scale-[1.01]" 
@@ -3382,7 +3413,7 @@ export default function App() {
                           >
                             The Edit
                           </h2>
-                          <span className="text-xs text-black/40 font-medium hidden sm:inline">Clinical skincare guides & rituals</span>
+                          <span className="text-xs text-black/40 font-medium hidden sm:inline">Skincare guides & rituals</span>
                         </div>
                         <button 
                           onClick={() => {
@@ -3429,7 +3460,7 @@ export default function App() {
                               </div>
                               <div className="flex items-center gap-2 text-xs text-black/50">
                                 <span className="font-black uppercase tracking-wider text-[10px] text-venus-accent">
-                                  {article.category || 'Clinical Editorial'}
+                                  {article.category || 'Editorial'}
                                 </span>
                                 <span aria-hidden="true">·</span>
                                 <span>{article.readTime || '4 min read'}</span>
@@ -4219,7 +4250,7 @@ export default function App() {
                     </button>
                   </div>
                   
-                  {SKINCARE_GUIDES && SKINCARE_GUIDES.length > 0 && (
+                  {landingGuide && (
                     <div 
                       onClick={() => {
                         setSocialActiveMainTab('guides');
@@ -4229,20 +4260,20 @@ export default function App() {
                     >
                       <div className="flex items-center justify-between text-xs text-black/50">
                         <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">
-                          {SKINCARE_GUIDES[0].category}
+                          {landingGuide.category}
                         </span>
-                        <span>{SKINCARE_GUIDES[0].readTime}</span>
+                        <span>{landingGuide.readTime}</span>
                       </div>
                       <div>
                         <h4 className="text-sm font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors">
-                          {SKINCARE_GUIDES[0].title}
+                          {landingGuide.title}
                         </h4>
                         <p className="text-xs text-black/70 leading-relaxed font-medium mt-1">
-                          {SKINCARE_GUIDES[0].summary}
+                          {landingGuide.summary}
                         </p>
                       </div>
                       <div className="pt-2 border-t border-black/5 flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-black">
-                        <span>Explore full protocol</span>
+                        <span>Explore full guide</span>
                         <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                       </div>
                     </div>
@@ -4273,7 +4304,7 @@ export default function App() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <Sun className="w-5 h-5 text-venus-accent" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">Regimen Protocol</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">Routine</span>
                   </div>
                   <h2 className="text-2xl md:text-3xl font-sans font-black text-black uppercase tracking-tight">
                     My Routines
@@ -4435,7 +4466,7 @@ export default function App() {
                         onClick={async (e) => {
                           const btn = e.currentTarget;
                           btn.disabled = true;
-                          btn.innerText = "Syncing Protocol...";
+                          btn.innerText = "Syncing Routine...";
                           try {
                             const data = await import('./data/products.json');
                             const payload = data.default;
