@@ -109,8 +109,7 @@ export const setSessionFromUrl = async (
       if (sessionError) {
         if (sessionError.message?.includes('Refresh Token')) {
           await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-        } else {
-          }
+        }
         onError?.(sessionError.message);
         return false;
       }
@@ -176,8 +175,7 @@ export const setupCapacitorDeepLinkAuth = (
         handleDeepLinkUrl(launchUrl.url);
       }
     })
-    .catch((err) => {
-      });
+    .catch(() => {});
 
   // Listen for deep link events while the app is active or in background
   const listenerPromise = App.addListener('appUrlOpen', async (data: URLOpenListenerEvent) => {
