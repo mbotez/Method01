@@ -85,8 +85,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const pregnant = userProfile.pregnant === 'Yes' ? 'Yes' : 'No';
     
     // Initialize Supabase Client
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://stbperzlmmslrkdpqawt.supabase.co';
+    const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN0YnBlcnpsbW1zbHJrZHBxYXd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNjk5ODMsImV4cCI6MjA5Mjk0NTk4M30.37UW8BgKqbuw8XfcfY3zWWxkVv44_A0nJng0yDsudx8';
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
     // EXECUTE RPC CALL WITH DIRECT QUERY FALLBACK

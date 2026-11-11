@@ -1648,7 +1648,7 @@ export default function App() {
         } else {
           return supabase
             .from('products')
-            .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, natural, red, dry, aging, blem_prone), product_scores(cat2, cat3)')
+            .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)')
             .limit(500);
         }
       } else if (primaryFilter === 'By Concern') {
@@ -1680,13 +1680,50 @@ export default function App() {
         } else {
           return supabase
             .from('products')
-            .select('id, brand, name, type, photo_url, products_filter(red, dry, aging, blem_prone), product_scores(cat2, cat3)')
+            .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)')
+            .limit(500);
+        }
+      } else if (primaryFilter === 'By Ingredient') {
+        const sub = (subFilter || '').toLowerCase();
+        const ingredientColumnMap: Record<string, string> = {
+          'retinols': 'c_retinol',
+          'retinol': 'c_retinol',
+          'hyaluronic acid': 'c_ha',
+          'ha': 'c_ha',
+          'pdrn': 'c_pdrn',
+          'collagen': 'c_collagen',
+          'niacinamide': 'c_niac',
+          'salicylic acid': 'c_salicylic',
+          'salicylic': 'c_salicylic',
+          'vitamin c': 'c_vitc',
+          'vit c': 'c_vitc',
+          'vitamin e': 'c_vite',
+          'vit e': 'c_vite',
+          'glycolic acid': 'c_glycolic',
+          'glycolic': 'c_glycolic',
+          'peptides': 'c_peptides',
+          'peptide': 'c_peptides',
+          'ceramides': 'c_ceramide',
+          'ceramide': 'c_ceramide',
+          'aha/bha': 'c_ahabha',
+        };
+        const col = ingredientColumnMap[sub];
+        if (col) {
+          return supabase
+            .from('products')
+            .select(`id, brand, name, type, photo_url, products_filter!inner(${col}), product_scores(cat2, cat3)`)
+            .eq(`products_filter.${col}`, true)
+            .limit(100);
+        } else {
+          return supabase
+            .from('products')
+            .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)')
             .limit(500);
         }
       } else {
         return supabase
           .from('products')
-          .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, natural, red, dry, aging, blem_prone), product_scores(cat2, cat3)')
+          .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)')
           .limit(500);
       }
     };
@@ -3629,7 +3666,8 @@ export default function App() {
                             const pIngs = Array.isArray(p.ingredients) ? p.ingredients.map((i: string) => i.toLowerCase()) : [];
 
                             const cat2 = (p.product_scores?.cat2 || '').toLowerCase();
-                            const pregSafe = p.products_filter?.preg_safe === true;
+                            const pf = (Array.isArray(p.products_filter) ? p.products_filter[0] : p.products_filter) || {};
+                            const pregSafe = pf.preg_safe === true;
 
                             if (primaryFilter === 'By Type') {
                               if (subFilter === 'All' || subFilter === 'all') return true;
@@ -3639,7 +3677,7 @@ export default function App() {
                               if (sub === 'cream') return pType.includes('cream') || cat2.includes('cream');
                               if (sub === 'serum') return pType.includes('serum') || cat2.includes('serum');
                               if (sub === 'toner') return pType.includes('toner') || cat2.includes('toner');
-                              if (sub === 'retinol') return pType.includes('retinol') || pName.includes('retinol') || pIngs.some(i => i.includes('retinol'));
+                              if (sub === 'retinol') return pf.c_retinol === true || pType.includes('retinol') || pName.includes('retinol') || pIngs.some(i => i.includes('retinol'));
                               if (sub === 'moisturizer') return pType.includes('moist') || cat2.includes('moist');
                               return pType.includes(sub) || cat2.includes(sub);
                             }
@@ -3652,26 +3690,54 @@ export default function App() {
                             if (primaryFilter === 'By Ingredient') {
                               if (subFilter === 'all' || subFilter === 'All') return true;
                               const target = subFilter.toLowerCase();
-                              return pIngs.some(i => i.includes(target)) || pName.includes(target) || pDesc.includes(target);
+                              if (target === 'retinols' || target === 'retinol') {
+                                if (pf.c_retinol === true) return true;
+                              } else if (target === 'hyaluronic acid' || target === 'ha') {
+                                if (pf.c_ha === true) return true;
+                              } else if (target === 'pdrn') {
+                                if (pf.c_pdrn === true || pf.pdrn === true) return true;
+                              } else if (target === 'collagen') {
+                                if (pf.c_collagen === true) return true;
+                              } else if (target === 'niacinamide') {
+                                if (pf.c_niac === true) return true;
+                              } else if (target === 'salicylic acid' || target === 'salicylic') {
+                                if (pf.c_salicylic === true) return true;
+                              } else if (target === 'vitamin c' || target === 'vit c' || target === 'vitc') {
+                                if (pf.c_vitc === true) return true;
+                              } else if (target === 'vitamin e' || target === 'vit e' || target === 'vite') {
+                                if (pf.c_vite === true) return true;
+                              } else if (target === 'glycolic acid' || target === 'glycolic') {
+                                if (pf.c_glycolic === true) return true;
+                              } else if (target === 'peptides' || target === 'peptide') {
+                                if (pf.c_peptides === true) return true;
+                              } else if (target === 'ceramides' || target === 'ceramide') {
+                                if (pf.c_ceramide === true) return true;
+                              } else if (target === 'aha/bha') {
+                                if (pf.c_ahabha === true) return true;
+                              }
+                              const cleanTarget = target.replace(/s$/, '');
+                              return pIngs.some((i: string) => i.includes(target) || (cleanTarget.length > 2 && i.includes(cleanTarget))) ||
+                                     pDesc.includes(target) || (cleanTarget.length > 2 && pDesc.includes(cleanTarget)) ||
+                                     pName.includes(target) || (cleanTarget.length > 2 && pName.includes(cleanTarget));
                             }
                             if (primaryFilter === 'By Concern') {
                               if (subFilter === 'all' || subFilter === 'All') return true;
                               const target = subFilter.toLowerCase();
-                              if (target === 'blemish-prone skin') return p.products_filter?.blem_prone === true;
-                              if (target === 'redness') return p.products_filter?.red === true;
-                              if (target === 'dry skin') return p.products_filter?.dry === true;
-                              if (target === 'aging skin') return p.products_filter?.aging === true;
+                              if (target === 'blemish-prone skin') return pf.blem_prone === true;
+                              if (target === 'redness') return pf.red === true;
+                              if (target === 'dry skin') return pf.dry === true;
+                              if (target === 'aging skin') return pf.aging === true;
                               return pDesc.includes(target) || pName.includes(target);
                             }
                             if (primaryFilter === 'Trending') {
                               if (subFilter === 'all' || subFilter === 'All') return true;
                               const target = subFilter.toLowerCase();
-                              if (target === 'k-beauty') return p.products_filter?.k_beauty === true;
-                              if (target === 'j-beauty') return p.products_filter?.j_beauty === true;
-                              if (target === 'glass skin') return p.products_filter?.glass === true;
-                              if (target === 'pdrn') return p.products_filter?.c_pdrn === true;
-                              if (target === 'natural') return p.products_filter?.natural === true;
-                              return pDesc.includes(target) || pName.includes(target) || pBrand.includes(target) || pIngs.some(i => i.includes(target));
+                              if (target === 'k-beauty') return pf.k_beauty === true;
+                              if (target === 'j-beauty') return pf.j_beauty === true;
+                              if (target === 'glass skin') return pf.glass === true;
+                              if (target === 'pdrn') return pf.c_pdrn === true || pf.pdrn === true;
+                              if (target === 'natural') return pf.natural === true;
+                              return pDesc.includes(target) || pName.includes(target) || pBrand.includes(target) || pIngs.some((i: string) => i.includes(target));
                             }
                             return true;
                           });
@@ -4510,8 +4576,9 @@ export default function App() {
                         const pIngs = Array.isArray(p.ingredients) ? p.ingredients.map((i: string) => i.toLowerCase()) : [];
 
                         const cat2 = (p.product_scores?.cat2 || '').toLowerCase();
-                        const isMen = p.products_filter?.men === true;
-                        const pregSafe = p.products_filter?.preg_safe === true;
+                        const pf = (Array.isArray(p.products_filter) ? p.products_filter[0] : p.products_filter) || {};
+                        const isMen = pf.men === true;
+                        const pregSafe = pf.preg_safe === true;
 
                         if (primaryFilter === 'By Type') {
                           if (subFilter === 'All' || subFilter === 'all') return true;
@@ -4526,26 +4593,54 @@ export default function App() {
                         if (primaryFilter === 'By Ingredient') {
                           if (subFilter === 'all' || subFilter === 'All') return true;
                           const target = subFilter.toLowerCase();
-                          return pIngs.some(i => i.includes(target)) || pDesc.includes(target) || pName.includes(target);
+                          if (target === 'retinols' || target === 'retinol') {
+                            if (pf.c_retinol === true) return true;
+                          } else if (target === 'hyaluronic acid' || target === 'ha') {
+                            if (pf.c_ha === true) return true;
+                          } else if (target === 'pdrn') {
+                            if (pf.c_pdrn === true || pf.pdrn === true) return true;
+                          } else if (target === 'collagen') {
+                            if (pf.c_collagen === true) return true;
+                          } else if (target === 'niacinamide') {
+                            if (pf.c_niac === true) return true;
+                          } else if (target === 'salicylic acid' || target === 'salicylic') {
+                            if (pf.c_salicylic === true) return true;
+                          } else if (target === 'vitamin c' || target === 'vit c' || target === 'vitc') {
+                            if (pf.c_vitc === true) return true;
+                          } else if (target === 'vitamin e' || target === 'vit e' || target === 'vite') {
+                            if (pf.c_vite === true) return true;
+                          } else if (target === 'glycolic acid' || target === 'glycolic') {
+                            if (pf.c_glycolic === true) return true;
+                          } else if (target === 'peptides' || target === 'peptide') {
+                            if (pf.c_peptides === true) return true;
+                          } else if (target === 'ceramides' || target === 'ceramide') {
+                            if (pf.c_ceramide === true) return true;
+                          } else if (target === 'aha/bha') {
+                            if (pf.c_ahabha === true) return true;
+                          }
+                          const cleanTarget = target.replace(/s$/, '');
+                          return pIngs.some((i: string) => i.includes(target) || (cleanTarget.length > 2 && i.includes(cleanTarget))) ||
+                                 pDesc.includes(target) || (cleanTarget.length > 2 && pDesc.includes(cleanTarget)) ||
+                                 pName.includes(target) || (cleanTarget.length > 2 && pName.includes(cleanTarget));
                         }
                         if (primaryFilter === 'By Concern') {
                           if (subFilter === 'all' || subFilter === 'All') return true;
                           const target = subFilter.toLowerCase();
-                          if (target === 'blemish-prone skin') return p.products_filter?.blem_prone === true;
-                          if (target === 'redness') return p.products_filter?.red === true;
-                          if (target === 'dry skin') return p.products_filter?.dry === true;
-                          if (target === 'aging skin') return p.products_filter?.aging === true;
+                          if (target === 'blemish-prone skin') return pf.blem_prone === true;
+                          if (target === 'redness') return pf.red === true;
+                          if (target === 'dry skin') return pf.dry === true;
+                          if (target === 'aging skin') return pf.aging === true;
                           return pDesc.includes(target) || pName.includes(target);
                         }
                         if (primaryFilter === 'Trending') {
                           if (subFilter === 'all' || subFilter === 'All') return true;
                           const target = subFilter.toLowerCase();
-                          if (target === 'k-beauty') return p.products_filter?.k_beauty === true;
-                          if (target === 'j-beauty') return p.products_filter?.j_beauty === true;
-                          if (target === 'glass skin') return p.products_filter?.glass === true;
-                          if (target === 'pdrn') return p.products_filter?.c_pdrn === true;
-                          if (target === 'natural') return p.products_filter?.natural === true;
-                          return pDesc.includes(target) || pName.includes(target) || pBrand.includes(target) || pIngs.some(i => i.includes(target));
+                          if (target === 'k-beauty') return pf.k_beauty === true;
+                          if (target === 'j-beauty') return pf.j_beauty === true;
+                          if (target === 'glass skin') return pf.glass === true;
+                          if (target === 'pdrn') return pf.c_pdrn === true || pf.pdrn === true;
+                          if (target === 'natural') return pf.natural === true;
+                          return pDesc.includes(target) || pName.includes(target) || pBrand.includes(target) || pIngs.some((i: string) => i.includes(target));
                         }
                         return true;
                       });

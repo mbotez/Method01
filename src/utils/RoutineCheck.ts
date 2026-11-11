@@ -155,6 +155,25 @@ const concernLabels: Record<number, string> = {
   12: 'not_sure'
 };
 
+export function isNotSureConcern(concern: any): boolean {
+  if (!concern || concern === 12 || Number(concern) === 12) return true;
+  if (concernLabels[Number(concern)] === 'not_sure') return true;
+  if (typeof concern === 'string') {
+    const normalized = concern.toLowerCase().replace(/_/g, ' ').trim();
+    if (
+      normalized === 'not sure' ||
+      normalized === 'not_sure' ||
+      normalized === "none/ i'm not sure" ||
+      normalized === "none / i'm not sure" ||
+      normalized === 'none' ||
+      normalized === ''
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ==========================================
 // STEP-BY-STEP CALCULATION HELPERS
 // ==========================================
@@ -959,7 +978,7 @@ export async function checkRoutine(
   if (userProfile.main_concern === 11) {
     const hasYeastTriggers = detrimental.some(d => d.reason.toLowerCase().includes('yeast-related breakouts'));
     mainScore = hasYeastTriggers ? 0 : 5;
-  } else if (userProfile.main_concern === 12) {
+  } else if (isNotSureConcern(userProfile.main_concern)) {
     const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || m.type === 'missing_spf');
     mainScore = corePillarsPass ? 5 : 0;
   }
@@ -968,7 +987,7 @@ export async function checkRoutine(
   if (userProfile.scnd_concern === 11) {
     const hasYeastTriggers = detrimental.some(d => d.reason.toLowerCase().includes('yeast-related breakouts'));
     scndScore = hasYeastTriggers ? 0 : 5;
-  } else if (userProfile.scnd_concern === 12) {
+  } else if (isNotSureConcern(userProfile.scnd_concern)) {
     const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || m.type === 'missing_spf');
     scndScore = corePillarsPass ? 5 : 0;
   }
@@ -980,11 +999,11 @@ export async function checkRoutine(
   
   const matchingProducts = routineProducts.filter(p => p.cat2 === 'Treatment' || p.cat2 === 'Targeted');
 
-  if (mainScore < 3) {
+  if (mainScore < 3 && !isNotSureConcern(userProfile.main_concern)) {
     const mainLabel = concernLabels[userProfile.main_concern] || 'your main concern';
     shortfallNotes.push(`This routine isn't doing much for ${mainLabel.replace(/_/g, ' ')}, your top concern.`);
   }
-  if (scndScore < 3 && userProfile.scnd_concern !== userProfile.main_concern) {
+  if (scndScore < 3 && userProfile.scnd_concern !== userProfile.main_concern && !isNotSureConcern(userProfile.scnd_concern)) {
     const scndLabel = concernLabels[userProfile.scnd_concern] || 'your secondary concern';
     shortfallNotes.push(`It's also light on support for ${scndLabel.replace(/_/g, ' ')}.`);
   }
@@ -993,10 +1012,10 @@ export async function checkRoutine(
   // STEP 8 — Holistic Routine Efficacy Score and suggested query
   // ------------------------------------------
   const underServedConcerns: { num: number; type: 'main' | 'secondary' }[] = [];
-  if (mainScore < 3) {
+  if (mainScore < 3 && !isNotSureConcern(userProfile.main_concern)) {
     underServedConcerns.push({ num: userProfile.main_concern, type: 'main' });
   }
-  if (scndScore < 3 && userProfile.scnd_concern !== userProfile.main_concern) {
+  if (scndScore < 3 && userProfile.scnd_concern !== userProfile.main_concern && !isNotSureConcern(userProfile.scnd_concern)) {
     underServedConcerns.push({ num: userProfile.scnd_concern, type: 'secondary' });
   }
 
