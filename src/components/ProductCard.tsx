@@ -571,12 +571,14 @@ export const ProductCardContent = ({
     if (!newCommentText.trim()) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) {
+      console.warn('[Comments] No active session found, showing auth modal');
       setShowAuthModal(true);
       return;
     }
 
     setIsSubmittingComment(true);
     try {
+      console.log('[Comments] Saving comment for product:', productId, 'user:', session.user.id);
       const { data, error } = await supabase
         .from('product_comments')
         .insert({
@@ -587,12 +589,16 @@ export const ProductCardContent = ({
         })
         .select();
 
-      if (!error && data) {
+      if (error) {
+        console.error('[Comments] Supabase insert error:', error);
+        alert(`Failed to save comment: ${error.message}`);
+      } else if (data) {
+        console.log('[Comments] Successfully saved comment:', data[0]);
         setComments(prev => [data[0], ...prev]);
         setNewCommentText('');
       }
     } catch (err) {
-      console.error('Error saving comment:', err);
+      console.error('[Comments] Exception saving comment:', err);
     } finally {
       setIsSubmittingComment(false);
     }

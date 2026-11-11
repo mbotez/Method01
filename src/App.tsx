@@ -39,7 +39,8 @@ import {
   ArrowLeft,
   RefreshCw,
   Sparkles,
-  Sliders
+  Sliders,
+  Check
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase, recoverSupabaseSession } from './lib/supabase';
@@ -532,6 +533,117 @@ export default function App() {
   const [isSavingGoals, setIsSavingGoals] = useState(false);
   const [goalsSaveError, setGoalsSaveError] = useState<string | null>(null);
 
+  // Profile editing states for skin type, barrier status, and breakout types
+  const [isEditingSkinType, setIsEditingSkinType] = useState(false);
+  const [editSkinTypeVal, setEditSkinTypeVal] = useState('normal');
+  const [isSavingSkinType, setIsSavingSkinType] = useState(false);
+  const [skinTypeSaveError, setSkinTypeSaveError] = useState<string | null>(null);
+
+  const [isEditingBarrier, setIsEditingBarrier] = useState(false);
+  const [editSensitivity, setEditSensitivity] = useState<string[]>([]);
+  const [editReaction, setEditReaction] = useState('Very good, no problems');
+  const [isSavingBarrier, setIsSavingBarrier] = useState(false);
+  const [barrierSaveError, setBarrierSaveError] = useState<string | null>(null);
+
+  const [isEditingBreakout, setIsEditingBreakout] = useState(false);
+  const [editBreakoutTypes, setEditBreakoutTypes] = useState<number[]>([]);
+  const [isSavingBreakout, setIsSavingBreakout] = useState(false);
+  const [breakoutSaveError, setBreakoutSaveError] = useState<string | null>(null);
+
+  const handleSaveSkinType = async () => {
+    if (!user?.id) return;
+    setIsSavingSkinType(true);
+    setSkinTypeSaveError(null);
+    try {
+      const feelMap: Record<string, string> = {
+        'Dry and tight': 'dry',
+        'Oily all over': 'oily',
+        'Comfortable': 'normal',
+        'Oily forehead and nose, but dry cheeks': 'combination',
+        'dry': 'dry',
+        'oily': 'oily',
+        'combination': 'combination',
+        'normal': 'normal'
+      };
+      const resolvedType = feelMap[editSkinTypeVal] || editSkinTypeVal;
+      const { error } = await supabase
+        .from('user_profile')
+        .update({ skin_type: resolvedType })
+        .eq('id', user.id);
+      if (error) throw error;
+      setUserProfile((prev: any) => prev ? { ...prev, skin_type: resolvedType } : { skin_type: resolvedType });
+      setIsEditingSkinType(false);
+    } catch (err: any) {
+      setSkinTypeSaveError(err?.message || 'Failed to update skin type');
+    } finally {
+      setIsSavingSkinType(false);
+    }
+  };
+
+  const handleSaveBarrier = async () => {
+    if (!user?.id) return;
+    setIsSavingBarrier(true);
+    setBarrierSaveError(null);
+    try {
+      const reactionMap: Record<string, number> = {
+        'Very good, no problems': 0,
+        'Sometimes sensitive': 1,
+        'Often get redness, bumps, or burning': 2,
+        'Almost everything irritates my skin': 3
+      };
+      const symptomsScore = editSensitivity.length;
+      const reactionScore = reactionMap[editReaction] || 0;
+      const barrierScore = symptomsScore + reactionScore;
+
+      const { error } = await supabase
+        .from('user_profile')
+        .update({
+          barrier_status: barrierScore,
+          sensitivity: editSensitivity,
+          skin_characteristics: symptomsScore,
+          new_product_reaction: reactionScore
+        })
+        .eq('id', user.id);
+      if (error) throw error;
+      setUserProfile((prev: any) => prev ? {
+        ...prev,
+        barrier_status: barrierScore,
+        sensitivity: editSensitivity,
+        skin_characteristics: symptomsScore,
+        new_product_reaction: reactionScore
+      } : {
+        barrier_status: barrierScore,
+        sensitivity: editSensitivity,
+        skin_characteristics: symptomsScore,
+        new_product_reaction: reactionScore
+      });
+      setIsEditingBarrier(false);
+    } catch (err: any) {
+      setBarrierSaveError(err?.message || 'Failed to update skin barrier status');
+    } finally {
+      setIsSavingBarrier(false);
+    }
+  };
+
+  const handleSaveBreakout = async () => {
+    if (!user?.id) return;
+    setIsSavingBreakout(true);
+    setBreakoutSaveError(null);
+    try {
+      const { error } = await supabase
+        .from('user_profile')
+        .update({ breakout_type: editBreakoutTypes })
+        .eq('id', user.id);
+      if (error) throw error;
+      setUserProfile((prev: any) => prev ? { ...prev, breakout_type: editBreakoutTypes } : { breakout_type: editBreakoutTypes });
+      setIsEditingBreakout(false);
+    } catch (err: any) {
+      setBreakoutSaveError(err?.message || 'Failed to update breakout types');
+    } finally {
+      setIsSavingBreakout(false);
+    }
+  };
+
   const handleSaveGoals = async () => {
     if (!user?.id) return;
     setIsSavingGoals(true);
@@ -559,6 +671,12 @@ export default function App() {
       });
 
       setIsEditingGoals(false);
+
+      // If user edits target skin goals to choose 'Breakouts & post-breakout marks' (id 1), open up breakout type choices
+      if (editMainConcern === 1 || editScndConcern === 1) {
+        setEditBreakoutTypes(Array.isArray(userProfile?.breakout_type) ? userProfile.breakout_type : (userProfile?.breakout_type ? [userProfile.breakout_type] : []));
+        setIsEditingBreakout(true);
+      }
     } catch (err: any) {
       setGoalsSaveError(err?.message || 'Failed to update skin goals');
     } finally {
@@ -5425,22 +5543,82 @@ export default function App() {
                     {/* Skin Type Card */}
                     <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm relative overflow-hidden flex flex-col justify-between">
                       <div className="absolute top-0 right-0 w-24 h-24 bg-venus-accent/[0.03] rounded-full -mr-6 -mt-6" />
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
                           <FlaskConical className="w-5 h-5 text-venus-accent" />
                           <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block">Skin Type</span>
                         </div>
-                        <h3 className="text-2xl font-black text-black uppercase tracking-tight capitalize">
-                          {userProfile.skin_type || 'Unknown'}
-                        </h3>
+                        {!isEditingSkinType && (
+                          <button
+                            onClick={() => {
+                              setEditSkinTypeVal(userProfile?.skin_type || 'normal');
+                              setSkinTypeSaveError(null);
+                              setIsEditingSkinType(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                            title="Edit skin type"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                        )}
                       </div>
-                      <p className="text-[11px] text-black/60 font-medium mt-3">
-                        {userProfile.skin_type === 'dry' && 'Your skin produces less sebum than normal, which can lead to tightness, flaking, or a dull complexion.'}
-                        {userProfile.skin_type === 'oily' && 'Your skin has overactive sebaceous glands, producing excess sebum, which can result in shine and breakouts.'}
-                        {userProfile.skin_type === 'combination' && 'Your skin has an oily T-zone (forehead, nose, chin) but is normal or dry on the cheeks.'}
-                        {userProfile.skin_type === 'normal' && 'Your skin is well-balanced, with just the right amount of moisture and sebum, and is less prone to sensitivities.'}
-                        {!['dry', 'oily', 'combination', 'normal'].includes(userProfile.skin_type?.toLowerCase()) && 'Your primary skin barrier classification.'}
-                      </p>
+
+                      {isEditingSkinType ? (
+                        <div className="space-y-3 pt-1">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
+                            How does your skin feel right after washing?
+                          </label>
+                          <select
+                            value={editSkinTypeVal}
+                            onChange={(e) => setEditSkinTypeVal(e.target.value)}
+                            className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
+                          >
+                            <option value="dry">Dry and tight</option>
+                            <option value="oily">Oily all over</option>
+                            <option value="combination">Oily forehead and nose, but dry cheeks (Combination)</option>
+                            <option value="normal">Comfortable / Balanced (Normal)</option>
+                          </select>
+
+                          {skinTypeSaveError && (
+                            <p className="text-xs text-red-600 font-semibold">{skinTypeSaveError}</p>
+                          )}
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              onClick={handleSaveSkinType}
+                              disabled={isSavingSkinType}
+                              className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                            >
+                              {isSavingSkinType && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                              Save Skin Type
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsEditingSkinType(false);
+                                setSkinTypeSaveError(null);
+                              }}
+                              disabled={isSavingSkinType}
+                              className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <h3 className="text-2xl font-black text-black uppercase tracking-tight capitalize">
+                            {userProfile.skin_type || 'Unknown'}
+                          </h3>
+                          <p className="text-[11px] text-black/60 font-medium mt-3">
+                            {userProfile.skin_type === 'dry' && 'Your skin produces less sebum than normal, which can lead to tightness, flaking, or a dull complexion.'}
+                            {userProfile.skin_type === 'oily' && 'Your skin has overactive sebaceous glands, producing excess sebum, which can result in shine and breakouts.'}
+                            {userProfile.skin_type === 'combination' && 'Your skin has an oily T-zone (forehead, nose, chin) but is normal or dry on the cheeks.'}
+                            {userProfile.skin_type === 'normal' && 'Your skin is well-balanced, with just the right amount of moisture and sebum, and is less prone to sensitivities.'}
+                            {!['dry', 'oily', 'combination', 'normal'].includes(userProfile.skin_type?.toLowerCase()) && 'Your primary skin barrier classification.'}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Burn Risk Card */}
@@ -5497,24 +5675,120 @@ export default function App() {
                           </div>
                         </div>
                       </div>
-                      <Award className="w-8 h-8 text-black/10" />
+                      <div className="flex items-center gap-2">
+                        <Award className="w-8 h-8 text-black/10" />
+                        {!isEditingBarrier && (
+                          <button
+                            onClick={() => {
+                              setEditSensitivity(Array.isArray(userProfile?.sensitivity) ? userProfile.sensitivity : []);
+                              setEditReaction(userProfile?.new_product_reaction === 3 ? 'Almost everything irritates my skin' : userProfile?.new_product_reaction === 2 ? 'Often get redness, bumps, or burning' : userProfile?.new_product_reaction === 1 ? 'Sometimes sensitive' : 'Very good, no problems');
+                              setBarrierSaveError(null);
+                              setIsEditingBarrier(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                            title="Edit skin barrier status"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Progress Bar representation */}
-                    <div className="w-full bg-black/5 h-2 rounded-full overflow-hidden mb-4">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-1000 ${
-                          Number(userProfile.barrier_status) >= 6 ? 'bg-red-500' :
-                          Number(userProfile.barrier_status) >= 3 ? 'bg-yellow-500' :
-                          'bg-green-500'
-                        }`}
-                        style={{ width: `${Math.min(100, Math.max(5, (Number(userProfile.barrier_status) || 0) * 10))}%` }}
-                      />
-                    </div>
-                    
-                    <p className="text-[11px] text-black/60 font-medium">
-                      A higher score indicates a highly reactive skin barrier. Avoid introducing multiple new active serums concurrently, and prioritize barrier support ingredients like ceramides, hyaluronic acid, and niacinamide.
-                    </p>
+                    {isEditingBarrier ? (
+                      <div className="space-y-4 pt-2 border-t border-black/5">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
+                            Skin Sensitivity Issues (Select all that apply)
+                          </label>
+                          {[
+                            'Burning or stinging from products',
+                            'Redness',
+                            'Itching',
+                            'Flaking or peeling',
+                            'Tightness even after moisturizing'
+                          ].map((symptom) => {
+                            const checked = editSensitivity.includes(symptom);
+                            return (
+                              <label key={symptom} className="flex items-center gap-2 text-xs font-medium text-black/80 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setEditSensitivity([...editSensitivity, symptom]);
+                                    } else {
+                                      setEditSensitivity(editSensitivity.filter(s => s !== symptom));
+                                    }
+                                  }}
+                                  className="rounded border-black/20 text-black focus:ring-black w-4 h-4"
+                                />
+                                <span>{symptom}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
+                            How does your skin react to new products?
+                          </label>
+                          <select
+                            value={editReaction}
+                            onChange={(e) => setEditReaction(e.target.value)}
+                            className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
+                          >
+                            <option value="Very good, no problems">Very good, no problems</option>
+                            <option value="Sometimes sensitive">Sometimes sensitive</option>
+                            <option value="Often get redness, bumps, or burning">Often get redness, bumps, or burning</option>
+                            <option value="Almost everything irritates my skin">Almost everything irritates my skin</option>
+                          </select>
+                        </div>
+
+                        {barrierSaveError && (
+                          <p className="text-xs text-red-600 font-semibold">{barrierSaveError}</p>
+                        )}
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={handleSaveBarrier}
+                            disabled={isSavingBarrier}
+                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            {isSavingBarrier && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            Save Barrier Status
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsEditingBarrier(false);
+                              setBarrierSaveError(null);
+                            }}
+                            disabled={isSavingBarrier}
+                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Progress Bar representation */}
+                        <div className="w-full bg-black/5 h-2 rounded-full overflow-hidden mb-4">
+                          <div 
+                            className={`h-full rounded-full transition-all duration-1000 ${
+                              Number(userProfile.barrier_status) >= 6 ? 'bg-red-500' :
+                              Number(userProfile.barrier_status) >= 3 ? 'bg-yellow-500' :
+                              'bg-green-500'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(5, (Number(userProfile.barrier_status) || 0) * 10))}%` }}
+                          />
+                        </div>
+                        
+                        <p className="text-[11px] text-black/60 font-medium">
+                          A higher score indicates a highly reactive skin barrier. Avoid introducing multiple new active serums concurrently, and prioritize barrier support ingredients like ceramides, hyaluronic acid, and niacinamide.
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   {/* Skin Goals Card */}
@@ -5651,151 +5925,105 @@ export default function App() {
 
                   {/* Breakout Types Card */}
                   <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-black/50 mb-4 flex items-center gap-1.5">
-                      <Shield className="w-4 h-4 text-purple-500" />
-                      Breakout Characteristics
-                    </h4>
-                    {Array.isArray(userProfile.breakout_type) && userProfile.breakout_type.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {userProfile.breakout_type.map((b: any, idx: number) => (
-                          <span 
-                            key={String(b) + idx} 
-                            className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
-                          >
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                            {getBreakoutTitle(b)}
-                          </span>
-                        ))}
-                      </div>
-                    ) : typeof userProfile.breakout_type === 'number' || (typeof userProfile.breakout_type === 'string' && userProfile.breakout_type.trim() !== '') ? (
-                      <span className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                        {getBreakoutTitle(userProfile.breakout_type)}
-                      </span>
-                    ) : (
-                      <p className="text-xs text-black/40 italic">No specific breakout characteristics specified.</p>
-                    )}
-                  </div>
-
-                  {/* Skin Progress Tracker & Photo Journal */}
-                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm space-y-6">
-                    <div className="flex items-center justify-between border-b border-black/5 pb-4">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <History className="w-4 h-4 text-venus-accent" />
-                          <h4 className="text-xs font-black uppercase tracking-wider text-black">Skin Progress & Photo Journal</h4>
-                        </div>
-                        <p className="text-[11px] text-black/50 font-medium">Log your daily skin condition and track visual changes over time.</p>
-                      </div>
-                      <button 
-                        onClick={() => progressInputRef.current?.click()}
-                        className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2 bg-black/5 hover:bg-black/10 px-3 py-1.5 rounded-xl cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Add Photo</span>
-                      </button>
-                      <input 
-                        type="file" 
-                        style={{ display: 'none' }}
-                        accept="image/*" 
-                        ref={progressInputRef} 
-                        onChange={handleProgressUpload} 
-                      />
-                    </div>
-
-                    {/* Skin Rating Section */}
-                    <div>
-                      <h5 className="font-black text-black uppercase text-xs tracking-tight mb-3">Rate your skin today</h5>
-                      {!isRatingExpanded ? (
-                        <div className="flex justify-center gap-4 text-3xl">
-                          {[1, 2, 3, 4, 5].map((rating) => (
-                            <button 
-                              key={rating}
-                              onClick={() => { setSelectedRating(rating); setIsRatingExpanded(true); }}
-                              className="hover:scale-125 transition-transform cursor-pointer"
-                              title={`Rate ${rating}/5`}
-                            >
-                              {['😡', '😢', '😐', '🙂', '🤩'][rating - 1]}
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="space-y-3 bg-black/[0.02] p-4 rounded-xl border border-black/5">
-                          <p className="text-center font-bold text-sm">
-                            {['Urghhhh', 'Kinda poopy day', 'Meh, could be better', 'Feeling myself!', 'Everything is awesome!'][selectedRating! - 1]}
-                          </p>
-                          <p className="font-black text-black uppercase text-xs tracking-tight">Any notes?</p>
-                          <textarea 
-                            value={ratingNote} 
-                            onChange={(e) => setRatingNote(e.target.value)}
-                            className="w-full border border-black/15 bg-white rounded-xl p-3 text-xs outline-none focus:border-black/30 transition-all font-medium"
-                            placeholder="Add your notes..."
-                            rows={3}
-                          />
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={handleSaveRating} 
-                              className="flex-1 bg-black text-white py-2.5 rounded-xl text-xs uppercase font-black tracking-widest hover:bg-venus-accent transition-colors cursor-pointer"
-                            >
-                              Save Log
-                            </button>
-                            <button 
-                              onClick={() => setIsRatingExpanded(false)} 
-                              className="px-4 py-2.5 rounded-xl text-xs uppercase font-black tracking-widest bg-black/5 hover:bg-black/10 transition-colors cursor-pointer text-black/60"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
+                        <Shield className="w-4 h-4 text-purple-500" />
+                        Breakout Characteristics
+                      </h4>
+                      {!isEditingBreakout && (
+                        <button
+                          onClick={() => {
+                            setEditBreakoutTypes(Array.isArray(userProfile?.breakout_type) ? userProfile.breakout_type : (userProfile?.breakout_type ? [userProfile.breakout_type] : []));
+                            setBreakoutSaveError(null);
+                            setIsEditingBreakout(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                          title="Edit breakout types"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
                       )}
                     </div>
 
-                    {/* Photos Grid */}
-                    <div className="space-y-3 pt-2 border-t border-black/5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-black/40">Photo History ({progressPhotos.length})</span>
-                      </div>
-                      {progressPhotos.length === 0 ? (
-                        <div className="py-8 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-black/[0.01] w-full rounded-xl">
-                          <Camera className="w-6 h-6 text-black/20 mb-2" />
-                          <p className="text-black/40 text-xs font-black uppercase tracking-widest">No pictures added yet</p>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                          {progressPhotos.map((photo: any) => (
-                            <div key={photo.id} className="space-y-1.5">
-                              <div 
-                                onClick={() => setSelectedPhoto(photo)}
-                                className="aspect-[3/4] clean-card relative group overflow-hidden border border-black/5 bg-black/[0.02] cursor-pointer rounded-xl"
+                    {isEditingBreakout ? (
+                      <div className="space-y-4 pt-1">
+                        <p className="text-xs text-black/60 font-medium">Select all breakout characteristics that apply to your skin:</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          {BREAKOUT_PHOTO_OPTIONS.map((opt) => {
+                            const isSelected = editBreakoutTypes.includes(opt.value);
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setEditBreakoutTypes(editBreakoutTypes.filter(v => v !== opt.value));
+                                  } else {
+                                    setEditBreakoutTypes([...editBreakoutTypes, opt.value]);
+                                  }
+                                }}
+                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                  isSelected ? 'border-purple-600 bg-purple-50/50 ring-2 ring-purple-500/20' : 'border-black/10 hover:bg-black/[0.02]'
+                                }`}
                               >
-                                <img 
-                                  src={resolveImageUrl(photo.image_url)} 
-                                  alt="Progress" 
-                                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).src = 'https://placehold.co/600x600/white/black?text=Image+Not+Found';
-                                  }}
-                                />
-                                {/* Delete Button */}
-                                <button 
-                                  type="button"
-                                  onClick={(e) => {
-                                    handleDeletePhoto(photo, e);
-                                  }}
-                                  className="absolute top-1.5 right-1.5 z-[60] w-6 h-6 flex items-center justify-center bg-black/60 hover:bg-black backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer shadow-sm"
-                                  aria-label="Delete photo"
-                                >
-                                  <X className="w-3.5 h-3.5 pointer-events-none" />
-                                </button>
-                              </div>
-                              <p className="text-[9px] md:text-[10px] uppercase font-black tracking-widest text-black/60 text-center">
-                                {new Date(photo.timestamp || photo.created_at).toLocaleDateString()}
-                              </p>
-                            </div>
+                                {opt.img && (
+                                  <img src={opt.img} alt={opt.title} className="w-full h-20 object-cover rounded-lg mb-2 border border-black/5" />
+                                )}
+                                <span className="text-xs font-black text-black">{opt.title}</span>
+                                {isSelected && <Check className="w-4 h-4 text-purple-600 mt-1 self-end" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {breakoutSaveError && (
+                          <p className="text-xs text-red-600 font-semibold">{breakoutSaveError}</p>
+                        )}
+
+                        <div className="flex items-center gap-2 pt-2">
+                          <button
+                            onClick={handleSaveBreakout}
+                            disabled={isSavingBreakout}
+                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            {isSavingBreakout && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            Save Breakout Types
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsEditingBreakout(false);
+                              setBreakoutSaveError(null);
+                            }}
+                            disabled={isSavingBreakout}
+                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      Array.isArray(userProfile.breakout_type) && userProfile.breakout_type.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {userProfile.breakout_type.map((b: any, idx: number) => (
+                            <span 
+                              key={String(b) + idx} 
+                              className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                              {getBreakoutTitle(b)}
+                            </span>
                           ))}
                         </div>
-                      )}
-                    </div>
+                      ) : typeof userProfile.breakout_type === 'number' || (typeof userProfile.breakout_type === 'string' && userProfile.breakout_type.trim() !== '') ? (
+                        <span className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                          {getBreakoutTitle(userProfile.breakout_type)}
+                        </span>
+                      ) : (
+                        <p className="text-xs text-black/40 italic">No specific breakout characteristics specified.</p>
+                      )
+                    )}
                   </div>
 
                   <div className="pt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
