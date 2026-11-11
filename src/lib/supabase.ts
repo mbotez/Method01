@@ -48,6 +48,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    flowType: 'implicit',
     lock: nonBlockingLock,
   },
   global: {
@@ -86,19 +87,26 @@ export async function recoverSupabaseSession(forceRefresh: boolean = false): Pro
       console.warn('[Supabase Session] Could not start auto refresh:', e);
     }
 
-    // 2. Fetch current session with a 4-second timeout to prevent hanging on stale locks
-    const sessionPromise = supabase.auth.getSession();
-    const timeoutPromise = new Promise<{ data: { session: null }; error: Error }>((_, reject) =>
-      setTimeout(() => reject(new Error('getSession timed out')), 4000)
-    );
+    // 2. Fetch current session with a 12-second timeout to prevent hanging on stale locks
+    let sessionData: any = { session: null };
+    try {
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise<{ data: { session: any }; error: any }>((_, reject) =>
+        setTimeout(() => reject(new Error('getSession timed out')), 12000)
+      );
 
-    const { data, error } = await Promise.race([sessionPromise, timeoutPromise]);
-
-    if (error) {
-      console.warn('[Supabase Session] getSession reported error:', error.message);
+      const res = await Promise.race([sessionPromise, timeoutPromise]);
+      if (res.error) {
+        console.warn('[Supabase Session] getSession reported error:', res.error.message);
+      }
+      sessionData = res.data;
+    } catch (timeoutErr: any) {
+      console.warn('[Supabase Session] getSession timed out or delayed gracefully:', timeoutErr.message);
+      // Proceed gracefully without failing session recovery
+      return true;
     }
 
-    const session = data?.session;
+    const session = sessionData?.session;
 
     if (session) {
       const expiresAt = session.expires_at || 0;

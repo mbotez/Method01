@@ -215,9 +215,10 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
+      const hasHash = window.location.hash.includes('access_token=') || window.location.hash.includes('code=');
       if (path.startsWith('/privacy')) return AppState.PRIVACY_POLICY;
       if (path.startsWith('/delete-account')) return AppState.DELETE_ACCOUNT;
-      if (path.startsWith('/dashboard')) return AppState.DASHBOARD;
+      if (path.startsWith('/dashboard') || path.startsWith('/auth/callback') || hasHash) return AppState.DASHBOARD;
       if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
       if (path.startsWith('/tracker')) return AppState.TRACKER;
       if (path.startsWith('/social')) return AppState.SOCIAL;
@@ -260,7 +261,7 @@ export default function App() {
           setAppState(AppState.PRIVACY_POLICY);
         } else if (path.startsWith('/delete-account')) {
           setAppState(AppState.DELETE_ACCOUNT);
-        } else if (path.startsWith('/dashboard')) {
+        } else if (path.startsWith('/dashboard') || path.startsWith('/auth/callback')) {
           setAppState(AppState.DASHBOARD);
         } else if (path.startsWith('/products') || path.startsWith('/rank')) {
           setAppState(AppState.RANK);
@@ -1777,9 +1778,13 @@ export default function App() {
     handleWebAuthCallback(
       () => {
         setAppState(AppState.DASHBOARD);
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', '/dashboard');
+        }
       },
       (errorMessage) => {
         setError(`Authentication error: ${errorMessage}`);
+        setAppState(AppState.AUTH);
       }
     );
 
@@ -3627,7 +3632,7 @@ export default function App() {
       
       <main className={
         appState === AppState.LANDING 
-          ? 'p-0 m-0 w-full pb-20' 
+          ? 'p-0 m-0 w-full h-[calc(100dvh-65px)] overflow-hidden' 
           : `pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`
       }>
         <AnimatePresence mode="wait">
@@ -3794,34 +3799,37 @@ export default function App() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  className={`text-center flex flex-col items-center justify-between ${isNativePlatform() ? 'h-screen w-screen fixed inset-0 z-0' : 'w-full h-[calc(100dvh-65px)] relative z-10'} bg-[url('/assets/landing_banner.png')] bg-cover bg-center px-6 py-12`}
+                  className={`text-center flex flex-col items-center justify-between overflow-hidden touch-none ${isNativePlatform() ? 'h-screen w-screen fixed inset-0 z-0 pt-16' : 'w-full h-[calc(100dvh-65px)] fixed inset-x-0 bottom-0 z-10 pt-8'} bg-[url('/assets/landing_banner.png')] bg-cover bg-center px-6 pb-12`}
                 >
-                  <div className="flex flex-col items-center gap-2 mb-2">
-                    <h1 className="text-6xl font-cursive font-bold leading-[0.8] text-white tracking-normal drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]">
-                      Canonic
-                    </h1>
-                    <p className="text-2xl font-cursive font-bold text-white tracking-normal drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]">
-                      Beauty, Smarter
-                    </p>
+                  <div className="flex flex-col items-center gap-4 w-full max-w-sm">
+                    <div className="flex flex-col items-center gap-1.5">
+                      <h1 className="text-5xl md:text-6xl font-cursive font-bold leading-[0.9] text-white tracking-normal drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                        Canonic
+                      </h1>
+                      <p className="text-xl md:text-2xl font-cursive font-bold text-white tracking-normal drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)]">
+                        Beauty, Smarter
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => setAppState(AppState.ONBOARDING_DETAILS)}
+                      className="w-full flex items-center justify-center cursor-pointer mt-2"
+                    >
+                      <motion.div
+                        animate={{ y: [0, -6, 0] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                        className="flex items-center justify-center gap-2 bg-white/80 backdrop-blur-md border border-white/40 text-black text-lg md:text-xl font-bold px-6 py-3 rounded-full shadow-lg hover:bg-white transition-all w-full"
+                      >
+                        <span>Take skin quiz</span>
+                        <ChevronRight className="w-5 h-5" />
+                      </motion.div>
+                    </button>
                   </div>
                   <button 
-                    onClick={() => setAppState(AppState.ONBOARDING_DETAILS)}
-                    className="mb-12 max-w-xl mx-auto flex items-center justify-center cursor-pointer"
-                  >
-                    <motion.div
-                      animate={{ y: [0, -10, 0] }}
-                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                      className="flex items-center gap-2 text-black text-2xl font-medium opacity-70"
-                    >
-                      Take skin quiz
-                      <ChevronRight className="w-6 h-6" />
-                    </motion.div>
-                  </button>
-                  <button 
                     onClick={() => triggerPhotoScan(landingFileInputRef)}
-                    className="p-5 bg-white/60 backdrop-blur-md border border-black/10 text-black hover:bg-white/90 active:scale-95 rounded-full font-black transition-all shadow-xl flex items-center justify-center mx-auto cursor-pointer"
+                    className="p-4 bg-white/80 backdrop-blur-md border border-black/10 text-black hover:bg-white active:scale-95 rounded-full font-black transition-all shadow-xl flex items-center justify-center mx-auto cursor-pointer mb-4"
+                    title="Scan product photo"
                   >
-                    <Camera className="w-7 h-7 text-black" />
+                    <Camera className="w-6 h-6 text-black" />
                   </button>
                   
                   <ProductConfirmationModal
