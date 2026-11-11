@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronDown, ChevronUp, Loader2, CheckCircle2, AlertTriangle, Heart, RefreshCw, Calendar, HelpCircle, Trash2, Shield, ShoppingBag, ArrowLeftRight, Search } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Loader2, CheckCircle2, AlertTriangle, Heart, RefreshCw, Calendar, HelpCircle, Trash2, Shield, ShoppingBag, ArrowLeftRight, Search, Star } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
 import { Login } from './Login';
@@ -386,6 +386,18 @@ export const ProductCardContent = ({
   const [localNotes, setLocalNotes] = useState(trackerItem?.notes || '');
   const [isUpdating, setIsUpdating] = useState(false);
   const [ratings, setRatings] = useState({ dwis: 0, price_value: 0, feel: 0, layer: 0 });
+  const [globalRatingsSummary, setGlobalRatingsSummary] = useState({
+    avg: 0,
+    dwis: 0,
+    price_value: 0,
+    feel: 0,
+    layer: 0,
+    count: 0
+  });
+  const [isRatingsDropdownOpen, setIsRatingsDropdownOpen] = useState(false);
+  const [comments, setComments] = useState<any[]>([]);
+  const [newCommentText, setNewCommentText] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   const [imageError, setImageError] = useState(false);
 
@@ -520,6 +532,15 @@ export const ProductCardContent = ({
   };
 
   const handleUpdateRating = async (field: string, value: number) => {
+    const newRatings = {
+      dwis: field === 'dwis' ? value : ratings.dwis || 0,
+      price_value: field === 'price_value' ? value : ratings.price_value || 0,
+      feel: field === 'feel' ? value : ratings.feel || 0,
+      layer: field === 'layer' ? value : ratings.layer || 0
+    };
+    const validScores = [newRatings.dwis, newRatings.price_value, newRatings.feel, newRatings.layer].filter(v => v > 0);
+    const avgScore = validScores.length > 0 ? Number((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(2)) : null;
+
     setRatings(prev => ({ ...prev, [field]: value }));
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) {
@@ -527,26 +548,54 @@ export const ProductCardContent = ({
     }
     
     try {
-      const { data, error } = await supabase
+      await supabase
         .from('product_user_ratings')
         .upsert({
           product_id: productId,
           user_id: session.user.id,
-          dwis: field === 'dwis' ? value : ratings.dwis || null,
-          price_value: field === 'price_value' ? value : ratings.price_value || null,
-          feel: field === 'feel' ? value : ratings.feel || null,
-          layer: field === 'layer' ? value : ratings.layer || null,
+          dwis: newRatings.dwis || null,
+          price_value: newRatings.price_value || null,
+          feel: newRatings.feel || null,
+          layer: newRatings.layer || null,
+          avg: avgScore,
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'product_id, user_id'
+        });
+    } catch (err) {
+      console.error('Error updating rating:', err);
+    }
+  };
+
+  const handleSaveComment = async () => {
+    if (!newCommentText.trim()) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    setIsSubmittingComment(true);
+    try {
+      const { data, error } = await supabase
+        .from('product_comments')
+        .insert({
+          product_id: productId,
+          user_id: session.user.id,
+          comment: newCommentText.trim(),
+          created_at: new Date().toISOString()
         })
         .select();
-        
-      if (error) {
-        } else {
-        }
-    } catch (err) {
+
+      if (!error && data) {
+        setComments(prev => [data[0], ...prev]);
+        setNewCommentText('');
       }
+    } catch (err) {
+      console.error('Error saving comment:', err);
+    } finally {
+      setIsSubmittingComment(false);
+    }
   };
 
   const handleDeleteTracker = async () => {
@@ -829,12 +878,73 @@ export const ProductCardContent = ({
               layer: ratingData.layer || 0
             });
           } else {
-            // Reset ratings for new product
             setRatings({ dwis: 0, price_value: 0, feel: 0, layer: 0 });
           }
         } else {
-          // Reset ratings for unauthenticated view
           setRatings({ dwis: 0, price_value: 0, feel: 0, layer: 0 });
+        }
+
+        // Fetch all ratings for product across all users to compute community average & breakdown
+        const allRatingsRes = await (async () => {
+          try {
+            return await supabase
+              .from('product_user_ratings')
+              .select('dwis, price_value, feel, layer, avg')
+              .eq('product_id', productId)
+              .abortSignal(signal);
+          } catch {
+            return { data: [] };
+          }
+        })();
+
+        if (!active || signal.aborted) return;
+        const allRatingsData = allRatingsRes?.data;
+        if (allRatingsData && allRatingsData.length > 0) {
+          let sumAvg = 0, countAvg = 0;
+          let sumDw = 0, countDw = 0;
+          let sumPrice = 0, countPrice = 0;
+          let sumFeel = 0, countFeel = 0;
+          let sumLayer = 0, countLayer = 0;
+
+          allRatingsData.forEach((r: any) => {
+            if (r.avg != null) { sumAvg += Number(r.avg); countAvg++; }
+            if (r.dwis != null && r.dwis > 0) { sumDw += Number(r.dwis); countDw++; }
+            if (r.price_value != null && r.price_value > 0) { sumPrice += Number(r.price_value); countPrice++; }
+            if (r.feel != null && r.feel > 0) { sumFeel += Number(r.feel); countFeel++; }
+            if (r.layer != null && r.layer > 0) { sumLayer += Number(r.layer); countLayer++; }
+          });
+
+          setGlobalRatingsSummary({
+            avg: countAvg > 0 ? Number((sumAvg / countAvg).toFixed(1)) : 0,
+            dwis: countDw > 0 ? Number((sumDw / countDw).toFixed(1)) : 0,
+            price_value: countPrice > 0 ? Number((sumPrice / countPrice).toFixed(1)) : 0,
+            feel: countFeel > 0 ? Number((sumFeel / countFeel).toFixed(1)) : 0,
+            layer: countLayer > 0 ? Number((sumLayer / countLayer).toFixed(1)) : 0,
+            count: allRatingsData.length
+          });
+        } else {
+          setGlobalRatingsSummary({ avg: 0, dwis: 0, price_value: 0, feel: 0, layer: 0, count: 0 });
+        }
+
+        // Fetch comments for product
+        const commentsRes = await (async () => {
+          try {
+            return await supabase
+              .from('product_comments')
+              .select('*')
+              .eq('product_id', productId)
+              .order('created_at', { ascending: false })
+              .abortSignal(signal);
+          } catch {
+            return { data: [] };
+          }
+        })();
+
+        if (!active || signal.aborted) return;
+        if (commentsRes?.data) {
+          setComments(commentsRes.data);
+        } else {
+          setComments([]);
         }
       } catch (error: any) {
         if (error?.name === 'AbortError' || signal.aborted) return;
@@ -1006,6 +1116,43 @@ export const ProductCardContent = ({
           {product.description}
         </p>
       )}
+
+      {/* Community Average Score (Across all users) */}
+      <div className="bg-purple-50/80 border border-purple-100 rounded-xl p-2.5 space-y-1.5 mt-2">
+        <button
+          type="button"
+          onClick={() => setIsRatingsDropdownOpen(!isRatingsDropdownOpen)}
+          className="w-full flex items-center justify-between text-xs font-black text-purple-950 uppercase tracking-wider cursor-pointer"
+        >
+          <div className="flex items-center gap-1.5">
+            <Star className="w-3.5 h-3.5 fill-purple-600 text-purple-600" />
+            <span>Community Rating: {globalRatingsSummary.avg > 0 ? `${globalRatingsSummary.avg} / 5` : 'No ratings yet'}</span>
+            <span className="text-[10px] text-black/40 font-normal lowercase font-mono">({globalRatingsSummary.count} reviews)</span>
+          </div>
+          {isRatingsDropdownOpen ? <ChevronUp className="w-4 h-4 text-purple-700" /> : <ChevronDown className="w-4 h-4 text-purple-700" />}
+        </button>
+
+        {isRatingsDropdownOpen && globalRatingsSummary.count > 0 && (
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-purple-200/60 text-[11px]">
+            <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+              <span className="text-black/60 font-bold">Does What It Says:</span>
+              <span className="font-mono font-black text-purple-900">{globalRatingsSummary.dwis} / 5</span>
+            </div>
+            <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+              <span className="text-black/60 font-bold">Price & Value:</span>
+              <span className="font-mono font-black text-purple-900">{globalRatingsSummary.price_value} / 5</span>
+            </div>
+            <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+              <span className="text-black/60 font-bold">Texture & Feel:</span>
+              <span className="font-mono font-black text-purple-900">{globalRatingsSummary.feel} / 5</span>
+            </div>
+            <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+              <span className="text-black/60 font-bold">Layerability:</span>
+              <span className="font-mono font-black text-purple-900">{globalRatingsSummary.layer} / 5</span>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Discrete Compare Button */}
       <div className="pt-0.5 flex items-center justify-between">
@@ -1428,6 +1575,94 @@ export const ProductCardContent = ({
           </div>
         </div>
       )}
+
+      {/* User Ratings Section */}
+      <div className="border-t pt-4 mt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="font-black text-xs uppercase tracking-widest text-black/60">My Product Ratings</h3>
+          {!isAuthenticated && (
+            <span className="text-[9px] text-black/40 font-bold italic">Log in to save ratings</span>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-100">
+          {[
+            { key: 'dwis', label: 'Does What It Says' },
+            { key: 'price_value', label: 'Price & Value' },
+            { key: 'feel', label: 'Texture & Feel' },
+            { key: 'layer', label: 'Layerability' },
+          ].map(criterion => (
+            <div key={criterion.key} className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold text-black/70">{criterion.label}</span>
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map(star => {
+                  const currentVal = ratings[criterion.key as keyof typeof ratings] || 0;
+                  const isFilled = star <= currentVal;
+                  return (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => handleUpdateRating(criterion.key, star)}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
+                        isFilled 
+                          ? 'bg-black text-white shadow-xs' 
+                          : 'bg-white text-black/40 border border-gray-200 hover:border-black/40 hover:text-black'
+                      }`}
+                    >
+                      {star}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Comments Section */}
+      <div className="border-t pt-4 mt-4 space-y-3">
+        <h3 className="font-black text-xs uppercase tracking-widest text-black/60">Comments</h3>
+        
+        {/* Comment Input */}
+        <div className="space-y-2">
+          <textarea
+            value={newCommentText}
+            onChange={(e) => setNewCommentText(e.target.value)}
+            placeholder={isAuthenticated ? "Share your thoughts or experience with this product..." : "Log in to leave a comment..."}
+            rows={2}
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-xs font-medium focus:ring-black focus:border-black outline-none resize-none placeholder:text-gray-400 text-black"
+          />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleSaveComment}
+              disabled={isSubmittingComment || !newCommentText.trim()}
+              className="py-1.5 px-4 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isSubmittingComment ? 'Saving...' : 'Save Comment'}
+            </button>
+          </div>
+        </div>
+
+        {/* Comments List */}
+        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+          {comments && comments.length > 0 ? (
+            comments.map((comm: any, idx: number) => (
+              <div key={comm.id || idx} className="p-2.5 bg-gray-50 rounded-xl border border-gray-100 text-xs space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-black/40 font-mono">
+                  <span>User {comm.user_id ? `${comm.user_id.slice(0, 6)}...` : 'Anonymous'}</span>
+                  <span>{comm.created_at ? new Date(comm.created_at).toLocaleDateString() : 'Just now'}</span>
+                </div>
+                <p className="text-black/80 font-medium whitespace-pre-line break-words">
+                  {comm.comment}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="text-xs text-black/40 italic text-center py-2">No comments yet. Be the first to share your review!</p>
+          )}
+        </div>
+      </div>
+
       {/* Unauthenticated Compare Auth Popup */}
       {showAuthModal && (
         <div 

@@ -8,6 +8,7 @@ import identifyProductsHandler from "./api/identify-products.js";
 import verifyFaceHandler from "./api/verify-face.js";
 import analyzeFaceHandler from "./api/analyze-face.js";
 import productSortHandler from "./api/product-sort.js";
+import aiCompareHandler from "./api/ai-compare.js";
 
 async function startServer() {
   const app = express();
@@ -64,6 +65,14 @@ async function startServer() {
       await productSortHandler(req as any, res as any);
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message || "Failed to sort products." });
+    }
+  });
+
+  app.post("/api/ai-compare", async (req, res) => {
+    try {
+      await aiCompareHandler(req as any, res as any);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || "Failed to run AI comparison." });
     }
   });
 

@@ -37,7 +37,9 @@ import {
   Droplet,
   Shield,
   ArrowLeft,
-  RefreshCw
+  RefreshCw,
+  Sparkles,
+  Sliders
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase, recoverSupabaseSession } from './lib/supabase';
@@ -47,6 +49,7 @@ import { ProductDetailModalNew } from './components/ProductDetailModalNew';
 import { ProductCard, ProductCardContent } from './components/ProductCard';
 import { ProductLink } from './components/ProductLink';
 import { ComparisonModal } from './components/ComparisonModal';
+import { AiProductComparisonModal } from './components/AiProductComparisonModal';
 import { TrackerNewProductModal } from './components/TrackerNewProductModal';
 import { Social, SKINCARE_GUIDES } from './components/Social';
 import { ChatQuestionnaire } from './components/ChatQuestionnaire';
@@ -513,6 +516,7 @@ export default function App() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [pendingQuestionnaireAnswers, setPendingQuestionnaireAnswers] = useState<any>(null); // NEW
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
+  const [isAiCompareModalOpen, setIsAiCompareModalOpen] = useState(false);
   const [isTrackerModalOpen, setIsTrackerModalOpen] = useState(false);
   const [authPromptModalOpen, setAuthPromptModalOpen] = useState(false);
   const [isSharingOpen, setIsSharingOpen] = useState(false);
@@ -3272,6 +3276,21 @@ export default function App() {
                   >
                     <ShoppingBag className="w-5 h-5 shrink-0" />
                     <span className="text-xs uppercase tracking-widest font-black">Products</span>
+                  </button>
+
+                  <button 
+                    onClick={() => { 
+                      if (!user) {
+                        setAuthPromptModalOpen(true);
+                      } else {
+                        setIsAiCompareModalOpen(true);
+                      }
+                      setIsMobileNavOpen(false); 
+                    }} 
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.RANK ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                  >
+                    <Sliders className="w-5 h-5 shrink-0" />
+                    <span className="text-xs uppercase tracking-widest font-black">AI Compare</span>
                   </button>
 
                   <button 
@@ -6285,6 +6304,11 @@ export default function App() {
           }
           setNewProductForComparison(null);
         }}
+      />
+      <AiProductComparisonModal
+        isOpen={isAiCompareModalOpen}
+        onClose={() => setIsAiCompareModalOpen(false)}
+        userId={user?.id}
       />
       <TrackerNewProductModal
         isOpen={isTrackerModalOpen}

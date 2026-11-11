@@ -306,16 +306,6 @@ CREATE TABLE public.product_user_ratings (
   CONSTRAINT product_user_ratings_pkey PRIMARY KEY (product_id, user_id),
   CONSTRAINT product_user_ratings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-CREATE TABLE public.articles (
-  article_id uuid NOT NULL DEFAULT gen_random_uuid(),
-  title text,
-  article_content text NOT NULL,
-  article_link text,
-  tags ARRAY DEFAULT '{}'::text[],
-  image_url text,
-  created_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT articles_pkey PRIMARY KEY (article_id)
-);
 CREATE TABLE public.brands (
   brand_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   brand_name text NOT NULL UNIQUE,
@@ -360,29 +350,15 @@ CREATE TABLE public.products_filter (
   CONSTRAINT products_filter_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
 );
 CREATE TABLE public.product_metric_culprits (
-  metric_name text NOT NULL, -- Holds the product identifier (product_id or product_name)
-  active_antagonistic_group text,
-  aggregated_clogging_risk text,
-  calm_redness text,
-  clear_blackheads text,
-  clear_surface_breakouts text,
-  clear_whiteheads text,
-  contains_frag text,
-  fade_pie text,
-  fade_pih text,
-  has_5alpha_inh text,
-  has_aha_active text,
-  has_bha_active text,
-  has_brightening_ingredient text,
-  has_cell_turnover_accelerator text,
-  has_fragrance_top50 text,
-  has_high_irritation text,
-  has_yeast_trigger text,
-  reduce_wrinkles text,
-  soothe_deep_breakouts text,
-  synergy_breakout_response text,
-  synergy_deep_breakout_penetration text,
-  CONSTRAINT product_metric_culprits_pkey PRIMARY KEY (metric_name)
+  id integer NOT NULL DEFAULT nextval('product_metric_culprits_id_seq'::regclass),
+  product_id integer NOT NULL,
+  product_name text,
+  metric_name text,
+  ingredient_id integer,
+  position integer,
+  score_value numeric,
+  ingredient_name text,
+  CONSTRAINT product_metric_culprits_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.5alpha (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -390,73 +366,30 @@ CREATE TABLE public.5alpha (
   ingredient_id integer,
   CONSTRAINT 5alpha_pkey PRIMARY KEY (id)
 );
-
--- RPC Function: get_routines_with_live_products
--- Resolves the denormalization issue where routines.products stores a static snapshot.
--- Performs a live join from routines.products JSON elements into products, product_scores, and products_filter
--- so any updates to product attributes (e.g. contains_aha_bha, has_aha_active, brand, name, cat2) instantly reflect across all routines.
-CREATE OR REPLACE FUNCTION public.get_routines_with_live_products(p_user_id uuid)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  result jsonb;
-BEGIN
-  SELECT jsonb_agg(
-    jsonb_build_object(
-      'id', r.id,
-      'user_id', r.user_id,
-      'time', r.time,
-      'days', r.days,
-      'routine_name', r.routine_name,
-      'notes', r.notes,
-      'reminder', r.reminder,
-      'created_at', r.created_at,
-      'updated_at', r.updated_at,
-      'products', (
-        SELECT COALESCE(
-          jsonb_agg(
-            jsonb_build_object(
-              'id', COALESCE(p.id, (elem->>'id')::bigint),
-              'brand', COALESCE(p.brand, elem->>'brand'),
-              'name', COALESCE(p.name, elem->>'name'),
-              'type', COALESCE(ps.cat2, p.type, elem->>'type'),
-              'photo_url', COALESCE(p.photo_url, elem->>'photo_url'),
-              'cat2', ps.cat2,
-              'cat3', ps.cat3,
-              'pregnancy_safe', COALESCE(ps.pregnancy_safe, pf.preg_safe, true),
-              'has_aha_active', COALESCE(ps.has_aha_active, false),
-              'has_bha_active', COALESCE(ps.has_bha_active, false),
-              'contains_aha_bha', (COALESCE(ps.has_aha_active, false) OR COALESCE(ps.has_bha_active, false) OR COALESCE(pf.c_ahabha, false)),
-              'c_ahabha', COALESCE(pf.c_ahabha, false),
-              'active_antagonistic_group', COALESCE(ps.active_antagonistic_group, 'None'),
-              'has_high_irritation', COALESCE(ps.has_high_irritation, false),
-              'has_fragrance_top50', COALESCE(ps.has_fragrance_top50, false),
-              'has_yeast_trigger', COALESCE(ps.has_yeast_trigger, false),
-              'oil_control', COALESCE(ps.oil_control, 0),
-              'clear_blackheads', COALESCE(ps.clear_blackheads, 0),
-              'clear_whiteheads', COALESCE(ps.clear_whiteheads, 0),
-              'clear_surface_breakouts', COALESCE(ps.clear_surface_breakouts, 0),
-              'soothe_deep_breakouts', COALESCE(ps.soothe_deep_breakouts, 0),
-              'reduce_wrinkles', COALESCE(ps.reduce_wrinkles, 0),
-              'fade_pie', COALESCE(ps.fade_pie, 0),
-              'fade_pih', COALESCE(ps.fade_pih, 0)
-            )
-          ),
-          '[]'::jsonb
-        )
-        FROM jsonb_array_elements(r.products) AS elem
-        LEFT JOIN public.products p ON p.id = (elem->>'id')::bigint
-        LEFT JOIN public.product_scores ps ON ps.product_id = p.id
-        LEFT JOIN public.products_filter pf ON pf.product_id = p.id
-      )
-    )
-  )
-  INTO result
-  FROM public.routines r
-  WHERE r.user_id = p_user_id;
-
-  RETURN COALESCE(result, '[]'::jsonb);
-END;
-$$;
+CREATE TABLE public.guides (
+  id text NOT NULL,
+  category text NOT NULL,
+  title text NOT NULL,
+  subtitle text,
+  description text NOT NULL,
+  rule text NOT NULL,
+  read_time text DEFAULT '4 min read'::text,
+  roadmap jsonb DEFAULT '[]'::jsonb,
+  dos jsonb DEFAULT '[]'::jsonb,
+  donts jsonb DEFAULT '[]'::jsonb,
+  recommended_formulations jsonb DEFAULT '[]'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT guides_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.articles (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  slug text NOT NULL UNIQUE,
+  excerpt text,
+  content jsonb NOT NULL DEFAULT '[]'::jsonb,
+  status text NOT NULL DEFAULT 'draft'::text CHECK (status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])),
+  published_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT articles_pkey PRIMARY KEY (id)
+);

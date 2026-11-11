@@ -324,8 +324,39 @@ export const Social = ({
   const [isGuideCategoryDropdownOpen, setIsGuideCategoryDropdownOpen] = useState(false);
   const [selectedGuide, setSelectedGuide] = useState<SkincareGuide | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
+  const [articleProductPhotos, setArticleProductPhotos] = useState<Record<string, string>>({});
   const [savedGuideIds, setSavedGuideIds] = useState<string[]>([]);
   const [guides, setGuides] = useState<SkincareGuide[]>(SKINCARE_GUIDES);
+
+  useEffect(() => {
+    if (!selectedArticle || !selectedArticle.content || !Array.isArray(selectedArticle.content)) {
+      setArticleProductPhotos({});
+      return;
+    }
+    const productIds = selectedArticle.content
+      .filter((b: any) => b.type === 'product_card' && b.product_id)
+      .map((b: any) => b.product_id)
+      .filter((id: string) => !id.startsWith('00000000-0000-0000-0000-'));
+
+    if (productIds.length === 0) {
+      setArticleProductPhotos({});
+      return;
+    }
+
+    supabase
+      .from('products')
+      .select('id, photo_url')
+      .in('id', productIds)
+      .then(({ data, error }) => {
+        if (!error && data) {
+          const map: Record<string, string> = {};
+          data.forEach((p: any) => {
+            if (p.photo_url) map[String(p.id)] = p.photo_url;
+          });
+          setArticleProductPhotos(map);
+        }
+      });
+  }, [selectedArticle]);
 
   const toggleSaveGuide = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -381,15 +412,24 @@ export const Social = ({
   async function fetchInitialData(signal?: AbortSignal, checkMounted?: () => boolean) {
     setLoading(true);
     try {
+      console.log('[Supabase Articles] Fetching articles from supabase...');
       let articlesQuery = supabase
         .from('articles')
         .select('*')
         .order('created_at', { ascending: false });
       if (signal) articlesQuery = articlesQuery.abortSignal(signal);
-      const { data: articleData } = await articlesQuery;
+      const { data: articleData, error: articleError } = await articlesQuery;
+      console.log('[Supabase Articles] Result:', { articleData, articleError });
 
       if (checkMounted && !checkMounted()) return;
-      if (articleData) setArticles(articleData);
+      if (articleError) {
+        console.error('[Supabase Articles] Error fetching articles:', articleError);
+        setArticles([]);
+      } else if (articleData) {
+        setArticles(articleData);
+      } else {
+        setArticles([]);
+      }
 
       let guidesQuery = supabase
         .from('guides')
@@ -501,6 +541,7 @@ export const Social = ({
           </button>
           <button 
             onClick={() => {
+              console.log('[The Edit] User clicked Articles tab. Current articles state:', articles);
               setActiveMainTab('articles');
               setSearchQuery('');
             }} 
@@ -766,7 +807,7 @@ export const Social = ({
           /* Tab 2: ARTICLES */
           <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-6 pb-32">
             {filteredArticles.length === 0 ? (
-              <div className="text-center py-12 bg-black/[0.02] rounded-2xl border border-dashed border-black/10">
+              <div className="col-span-2 text-center py-12 bg-black/[0.02] rounded-2xl border border-dashed border-black/10">
                 <p className="text-xs text-black/40 font-bold uppercase italic">No articles match your search query</p>
               </div>
             ) : (
@@ -777,20 +818,15 @@ export const Social = ({
                   className="clean-card bg-white border border-black/5 p-4 md:p-6 rounded-2xl hover:border-black/25 hover:shadow-sm transition-all space-y-3 cursor-pointer group flex flex-col justify-between"
                 >
                   <div className="space-y-3">
-                    {article.image_url && (
-                      <div className="rounded-xl overflow-hidden border border-black/5 mb-3 max-h-40">
-                        <img src={article.image_url} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                      </div>
-                    )}
                     <div className="flex items-center justify-between text-[10px] text-black/40">
-                      <span className="font-black uppercase tracking-wider text-venus-accent">Clinical Editorial</span>
-                      <span>{new Date(article.created_at).toLocaleDateString()}</span>
+                      <span className="font-black uppercase tracking-wider text-venus-accent">Editorial</span>
+                      <span>{article.created_at ? new Date(article.created_at).toLocaleDateString() : ''}</span>
                     </div>
                     <h3 className="text-xs md:text-sm font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2">
                       {article.title}
                     </h3>
                     <p className="text-[10px] md:text-xs text-black/70 leading-relaxed font-medium line-clamp-2">
-                      {article.article_content}
+                      {article.excerpt || article.article_content || article.summary}
                     </p>
                   </div>
                   <div className="pt-3 mt-3 border-t border-black/5 flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-black">
@@ -908,7 +944,7 @@ export const Social = ({
               <div className="flex items-start justify-between gap-4 border-b border-black/5 pb-4">
                 <div>
                   <div className="flex items-center gap-2 text-xs text-black/50 mb-1">
-                    <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">Clinical Editorial</span>
+                    <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">Editorial</span>
                     <span>·</span>
                     <span>{new Date(selectedArticle.created_at).toLocaleDateString()}</span>
                   </div>
@@ -930,20 +966,75 @@ export const Social = ({
                 </div>
               )}
 
-              <p className="text-xs md:text-sm text-black/80 leading-relaxed font-medium whitespace-pre-line">
-                {selectedArticle.article_content}
-              </p>
+              <div className="text-xs md:text-sm text-black/80 leading-relaxed font-medium space-y-4">
+                {typeof selectedArticle.content === 'string' ? (
+                  <p className="whitespace-pre-line">{selectedArticle.content}</p>
+                ) : Array.isArray(selectedArticle.content) ? (
+                  selectedArticle.content.map((block: any, idx: number) => {
+                    if (typeof block === 'string') {
+                      return <p key={idx} className="whitespace-pre-line">{block}</p>;
+                    }
+                    if (block.type === 'heading' || block.text === '5 Cult-Favorite & Trending Products to Try') {
+                      return (
+                        <h3 key={idx} className="text-base md:text-lg font-black uppercase tracking-tight text-black mt-6 mb-3">
+                          {block.text}
+                        </h3>
+                      );
+                    }
+                    if (block.type === 'product_card') {
+                      const photoUrl = articleProductPhotos[block.product_id];
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            if (block.product_id) {
+                              openProductCard(block.product_id);
+                            }
+                          }}
+                          className="my-4 p-4 rounded-2xl bg-white border border-black/10 hover:border-venus-accent transition-all cursor-pointer shadow-sm flex items-start gap-4 group"
+                        >
+                          {photoUrl ? (
+                            <img src={photoUrl} alt={block.name} className="w-16 h-16 rounded-xl object-cover border border-black/5 shrink-0 group-hover:scale-105 transition-transform" />
+                          ) : (
+                            <div className="w-16 h-16 rounded-xl bg-black/5 flex items-center justify-center text-xs font-black text-black/40 shrink-0">
+                              {block.name?.charAt(0) || 'P'}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">{block.price_point || 'Skincare Staple'}</span>
+                            </div>
+                            <h4 className="text-sm md:text-base font-black text-black group-hover:text-venus-accent transition-colors">
+                              {block.name}
+                            </h4>
+                            {block.best_for && (
+                              <p className="text-xs text-black/60 font-semibold mt-1">
+                                <span className="font-bold text-black/80">Best for:</span> {block.best_for}
+                              </p>
+                            )}
+                            {block.why_it_fits && (
+                              <p className="text-xs text-black/70 font-medium mt-1.5 leading-relaxed">
+                                {block.why_it_fits}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <p key={idx} className="whitespace-pre-line">
+                        {block.text || block.content || JSON.stringify(block)}
+                      </p>
+                    );
+                  })
+                ) : selectedArticle.content && typeof selectedArticle.content === 'object' ? (
+                  <p className="whitespace-pre-line">{selectedArticle.content.text || JSON.stringify(selectedArticle.content)}</p>
+                ) : (
+                  <p className="whitespace-pre-line">{selectedArticle.article_content || selectedArticle.excerpt || JSON.stringify(selectedArticle.content || '')}</p>
+                )}
+              </div>
 
-              <div className="pt-4 border-t border-black/5 flex items-center justify-between">
-                <a 
-                  href={selectedArticle.article_link || '#'} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-xs font-black uppercase tracking-widest text-black hover:underline flex items-center gap-1.5"
-                >
-                  <span>Open External Link</span>
-                  <ArrowRight className="w-4 h-4" />
-                </a>
+              <div className="pt-4 border-t border-black/5 flex items-center justify-end">
                 <button
                   onClick={() => setSelectedArticle(null)}
                   className="py-2.5 px-6 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors cursor-pointer"
