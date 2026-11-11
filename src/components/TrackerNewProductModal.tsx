@@ -39,17 +39,24 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
 
   const handlePhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log('[TrackerModal:handlePhotoScan] No file selected.');
+      return;
+    }
 
+    console.log('[TrackerModal:handlePhotoScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsScanning(true);
     setScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
+      console.log('[TrackerModal:handlePhotoScan] Found matches:', matches.length);
       setScanMatchedProducts(matches);
       setIsConfirmScanOpen(true);
     } catch (err: any) {
-      setScanError(err.message || "An error occurred during photo scan. Please try again.");
+      const errMsg = err.message || "An error occurred during photo scan. Please try again.";
+      console.error('[TrackerModal:handlePhotoScan] Error during photo scan:', err);
+      setScanError(errMsg);
     } finally {
       setIsScanning(false);
       if (fileInputRef.current) {
@@ -57,6 +64,19 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
       }
     }
   };
+
+  // Watchdog timer for tracker modal scan
+  useEffect(() => {
+    if (isScanning) {
+      console.log('[TrackerModal:Watchdog] Scan watchdog armed for 30s.');
+      const watchdog = setTimeout(() => {
+        console.warn('[TrackerModal:Watchdog] Scan exceeded 30s. Resetting state.');
+        setIsScanning(false);
+        setScanError('Product scan timed out after 30 seconds. Please try again with a clearer photo.');
+      }, 30000);
+      return () => clearTimeout(watchdog);
+    }
+  }, [isScanning]);
 
   const handleConfirmScan = (confirmed: MatchedProduct[]) => {
     setIsConfirmScanOpen(false);

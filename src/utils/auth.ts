@@ -23,6 +23,32 @@ export const getOAuthRedirectUrl = (): string => {
 };
 
 /**
+ * Resolves the appropriate API endpoint URL depending on the platform (Web vs Capacitor native).
+ */
+export const getApiEndpoint = (endpointPath: string): string => {
+  const cleanPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+  
+  const envBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || '';
+  if (envBase) {
+    return `${envBase.replace(/\/+$/, '')}${cleanPath}`;
+  }
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const origin = window.location.origin;
+    if (!origin.startsWith('capacitor://') && !origin.startsWith('ionic://')) {
+      return cleanPath;
+    }
+  }
+
+  const appUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_APP_URL) || '';
+  if (appUrl) {
+    return `${appUrl.replace(/\/+$/, '')}${cleanPath}`;
+  }
+
+  return cleanPath;
+};
+
+/**
  * 3. Call supabase.auth.signInWithOAuth using provider 'google' and the correct dynamic redirectTo option.
  */
 /*export const signInWithGoogle = async () => {

@@ -38,6 +38,7 @@ async function startServer() {
     try {
       await identifyProductsHandler(req as any, res as any);
     } catch (err: any) {
+      console.error("[Server:identify-products] Error:", err);
       res.status(500).json({ success: false, error: err.message || "Failed to identify products." });
     }
   });

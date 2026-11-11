@@ -40,7 +40,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
-import { supabase } from './lib/supabase';
+import { supabase, recoverSupabaseSession } from './lib/supabase';
 import { ProductCardProvider, useProductCard } from './context/ProductCardContext';
 import { Login } from './components/Login';
 import { ProductDetailModalNew } from './components/ProductDetailModalNew';
@@ -601,17 +601,25 @@ export default function App() {
 
   const handleDashboardPhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log('[App:DashboardScan] No file selected.');
+      return;
+    }
 
+    console.log('[App:DashboardScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsDashboardScanning(true);
     setDashboardScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
+      console.log('[App:DashboardScan] Photo scan successful. Found matches:', matches.length);
       setDashboardScanMatched(matches);
       setIsDashboardConfirmOpen(true);
     } catch (err: any) {
-      setDashboardScanError(err.message || "An error occurred during photo scan. Please try again.");
+      const errMsg = err.message || "An error occurred during photo scan. Please try again.";
+      console.error('[App:DashboardScan] Photo scan failed with error:', err);
+      setDashboardScanError(errMsg);
+      setError(errMsg);
     } finally {
       setIsDashboardScanning(false);
       if (dashboardFileInputRef.current) {
@@ -622,17 +630,25 @@ export default function App() {
 
   const handleNavPhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log('[App:NavScan] No file selected.');
+      return;
+    }
 
+    console.log('[App:NavScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsNavScanning(true);
     setNavScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
+      console.log('[App:NavScan] Photo scan successful. Found matches:', matches.length);
       setNavScanMatched(matches);
       setIsNavConfirmOpen(true);
     } catch (err: any) {
-      setNavScanError(err.message || "An error occurred during photo scan. Please try again.");
+      const errMsg = err.message || "An error occurred during photo scan. Please try again.";
+      console.error('[App:NavScan] Photo scan failed with error:', err);
+      setNavScanError(errMsg);
+      setError(errMsg);
     } finally {
       setIsNavScanning(false);
       if (navFileInputRef.current) {
@@ -643,17 +659,25 @@ export default function App() {
 
   const handleLandingPhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log('[App:LandingScan] No file selected.');
+      return;
+    }
 
+    console.log('[App:LandingScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsLandingScanning(true);
     setLandingScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
+      console.log('[App:LandingScan] Photo scan successful. Found matches:', matches.length);
       setLandingScanMatched(matches);
       setIsLandingConfirmOpen(true);
     } catch (err: any) {
-      setLandingScanError(err.message || "An error occurred during photo scan. Please try again.");
+      const errMsg = err.message || "An error occurred during photo scan. Please try again.";
+      console.error('[App:LandingScan] Photo scan failed with error:', err);
+      setLandingScanError(errMsg);
+      setError(errMsg);
     } finally {
       setIsLandingScanning(false);
       if (landingFileInputRef.current) {
@@ -661,6 +685,22 @@ export default function App() {
       }
     }
   };
+
+  // Failsafe watchdog timer: ensure photo scanning / evaluation loader can never hang indefinitely
+  useEffect(() => {
+    if (isLandingScanning || isNavScanning || isDashboardScanning || isLandingEvaluating) {
+      console.log('[App:Watchdog] Photo analysis/evaluation loader active. 30s timeout watchdog started.');
+      const watchdog = setTimeout(() => {
+        console.warn('[App:Watchdog] Photo analysis exceeded 30s limit. Forcing loading state reset.');
+        setIsLandingScanning(false);
+        setIsNavScanning(false);
+        setIsDashboardScanning(false);
+        setIsLandingEvaluating(false);
+        setError('Photo analysis took too long to complete. The operation has been cancelled. Please ensure your photo is clear and try again.');
+      }, 30000);
+      return () => clearTimeout(watchdog);
+    }
+  }, [isLandingScanning, isNavScanning, isDashboardScanning, isLandingEvaluating]);
 
   const handleLandingConfirmScan = async (confirmed: MatchedProduct[]) => {
     setIsLandingConfirmOpen(false);
@@ -5994,6 +6034,19 @@ export default function App() {
                 </p>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                console.log('[PhotoScan] User clicked cancel button on scan backdrop.');
+                setIsLandingScanning(false);
+                setIsNavScanning(false);
+                setIsDashboardScanning(false);
+                setIsLandingEvaluating(false);
+              }}
+              className="mt-1 text-xs text-black/40 hover:text-black font-semibold underline cursor-pointer"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
