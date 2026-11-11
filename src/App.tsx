@@ -118,7 +118,6 @@ enum AppState {
   LANDING,
   AUTH,
   ONBOARDING_DETAILS,
-  CURATED_SELECTION,
   DASHBOARD,
   RANK,
   TRACKER,
@@ -238,7 +237,6 @@ export default function App() {
         case AppState.LANDING: urlPath = '/'; break;
         case AppState.AUTH: urlPath = '/auth'; break;
         case AppState.ONBOARDING_DETAILS: urlPath = '/onboarding'; break;
-        case AppState.CURATED_SELECTION: urlPath = '/selection'; break;
         case AppState.DASHBOARD: urlPath = '/dashboard'; break;
         case AppState.RANK: urlPath = '/products'; break;
         case AppState.TRACKER: urlPath = '/tracker'; break;
@@ -517,6 +515,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
   const [pendingQuestionnaireAnswers, setPendingQuestionnaireAnswers] = useState<any>(null); // NEW
+  const [isQuizBannerDismissed, setIsQuizBannerDismissed] = useState(false);
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
   const [isAiCompareModalOpen, setIsAiCompareModalOpen] = useState(false);
   const [isTrackerModalOpen, setIsTrackerModalOpen] = useState(false);
@@ -1940,7 +1939,6 @@ export default function App() {
         AppState.LANDING,
         AppState.AUTH,
         AppState.ONBOARDING_DETAILS,
-        AppState.CURATED_SELECTION,
         AppState.RANK,
         AppState.TRACKER,
         AppState.SOCIAL,
@@ -2607,7 +2605,26 @@ export default function App() {
         try {
             await saveQuestionnaireToProfile(answers, user.id);
             await fetchTrackerData();
-            generateCuratedSelection();
+
+            await supabase
+              .from('users')
+              .upsert({ id: user.id, onboarding_complete: true });
+
+            const { data: uProfile } = await supabase
+              .from('user_profile')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+            if (uProfile) setUserProfile(uProfile);
+
+            const { data: uData } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+            if (uData) setProfile(uData);
+
+            setAppState(AppState.RANK);
         } catch (e: any) {
             setError(`Error saving profile info: ${formatSupabaseError(e)}`);
         }
@@ -2616,37 +2633,6 @@ export default function App() {
         setPendingQuestionnaireAnswers(answers);
         setIsSignUp(true);
         setAppState(AppState.AUTH);
-    }
-  };
-
-  const generateCuratedSelection = async () => {
-    if (!user) {
-      setError("Session not initialized. Please refresh.");
-      return;
-    }
-    
-    setError(null);
-    setAppState(AppState.CURATED_SELECTION);
-    
-    try {
-      // Save initial profile info
-      const payload: any = {
-        id: user.id,
-        onboarding_complete: true,
-        created_at: new Date().toISOString()
-      };
-
-      const { error: profileError } = await supabase
-        .from('users')
-        .upsert(payload);
-      
-      if (profileError) {
-         throw profileError;
-      }
-
-    } catch (e: any) {
-      setError(e.message || "Something went wrong.");
-      setAppState(AppState.ONBOARDING_DETAILS);
     }
   };
 
@@ -3630,6 +3616,35 @@ export default function App() {
         )}
       </header>
       
+      {(() => {
+        const hasCompletedQuiz = profile?.onboarding_complete || (userProfile && (userProfile.main_concern || userProfile.skin_type));
+        const showQuizBanner = user && !hasCompletedQuiz && !isQuizBannerDismissed && appState !== AppState.ONBOARDING_DETAILS;
+        if (!showQuizBanner) return null;
+        return (
+          <div className="bg-white border-b border-black/10 shadow-xs py-3 px-4 md:px-6 relative z-40">
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+              <button
+                onClick={() => {
+                  resetHeaderSearchState();
+                  setAppState(AppState.ONBOARDING_DETAILS);
+                }}
+                className="flex-1 text-left text-xs md:text-sm font-black uppercase tracking-wider text-black hover:text-venus-accent transition-colors cursor-pointer"
+              >
+                <span>Complete the skin quiz for better matches</span>
+              </button>
+              <button
+                onClick={() => setIsQuizBannerDismissed(true)}
+                className="p-1 text-black/50 hover:text-black rounded-lg hover:bg-black/5 transition-colors cursor-pointer shrink-0"
+                title="Dismiss"
+                aria-label="Dismiss banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+      
       <main className={
         appState === AppState.LANDING 
           ? 'p-0 m-0 w-full h-[calc(100dvh-65px)] overflow-hidden' 
@@ -4254,79 +4269,7 @@ export default function App() {
             <ChatQuestionnaire onComplete={handleQuestionnaireComplete} />
           )}
 
-          {/* CURATED SELECTION */}
-          {appState === AppState.CURATED_SELECTION && (
-            <motion.div 
-              key="results"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-12 pb-12"
-            >
-              <header className="text-center space-y-4">
-                <h2 className="text-5xl font-sans font-black text-black uppercase tracking-tighter">Curated Selection</h2>
-                <div className="bg-black inline-block px-6 py-2 rounded-lg">
-                  <span className="text-white text-xs font-black uppercase tracking-widest">Ritual 01-A</span>
-                </div>
-              </header>
-
-              <div className="space-y-10">
-                <h3 className="text-3xl font-sans font-black text-center text-black uppercase tracking-tight underline decoration-venus-accent decoration-4">Your Daily Ritual</h3>
-                {defaultRitualSteps.map((rec, idx) => {
-                  const options = INVENTORY.filter(p => p.type.toLowerCase() === rec.type.toLowerCase() || rec.type.toLowerCase().includes(p.type.toLowerCase()));
-                  const selection = selectedProducts.find(p => p.type.toLowerCase() === rec.type.toLowerCase() || rec.type.toLowerCase().includes(p.type.toLowerCase()));
-                  
-                  return (
-                    <div key={idx} className="space-y-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-lg bg-black text-white flex items-center justify-center font-black text-xl">
-                          0{idx + 1}
-                        </div>
-                        <div>
-                          <h4 className="text-xl font-black text-black uppercase tracking-tight">{rec.type}</h4>
-                          <p className="text-sm font-medium text-black/50 italic">{rec.benefits}</p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {options.map(opt => (
-                          <button 
-                            key={opt.id}
-                            onClick={() => toggleProduct(opt)}
-                            className={`p-6 clean-card text-left transition-all relative border-2 ${selection?.id === opt.id ? 'border-black bg-black/5' : 'border-black/5 hover:border-black/20'}`}
-                          >
-                            {selection?.id === opt.id && <CheckCircle2 className="absolute top-4 right-4 text-black" />}
-                            <p className="text-[10px] uppercase tracking-widest text-venus-accent mb-1 font-black">{opt.brand}</p>
-                            <h5 className="text-lg font-black mb-2 text-black leading-tight">{opt.name}</h5>
-                            <p className="text-sm font-medium text-black/60 mb-4 line-clamp-2">{opt.description}</p>
-                            <div className="flex justify-between items-center">
-                              <span className="font-black text-black">${opt.price}</span>
-                              <div className="flex gap-1">
-                                {opt.ingredients.slice(0, 1).map(i => (
-                                  <span key={i} className="text-[9px] bg-black text-white px-2 py-1 rounded font-black uppercase tracking-tighter">{i}</span>
-                                ))}
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {selectedProducts.length >= 2 && (
-                <div className="flex justify-center pt-8">
-                  <button 
-                    onClick={finalizeSelection}
-                    className="btn-primary flex items-center gap-2 group"
-                  >
-                    Confirm Routine
-                    <ShoppingBag className="w-5 h-5 transition-transform group-hover:scale-110" />
-                  </button>
-                </div>
-              )}
-            </motion.div>
-          )}
+          {/* Curated selection removed */}
 
           {/* DASHBOARD */}
           {appState === AppState.DASHBOARD && (
@@ -5528,21 +5471,22 @@ export default function App() {
                 </h2>
               </header>
 
-              {!userProfile ? (
+              {(() => {
+                const hasCompletedQuiz = profile?.onboarding_complete || (userProfile && (userProfile.main_concern || userProfile.skin_type));
+                return !hasCompletedQuiz;
+              })() ? (
                 <div className="clean-card bg-white border border-black/10 rounded-3xl p-8 shadow-sm text-center space-y-6">
                   <div className="max-w-sm mx-auto space-y-2">
-                    <h3 className="text-xl font-black text-black uppercase tracking-tight">No Skin Profile Found</h3>
-                    <p className="text-xs text-black/60 font-medium">
-                      You haven't completed the skin quiz yet. Take the quick diagnostic quiz to unlock your detailed skin profile report!
+                    <p className="text-xs md:text-sm font-bold text-black">
+                      No info yet.{' '}
+                      <button
+                        onClick={() => setAppState(AppState.ONBOARDING_DETAILS)}
+                        className="text-venus-accent underline cursor-pointer hover:opacity-80 transition-opacity font-black"
+                      >
+                        Complete the skin quiz here
+                      </button>
                     </p>
                   </div>
-                  <button
-                    onClick={() => setAppState(AppState.ONBOARDING_DETAILS)}
-                    className="bg-black text-white px-6 py-3 rounded-xl font-black uppercase text-xs tracking-wider hover:bg-venus-accent transition-colors shadow-md inline-flex items-center gap-2"
-                  >
-                    Take Skin Quiz
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
                 </div>
               ) : (
                 <div className="space-y-6">

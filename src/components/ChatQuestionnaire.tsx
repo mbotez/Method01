@@ -1318,8 +1318,12 @@ export const ChatQuestionnaire = ({
                     className="flex-1 p-3 rounded-xl border border-neutral-300 focus:outline-none focus:border-emerald-500 text-[15px] md:text-lg"
                     onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
                 />
-                <button onClick={handleTextSubmit} className="bg-amber-300 text-neutral-900 p-3 rounded-xl">
-                    <Send className="w-5 h-5" />
+                <button 
+                    onClick={handleTextSubmit} 
+                    className="bg-amber-300 hover:bg-amber-400 text-neutral-900 px-5 py-3 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                >
+                    <span>Submit</span>
+                    <Send className="w-4 h-4" />
                 </button>
             </div>
         </div>

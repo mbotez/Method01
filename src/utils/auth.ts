@@ -3,14 +3,14 @@ import { App, type URLOpenListenerEvent } from '@capacitor/app';
 import { supabase } from '../lib/supabase';
 
 /**
- * 1. Detect whether the app is running natively on mobile using Capacitor.
+ * Detect whether the app is running natively on mobile using Capacitor.
  */
 export const isNativePlatform = (): boolean => {
   return Capacitor.isNativePlatform();
 };
 
 /**
- * 2. Set the OAuth redirect URL dynamically:
+ * Set the OAuth redirect URL dynamically:
  *    - For native mobile: "com.daybreak.canonic://auth-callback"
  *    - For web: `${window.location.origin}/auth/callback`
  */
@@ -49,31 +49,19 @@ export const getApiEndpoint = (endpointPath: string): string => {
 };
 
 /**
- * 3. Call supabase.auth.signInWithOAuth using provider 'google' and the correct dynamic redirectTo option.
+ * Call supabase.auth.signInWithOAuth using provider 'google' and PKCE flow.
  */
-/*export const signInWithGoogle = async () => {
-  const redirectTo = getOAuthRedirectUrl();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo,
-    },
-  });
-
-  if (error) {
-    throw error;
-  }
-
-  return data;
-};
-*/
 export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
   
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: redirectTo,
+      redirectTo,
+      queryParams: {
+        access_type: 'offline',
+        prompt: 'consent',
+      },
     },
   });
 
@@ -82,61 +70,57 @@ export const signInWithGoogle = async () => {
     throw error;
   }
 
-
   return data;
 };
 
-
 export interface AuthTokens {
+  code?: string;
   access_token?: string;
   refresh_token?: string;
-  code?: string;
   error?: string;
   error_description?: string;
 }
 
 /**
- * Parses the access_token and refresh_token from the URL hash fragment (and query parameters fallback).
+ * Parses the authorization code (PKCE) or tokens from the URL query and hash parameters.
  */
 export const parseAuthTokensFromUrl = (url: string): AuthTokens => {
   if (!url) return {};
 
   try {
-    // 1. Hash fragment (standard for OAuth token response / Supabase implicit flow)
     let hashString = '';
     if (url.includes('#')) {
       hashString = url.split('#')[1] || '';
     }
     const hashParams = new URLSearchParams(hashString);
 
-    // 2. Query string fallback (for PKCE code or query params)
     let queryString = '';
     if (url.includes('?')) {
       queryString = url.split('?')[1].split('#')[0] || '';
     }
     const queryParams = new URLSearchParams(queryString);
 
+    const code = queryParams.get('code') || hashParams.get('code') || undefined;
     const access_token = hashParams.get('access_token') || queryParams.get('access_token') || undefined;
     const refresh_token = hashParams.get('refresh_token') || queryParams.get('refresh_token') || undefined;
-    const code = queryParams.get('code') || hashParams.get('code') || undefined;
     const error = hashParams.get('error') || queryParams.get('error') || undefined;
     const error_description = hashParams.get('error_description') || queryParams.get('error_description') || undefined;
 
-    return { access_token, refresh_token, code, error, error_description };
+    return { code, access_token, refresh_token, error, error_description };
   } catch (err) {
     return {};
   }
 };
 
 /**
- * Sets session from parsed tokens or authorization code.
+ * Sets session from authorization code (PKCE) or tokens.
  */
 export const setSessionFromUrl = async (
   url: string,
   onSuccess?: () => void,
   onError?: (errorMessage: string) => void
 ): Promise<boolean> => {
-  const { access_token, refresh_token, code, error, error_description } = parseAuthTokensFromUrl(url);
+  const { code, access_token, refresh_token, error, error_description } = parseAuthTokensFromUrl(url);
 
   if (error || error_description) {
     const errorMsg = error_description || error || 'OAuth authentication failed';
@@ -144,7 +128,24 @@ export const setSessionFromUrl = async (
     return false;
   }
 
-  // 1. Token session from hash fragment (access_token & refresh_token)
+  // 1. Authorization code exchange (PKCE flow)
+  if (code) {
+    try {
+      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+      if (exchangeError) {
+        onError?.(exchangeError.message);
+        return false;
+      }
+
+      onSuccess?.();
+      return true;
+    } catch (err: any) {
+      onError?.(err.message || 'Failed to exchange auth code');
+      return false;
+    }
+  }
+
+  // 2. Token session from hash fragment (fallback)
   if (access_token && refresh_token) {
     try {
       const { data, error: sessionError } = await supabase.auth.setSession({
@@ -169,31 +170,12 @@ export const setSessionFromUrl = async (
     }
   }
 
-  // 2. Authorization code exchange fallback (PKCE flow)
-  if (code) {
-    try {
-      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-      if (exchangeError) {
-        onError?.(exchangeError.message);
-        return false;
-      }
-
-      onSuccess?.();
-      return true;
-    } catch (err: any) {
-      onError?.(err.message || 'Failed to exchange auth code');
-      return false;
-    }
-  }
-
   return false;
 };
 
 /**
- * 4. Set up deep link token handling for Capacitor (using App.addListener('appUrlOpen', ...))
- *    so that when the app opens via the custom deep link scheme ("com.daybreak.canonic://auth-callback"),
- *    it parses the access_token and refresh_token from the URL hash fragment, calls
- *    supabase.auth.setSession({ access_token, refresh_token }), and navigates the user to the dashboard.
+ * Set up deep link token handling for Capacitor (using App.addListener('appUrlOpen', ...))
+ * for PKCE / OAuth redirect callbacks.
  */
 export const setupCapacitorDeepLinkAuth = (
   onSuccess?: () => void,
@@ -214,7 +196,6 @@ export const setupCapacitorDeepLinkAuth = (
     }
   };
 
-  // Check if the app was cold-started from a deep link
   App.getLaunchUrl()
     .then((launchUrl) => {
       if (launchUrl?.url) {
@@ -223,7 +204,6 @@ export const setupCapacitorDeepLinkAuth = (
     })
     .catch(() => {});
 
-  // Listen for deep link events while the app is active or in background
   const listenerPromise = App.addListener('appUrlOpen', async (data: URLOpenListenerEvent) => {
     await handleDeepLinkUrl(data.url);
   });
@@ -234,7 +214,7 @@ export const setupCapacitorDeepLinkAuth = (
 };
 
 /**
- * Handles web OAuth callback when landing on `/auth/callback` or with hash tokens.
+ * Handles web OAuth callback when landing on `/auth/callback` or with code/token parameters.
  */
 export const handleWebAuthCallback = async (
   onSuccess?: () => void,
@@ -244,12 +224,11 @@ export const handleWebAuthCallback = async (
 
   const currentUrl = window.location.href;
   const hasAuthCallbackPath = window.location.pathname.includes('/auth/callback');
-  const hasHashTokens = currentUrl.includes('access_token=') || currentUrl.includes('code=');
+  const hasAuthParams = currentUrl.includes('code=') || currentUrl.includes('access_token=');
 
-  if (hasAuthCallbackPath || hasHashTokens) {
+  if (hasAuthCallbackPath || hasAuthParams) {
     const success = await setSessionFromUrl(currentUrl, onSuccess, onError);
     if (success) {
-      // Clean up the URL callback path and hash without reloading page
       const cleanPath = window.location.pathname.replace(/\/auth\/callback\/?$/, '') || '/';
       window.history.replaceState(null, '', cleanPath);
     }

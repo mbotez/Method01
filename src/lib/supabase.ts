@@ -48,7 +48,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    flowType: 'implicit',
+    flowType: 'pkce',
     lock: nonBlockingLock,
   },
   global: {
@@ -58,6 +58,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     },
   },
 });
+
 
 let isRecoveringSession = false;
 let lastRecoveryTimestamp = 0;
