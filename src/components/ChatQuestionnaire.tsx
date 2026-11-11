@@ -544,7 +544,15 @@ export const ChatQuestionnaire = ({
     } catch (err: any) {
       clearInterval(progressInterval);
       setIsScanning(false);
-      setPhotoVerificationError(err.message || "Skin AI Analysis failed. Please try a different photo.");
+      let errMsg = err.message || "Skin AI Analysis failed. Please try a different photo.";
+      try {
+        const parsed = JSON.parse(errMsg);
+        if (parsed?.error?.message) errMsg = parsed.error.message;
+      } catch {}
+      if (errMsg.toLowerCase().includes("api key") || errMsg.includes("API_KEY")) {
+        errMsg = "AI analysis service is currently unavailable. Please check that GEMINI_API_KEY is properly configured.";
+      }
+      setPhotoVerificationError(errMsg);
     }
   };
 

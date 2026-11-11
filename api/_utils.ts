@@ -46,3 +46,16 @@ export function handleCors(req: VercelRequest, res: VercelResponse): boolean {
   }
   return false;
 }
+
+export function extractErrorMessage(err: any, fallback: string = "An unexpected error occurred"): string {
+  if (!err) return fallback;
+  const raw = typeof err === "string" ? err : err.message || String(err);
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.error?.message) {
+      return parsed.error.message;
+    }
+  } catch {}
+  return raw;
+}
+

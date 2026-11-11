@@ -462,26 +462,109 @@ export async function checkRoutine(
   // Parse product ids defensively to numbers to query the database bigint columns
   const numericIds = routineProductIds.map(id => Number(id)).filter(id => !isNaN(id));
   // ------------------------------------------
-  // STEP 1 — Fetch Data
+  // STEP 1 — Fetch Data (Live relational joins across products, product_scores, products_filter)
   // ------------------------------------------
   let productsData: any[] = [];
   let ingredientsData: any[] = [];
 
   try {
-    // Query product scores joined with products details
-    const { data: pData, error: pError } = await supabase
-      .from('product_scores')
-      .select(`
-        *,
-        products (
+    // Perform parallel queries directly to the source tables to guarantee live attributes
+    const [scoresRes, prodsRes, filtersRes] = await Promise.all([
+      supabase.from('product_scores').select('*').in('product_id', numericIds),
+      supabase.from('products').select('id, brand, name, type, photo_url, user_add').in('id', numericIds),
+      supabase.from('products_filter').select('*').in('product_id', numericIds)
+    ]);
+
+    const prodMap = new Map<number, any>();
+    if (prodsRes.data) {
+      prodsRes.data.forEach((p: any) => prodMap.set(Number(p.id), p));
+    }
+
+    const scoreMap = new Map<number, any>();
+    if (scoresRes.data) {
+      scoresRes.data.forEach((s: any) => scoreMap.set(Number(s.product_id), s));
+    }
+
+    const filterMap = new Map<number, any>();
+    if (filtersRes.data) {
+      filtersRes.data.forEach((f: any) => filterMap.set(Number(f.product_id), f));
+    }
+
+    productsData = numericIds.map((id) => {
+      const p = prodMap.get(id) || {};
+      const s = scoreMap.get(id) || {};
+      const f = filterMap.get(id) || {};
+
+      const explicitAhaBhaFalse =
+        (s as any).contains_aha_bha === false ||
+        (s as any).contains_aha_bha === 'false' ||
+        (p as any).contains_aha_bha === false ||
+        (p as any).contains_aha_bha === 'false' ||
+        ((s as any).has_aha_active === false &&
+          (s as any).has_bha_active === false &&
+          (f as any).c_ahabha === false);
+
+      const hasAhaBha =
+        !explicitAhaBhaFalse &&
+        Boolean(
+          (s as any).contains_aha_bha ||
+          (p as any).contains_aha_bha ||
+          s.has_aha_active ||
+          s.has_bha_active ||
+          f.c_ahabha
+        );
+
+      const activeAntagonisticGroup =
+        explicitAhaBhaFalse && s.active_antagonistic_group === 'AHA_BHA_Exfoliant'
+          ? 'None'
+          : (s.active_antagonistic_group ||
+            (hasAhaBha ? 'AHA_BHA_Exfoliant' : 'None'));
+
+      const brand = p.brand || s.product_name || '';
+      const name = p.name || s.product_name || '';
+      const type = s.cat2 || p.type || 'Custom';
+
+      return {
+        ...s,
+        ...f,
+        ...p,
+        product_id: id,
+        id,
+        brand,
+        name,
+        type,
+        photo_url: p.photo_url || null,
+        cat2: s.cat2 || type,
+        cat3: s.cat3,
+        pregnancy_safe:
+          s.pregnancy_safe !== undefined
+            ? s.pregnancy_safe
+            : f.preg_safe !== undefined
+            ? f.preg_safe
+            : true,
+        viscosity: s.viscosity,
+        has_aha_active: explicitAhaBhaFalse ? false : Boolean(s.has_aha_active),
+        has_bha_active: explicitAhaBhaFalse ? false : Boolean(s.has_bha_active),
+        contains_aha_bha: hasAhaBha,
+        c_ahabha: explicitAhaBhaFalse ? false : Boolean(f.c_ahabha),
+        active_antagonistic_group: activeAntagonisticGroup,
+        has_high_irritation: Boolean(s.has_high_irritation),
+        has_fragrance_top50: Boolean(s.has_fragrance_top50),
+        has_yeast_trigger: Boolean(s.has_yeast_trigger),
+        oil_control: s.oil_control ?? 0,
+        clear_blackheads: s.clear_blackheads ?? 0,
+        clear_whiteheads: s.clear_whiteheads ?? 0,
+        clear_surface_breakouts: s.clear_surface_breakouts ?? 0,
+        soothe_deep_breakouts: s.soothe_deep_breakouts ?? 0,
+        reduce_wrinkles: s.reduce_wrinkles ?? 0,
+        fade_pie: s.fade_pie ?? 0,
+        fade_pih: s.fade_pih ?? 0,
+        products: {
           brand,
           name
-        )
-      `)
-      .in('product_id', numericIds);
-
-    if (pError) throw pError;
-    productsData = pData || [];
+        }
+      };
+    });
 
     // Query ingredients joined with ingredient scores
     const { data: iData, error: iError } = await supabase
@@ -643,8 +726,18 @@ export async function checkRoutine(
 
   for (const product of routineProducts) {
     const prodIdStr = String(product.product_id);
-    const isProductActive = isTrueVal(product.has_high_irritation) ||
-      (product.active_antagonistic_group && product.active_antagonistic_group !== 'None');
+    const hasAhaBha =
+      isTrueVal(product.contains_aha_bha) ||
+      isTrueVal(product.has_aha_active) ||
+      isTrueVal(product.has_bha_active) ||
+      isTrueVal(product.c_ahabha);
+
+    const isProductActive =
+      isTrueVal(product.has_high_irritation) ||
+      (product.active_antagonistic_group &&
+        product.active_antagonistic_group !== 'None' &&
+        product.active_antagonistic_group !== 'none') ||
+      hasAhaBha;
 
     const productIngredients = ingredientsData.filter(ing => Number(ing.product_id) === Number(product.product_id));
     const isIngredientActive = !isProductActive && productIngredients.some(ing => {

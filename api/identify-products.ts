@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAi, parseDataUrl, handleCors } from "./_utils.js";
+import { getAi, parseDataUrl, handleCors, extractErrorMessage } from "./_utils.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleCors(req, res)) return;
@@ -126,6 +126,7 @@ If no skincare or makeup products are present, return:
     return res.json({ success: true, products: identifiedProducts });
   } catch (err: any) {
     console.error('[API /api/identify-products] Unexpected error during photo identification:', err);
-    return res.status(500).json({ success: false, error: err.message || "Failed to identify products." });
+    const error = extractErrorMessage(err, "Failed to identify products.");
+    return res.status(500).json({ success: false, error });
   }
 }

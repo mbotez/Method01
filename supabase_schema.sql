@@ -390,3 +390,73 @@ CREATE TABLE public.5alpha (
   ingredient_id integer,
   CONSTRAINT 5alpha_pkey PRIMARY KEY (id)
 );
+
+-- RPC Function: get_routines_with_live_products
+-- Resolves the denormalization issue where routines.products stores a static snapshot.
+-- Performs a live join from routines.products JSON elements into products, product_scores, and products_filter
+-- so any updates to product attributes (e.g. contains_aha_bha, has_aha_active, brand, name, cat2) instantly reflect across all routines.
+CREATE OR REPLACE FUNCTION public.get_routines_with_live_products(p_user_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  result jsonb;
+BEGIN
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'id', r.id,
+      'user_id', r.user_id,
+      'time', r.time,
+      'days', r.days,
+      'routine_name', r.routine_name,
+      'notes', r.notes,
+      'reminder', r.reminder,
+      'created_at', r.created_at,
+      'updated_at', r.updated_at,
+      'products', (
+        SELECT COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', COALESCE(p.id, (elem->>'id')::bigint),
+              'brand', COALESCE(p.brand, elem->>'brand'),
+              'name', COALESCE(p.name, elem->>'name'),
+              'type', COALESCE(ps.cat2, p.type, elem->>'type'),
+              'photo_url', COALESCE(p.photo_url, elem->>'photo_url'),
+              'cat2', ps.cat2,
+              'cat3', ps.cat3,
+              'pregnancy_safe', COALESCE(ps.pregnancy_safe, pf.preg_safe, true),
+              'has_aha_active', COALESCE(ps.has_aha_active, false),
+              'has_bha_active', COALESCE(ps.has_bha_active, false),
+              'contains_aha_bha', (COALESCE(ps.has_aha_active, false) OR COALESCE(ps.has_bha_active, false) OR COALESCE(pf.c_ahabha, false)),
+              'c_ahabha', COALESCE(pf.c_ahabha, false),
+              'active_antagonistic_group', COALESCE(ps.active_antagonistic_group, 'None'),
+              'has_high_irritation', COALESCE(ps.has_high_irritation, false),
+              'has_fragrance_top50', COALESCE(ps.has_fragrance_top50, false),
+              'has_yeast_trigger', COALESCE(ps.has_yeast_trigger, false),
+              'oil_control', COALESCE(ps.oil_control, 0),
+              'clear_blackheads', COALESCE(ps.clear_blackheads, 0),
+              'clear_whiteheads', COALESCE(ps.clear_whiteheads, 0),
+              'clear_surface_breakouts', COALESCE(ps.clear_surface_breakouts, 0),
+              'soothe_deep_breakouts', COALESCE(ps.soothe_deep_breakouts, 0),
+              'reduce_wrinkles', COALESCE(ps.reduce_wrinkles, 0),
+              'fade_pie', COALESCE(ps.fade_pie, 0),
+              'fade_pih', COALESCE(ps.fade_pih, 0)
+            )
+          ),
+          '[]'::jsonb
+        )
+        FROM jsonb_array_elements(r.products) AS elem
+        LEFT JOIN public.products p ON p.id = (elem->>'id')::bigint
+        LEFT JOIN public.product_scores ps ON ps.product_id = p.id
+        LEFT JOIN public.products_filter pf ON pf.product_id = p.id
+      )
+    )
+  )
+  INTO result
+  FROM public.routines r
+  WHERE r.user_id = p_user_id;
+
+  RETURN COALESCE(result, '[]'::jsonb);
+END;
+$$;

@@ -4,15 +4,26 @@ import { supabase } from '../lib/supabase';
 import { X, Search, Camera, Loader2 } from 'lucide-react';
 import { searchProductsFromPhoto, ProductConfirmationModal, MatchedProduct } from './photo_search';
 import { searchProducts } from '../utils/TextSearch';
+import { FeatureUnavailableModal } from './FeatureUnavailableModal';
+import { checkPhotoRecognitionLimit, recordPhotoScanUsage } from '../utils/photoRecognitionLimit';
 
 interface TrackerNewProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   userId: string;
   onSave?: () => void;
+  onProductAdded?: (newProduct: any) => void;
+  onSuccess?: (newProduct: any) => void;
 }
 
-export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ isOpen, onClose, userId, onSave }) => {
+export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  userId, 
+  onSave,
+  onProductAdded,
+  onSuccess 
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [products, setProducts] = useState<any[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
@@ -36,11 +47,30 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
   const [scanMatchedProducts, setScanMatchedProducts] = useState<MatchedProduct[]>([]);
   const [isConfirmScanOpen, setIsConfirmScanOpen] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
+  const [showFeatureUnavailable, setShowFeatureUnavailable] = useState(false);
 
   const handlePhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
       console.log('[TrackerModal:handlePhotoScan] No file selected.');
+      return;
+    }
+
+    const limitCheck = checkPhotoRecognitionLimit(userId ? { id: userId } : null);
+    if (!limitCheck.allowed) {
+      if (limitCheck.reason === 'REQUIRE_AUTH') {
+        window.dispatchEvent(new CustomEvent('open-auth-prompt', {
+          detail: {
+            title: 'Sign in or sign up',
+            description: "You've used your 1 free photo recognition scan. Please sign in or create an account to continue.",
+          }
+        }));
+      } else {
+        setShowFeatureUnavailable(true);
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
@@ -50,13 +80,13 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
 
     try {
       const matches = await searchProductsFromPhoto(file);
+      recordPhotoScanUsage(userId ? { id: userId } : null);
       console.log('[TrackerModal:handlePhotoScan] Found matches:', matches.length);
       setScanMatchedProducts(matches);
       setIsConfirmScanOpen(true);
     } catch (err: any) {
-      const errMsg = err.message || "An error occurred during photo scan. Please try again.";
       console.error('[TrackerModal:handlePhotoScan] Error during photo scan:', err);
-      setScanError(errMsg);
+      setShowFeatureUnavailable(true);
     } finally {
       setIsScanning(false);
       if (fileInputRef.current) {
@@ -72,7 +102,7 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
       const watchdog = setTimeout(() => {
         console.warn('[TrackerModal:Watchdog] Scan exceeded 30s. Resetting state.');
         setIsScanning(false);
-        setScanError('Product scan timed out after 30 seconds. Please try again with a clearer photo.');
+        setShowFeatureUnavailable(true);
       }, 30000);
       return () => clearTimeout(watchdog);
     }
@@ -176,25 +206,42 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
         product_verdict: productVerdict || null
       };
 
-      const { error } = await supabase.from('tracker').insert(payload);
-      if (!error) {
-          setSearchQuery('');
-          setSelectedProduct(null);
-          setFormData({
-              routineAM: false,
-              routinePM: false,
-              size: '',
-              notes: '',
-              inUse: true,
-              isLiked: false,
-              repurchase: false,
-              bestBy: '',
-              openDate: '',
-              poa: ''
-          });
-          onClose();
-          if (onSave) onSave();
+      let savedRecord: any = null;
+      const { data: insertedData, error } = await supabase
+        .from('tracker')
+        .insert(payload)
+        .select();
+
+      if (error) {
+        // Fallback insert without .select() if select policy is restrictive
+        const fallback = await supabase.from('tracker').insert(payload);
+        if (fallback.error) {
+          console.error('Failed to save product to tracker:', fallback.error);
+          return;
+        }
+        savedRecord = { ...payload, id: `tracker-${Date.now()}` };
+      } else {
+        savedRecord = (insertedData && insertedData[0]) ? insertedData[0] : { ...payload, id: `tracker-${Date.now()}` };
       }
+
+      setSearchQuery('');
+      setSelectedProduct(null);
+      setFormData({
+          routineAM: false,
+          routinePM: false,
+          size: '',
+          notes: '',
+          inUse: true,
+          isLiked: false,
+          repurchase: false,
+          bestBy: '',
+          openDate: '',
+          poa: ''
+      });
+      onClose();
+      if (onProductAdded) onProductAdded(savedRecord);
+      if (onSuccess) onSuccess(savedRecord);
+      if (onSave) onSave();
     } finally {
       setIsEvaluating(false);
     }
@@ -243,7 +290,23 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
                 <div className="flex flex-col gap-2">
                   <button
                     id="scan-photo-btn"
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      const limitCheck = checkPhotoRecognitionLimit(userId ? { id: userId } : null);
+                      if (!limitCheck.allowed) {
+                        if (limitCheck.reason === 'REQUIRE_AUTH') {
+                          window.dispatchEvent(new CustomEvent('open-auth-prompt', {
+                            detail: {
+                              title: 'Sign in or sign up',
+                              description: "You've used your 1 free photo recognition scan. Please sign in or create an account to continue.",
+                            }
+                          }));
+                        } else {
+                          setShowFeatureUnavailable(true);
+                        }
+                        return;
+                      }
+                      fileInputRef.current?.click();
+                    }}
                     disabled={isScanning}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-venus-accent hover:bg-venus-accent/90 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer disabled:opacity-50 border-2 border-black"
                   >
@@ -269,12 +332,6 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
                     className="hidden"
                   />
                 </div>
-
-                {scanError && (
-                  <div id="scan-error-alert" className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold border-2 border-red-500/15">
-                    {scanError}
-                  </div>
-                )}
                 
                 {products.length > 0 && (
                     <div className="border border-black/10 rounded-2xl p-2 space-y-1 max-h-[300px] overflow-y-auto">
@@ -444,6 +501,10 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({ 
         products={scanMatchedProducts}
         onConfirm={handleConfirmScan}
         onCancel={() => setIsConfirmScanOpen(false)}
+      />
+      <FeatureUnavailableModal
+        isOpen={showFeatureUnavailable}
+        onClose={() => setShowFeatureUnavailable(false)}
       />
     </div>
   );

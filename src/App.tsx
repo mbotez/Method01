@@ -30,7 +30,7 @@ import {
   Menu,
   Search,
   Home,
-  MessageCircle,
+  Users,
   Camera,
   Loader2,
   ChevronDown,
@@ -57,9 +57,35 @@ import { productSort } from './utils/productsort';
 import { searchProducts } from "./utils/TextSearch";
 import { TrackerSpreadsheetRow } from './components/TrackerSpreadsheetRow';
 import { checkRoutine, RoutineCheckResult, UserProfile } from './utils/RoutineCheck';
+import { fetchRoutinesWithLiveProducts } from './utils/routineFetcher';
 import { BREAKOUT_PHOTO_OPTIONS, getBreakoutTitle, breakoutTypeStringToId } from './data/breakoutOptions';
 import { setupCapacitorDeepLinkAuth, handleWebAuthCallback, isNativePlatform } from './utils/auth';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
+import { FeatureUnavailableModal } from './components/FeatureUnavailableModal';
+import { checkPhotoRecognitionLimit, recordPhotoScanUsage } from './utils/photoRecognitionLimit';
+
+export const SKIN_CONCERN_OPTIONS = [
+  { id: 1, label: 'Breakouts & post-breakout marks' },
+  { id: 2, label: 'Redness' },
+  { id: 3, label: 'Dark Spots' },
+  { id: 4, label: 'Dullness' },
+  { id: 5, label: 'Dryness' },
+  { id: 6, label: 'Oily skin' },
+  { id: 7, label: 'Wrinkles & fine lines' },
+  { id: 8, label: 'Large pores & texture' },
+  { id: 9, label: 'Sensitivity' },
+  { id: 10, label: 'Extremely dry flaky skin' },
+  { id: 11, label: 'Yeast-reactive skin' },
+  { id: 12, label: 'Not sure' },
+];
+
+export const getSkinConcernLabel = (id: any): string | null => {
+  if (id === null || id === undefined) return null;
+  const num = Number(id);
+  if (isNaN(num) || num === 12) return null;
+  const match = SKIN_CONCERN_OPTIONS.find((c) => c.id === num);
+  return match ? match.label : null;
+};
 
 // --- Components ---
 
@@ -385,6 +411,8 @@ export default function App() {
   const [expandedRoutines, setExpandedRoutines] = useState<number[]>([]);
   const [routineChecks, setRoutineChecks] = useState<Record<string, RoutineCheckResult>>({});
   const [routineProductScores, setRoutineProductScores] = useState<Record<string, any>>({});
+  const [routinesVersion, setRoutinesVersion] = useState(0);
+  const [isRefreshingRoutines, setIsRefreshingRoutines] = useState(false);
 
   const getBenefitsForProduct = (p: any, s: any) => {
     const rawCat2 = p?.cat2 ||
@@ -433,10 +461,28 @@ export default function App() {
     return products || [];
   };
 
+  const refreshRoutines = useCallback(async (signal?: AbortSignal) => {
+    if (!user) return;
+    setIsRefreshingRoutines(true);
+    try {
+      const liveRoutines = await fetchRoutinesWithLiveProducts(user.id, signal);
+      setRoutines(liveRoutines);
+      setRoutinesVersion(v => v + 1);
+    } catch (err) {
+      console.error('Error refreshing routines with live products:', err);
+    } finally {
+      setIsRefreshingRoutines(false);
+    }
+  }, [user]);
+
   const toggleRoutineExpansion = (idx: number) => {
-    setExpandedRoutines(prev => 
-      prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
-    );
+    setExpandedRoutines(prev => {
+      const willExpand = !prev.includes(idx);
+      if (willExpand) {
+        refreshRoutines();
+      }
+      return willExpand ? [...prev, idx] : prev.filter(i => i !== idx);
+    });
   };
 
   const [expandedTrackerIds, setExpandedTrackerIds] = useState<string[]>([]);
@@ -476,7 +522,45 @@ export default function App() {
   const [newProductForComparison, setNewProductForComparison] = useState<any | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<any | null>(null);
   const [isFollowsOpen, setIsFollowsOpen] = useState(false);
-  const [socialTab, setSocialTab] = useState<'Messages' | 'Friends'>('Friends');
+  const [isEditingGoals, setIsEditingGoals] = useState(false);
+  const [editMainConcern, setEditMainConcern] = useState<number>(12);
+  const [editScndConcern, setEditScndConcern] = useState<number>(12);
+  const [isSavingGoals, setIsSavingGoals] = useState(false);
+  const [goalsSaveError, setGoalsSaveError] = useState<string | null>(null);
+
+  const handleSaveGoals = async () => {
+    if (!user?.id) return;
+    setIsSavingGoals(true);
+    setGoalsSaveError(null);
+    try {
+      const { error: updateError } = await supabase
+        .from('user_profile')
+        .update({
+          main_concern: editMainConcern,
+          scnd_concern: editScndConcern,
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setUserProfile((prev: any) => prev ? {
+        ...prev,
+        main_concern: editMainConcern,
+        scnd_concern: editScndConcern,
+      } : {
+        main_concern: editMainConcern,
+        scnd_concern: editScndConcern,
+      });
+
+      setIsEditingGoals(false);
+    } catch (err: any) {
+      setGoalsSaveError(err?.message || 'Failed to update skin goals');
+    } finally {
+      setIsSavingGoals(false);
+    }
+  };
   const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'articles' | 'guides' | 'community'>('videos');
   const [latestVideos, setLatestVideos] = useState<any[]>([]);
   const [lastPost, setLastPost] = useState<any>(null);
@@ -505,16 +589,84 @@ export default function App() {
   const [isLandingConfirmOpen, setIsLandingConfirmOpen] = useState(false);
   const [cachedLandingProducts, setCachedLandingProducts] = useState<MatchedProduct[]>([]);
   const [isLandingEvaluating, setIsLandingEvaluating] = useState(false);
+  const [showFeatureUnavailable, setShowFeatureUnavailable] = useState(false);
+  const [authPromptConfig, setAuthPromptConfig] = useState<{
+    title: string;
+    description: string;
+  } | null>(null);
+
+  const openAuthPromptModal = (title?: string, description?: string) => {
+    if (title || description) {
+      setAuthPromptConfig({
+        title: title || "Log In or Sign Up",
+        description: description || "Create an account or log in to continue.",
+      });
+    } else {
+      setAuthPromptConfig({
+        title: "Log In or Sign Up to add this to your tracker",
+        description: "Create an account or log in to track your skincare routine, products, and skin progress.",
+      });
+    }
+    setAuthPromptModalOpen(true);
+  };
+
+  const triggerPhotoScan = (inputRef: React.RefObject<HTMLInputElement | null>) => {
+    const limitCheck = checkPhotoRecognitionLimit(user);
+    if (!limitCheck.allowed) {
+      if (limitCheck.reason === 'REQUIRE_AUTH') {
+        openAuthPromptModal(
+          "Sign in or sign up",
+          "You've used your 1 free photo recognition scan. Please sign in or create an account to continue."
+        );
+      } else {
+        setShowFeatureUnavailable(true);
+      }
+      return;
+    }
+    inputRef.current?.click();
+  };
 
   const fetchTrackerData = useCallback(async (customUserId?: string) => {
     const uid = customUserId || user?.id;
     if (!uid) return;
-    const { data, error } = await supabase
-      .from('tracker')
-      .select('*')
-      .eq('user_id', uid);
-    if (error) if (data) setTrackerData(data);
+    try {
+      const { data, error } = await supabase
+        .from('tracker')
+        .select('*')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.error('Error fetching tracker data:', error);
+        return;
+      }
+      if (data) {
+        setTrackerData(data);
+      }
+    } catch (err) {
+      console.error('Exception fetching tracker data:', err);
+    }
   }, [user]);
+
+  const handleTrackerProductAdded = useCallback((newProduct?: any) => {
+    if (newProduct) {
+      setTrackerData(prev => {
+        const exists = prev.some(item => 
+          (newProduct.id && item.id === newProduct.id) ||
+          (item.brand === newProduct.brand && item.product_name === newProduct.product_name && item.routine_time === newProduct.routine_time)
+        );
+        if (exists) {
+          return prev.map(item => 
+            ((newProduct.id && item.id === newProduct.id) || 
+             (item.brand === newProduct.brand && item.product_name === newProduct.product_name && item.routine_time === newProduct.routine_time))
+              ? { ...item, ...newProduct }
+              : item
+          );
+        }
+        return [newProduct, ...prev];
+      });
+    }
+    fetchTrackerData();
+  }, [fetchTrackerData]);
 
   // Inspiration Sorting States
   const [selectedInspirationCategory, setSelectedInspirationCategory] = useState<string | null>(null);
@@ -606,20 +758,35 @@ export default function App() {
       return;
     }
 
+    const limitCheck = checkPhotoRecognitionLimit(user);
+    if (!limitCheck.allowed) {
+      if (limitCheck.reason === 'REQUIRE_AUTH') {
+        openAuthPromptModal(
+          "Sign in or sign up",
+          "You've used your 1 free photo recognition scan. Please sign in or create an account to continue."
+        );
+      } else {
+        setShowFeatureUnavailable(true);
+      }
+      if (dashboardFileInputRef.current) {
+        dashboardFileInputRef.current.value = '';
+      }
+      return;
+    }
+
     console.log('[App:DashboardScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsDashboardScanning(true);
     setDashboardScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
+      recordPhotoScanUsage(user);
       console.log('[App:DashboardScan] Photo scan successful. Found matches:', matches.length);
       setDashboardScanMatched(matches);
       setIsDashboardConfirmOpen(true);
     } catch (err: any) {
-      const errMsg = err.message || "An error occurred during photo scan. Please try again.";
       console.error('[App:DashboardScan] Photo scan failed with error:', err);
-      setDashboardScanError(errMsg);
-      setError(errMsg);
+      setShowFeatureUnavailable(true);
     } finally {
       setIsDashboardScanning(false);
       if (dashboardFileInputRef.current) {
@@ -635,20 +802,35 @@ export default function App() {
       return;
     }
 
+    const limitCheck = checkPhotoRecognitionLimit(user);
+    if (!limitCheck.allowed) {
+      if (limitCheck.reason === 'REQUIRE_AUTH') {
+        openAuthPromptModal(
+          "Sign in or sign up",
+          "You've used your 1 free photo recognition scan. Please sign in or create an account to continue."
+        );
+      } else {
+        setShowFeatureUnavailable(true);
+      }
+      if (navFileInputRef.current) {
+        navFileInputRef.current.value = '';
+      }
+      return;
+    }
+
     console.log('[App:NavScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsNavScanning(true);
     setNavScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
+      recordPhotoScanUsage(user);
       console.log('[App:NavScan] Photo scan successful. Found matches:', matches.length);
       setNavScanMatched(matches);
       setIsNavConfirmOpen(true);
     } catch (err: any) {
-      const errMsg = err.message || "An error occurred during photo scan. Please try again.";
       console.error('[App:NavScan] Photo scan failed with error:', err);
-      setNavScanError(errMsg);
-      setError(errMsg);
+      setShowFeatureUnavailable(true);
     } finally {
       setIsNavScanning(false);
       if (navFileInputRef.current) {
@@ -664,20 +846,35 @@ export default function App() {
       return;
     }
 
+    const limitCheck = checkPhotoRecognitionLimit(user);
+    if (!limitCheck.allowed) {
+      if (limitCheck.reason === 'REQUIRE_AUTH') {
+        openAuthPromptModal(
+          "Sign in or sign up",
+          "You've used your 1 free photo recognition scan. Please sign in or create an account to continue."
+        );
+      } else {
+        setShowFeatureUnavailable(true);
+      }
+      if (landingFileInputRef.current) {
+        landingFileInputRef.current.value = '';
+      }
+      return;
+    }
+
     console.log('[App:LandingScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsLandingScanning(true);
     setLandingScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
+      recordPhotoScanUsage(user);
       console.log('[App:LandingScan] Photo scan successful. Found matches:', matches.length);
       setLandingScanMatched(matches);
       setIsLandingConfirmOpen(true);
     } catch (err: any) {
-      const errMsg = err.message || "An error occurred during photo scan. Please try again.";
       console.error('[App:LandingScan] Photo scan failed with error:', err);
-      setLandingScanError(errMsg);
-      setError(errMsg);
+      setShowFeatureUnavailable(true);
     } finally {
       setIsLandingScanning(false);
       if (landingFileInputRef.current) {
@@ -696,7 +893,7 @@ export default function App() {
         setIsNavScanning(false);
         setIsDashboardScanning(false);
         setIsLandingEvaluating(false);
-        setError('Photo analysis took too long to complete. The operation has been cancelled. Please ensure your photo is clear and try again.');
+        setShowFeatureUnavailable(true);
       }, 30000);
       return () => clearTimeout(watchdog);
     }
@@ -912,15 +1109,6 @@ export default function App() {
         return;
     }
     
-    
-    // 1. Send automated message
-    const { error: msgError } = await supabase.from('messages').insert({
-        sender_id: user.id,
-        receiver_id: targetUserId,
-        message: `${user.username || 'Someone'} has sent you their routine! It's now available in your routines table.`,
-        timestamp: new Date().toISOString()
-    });
-    if (msgError) {}
     const { error } = await supabase
         .from('routines')
         .insert({
@@ -1216,11 +1404,22 @@ export default function App() {
       setIsSignUp(false);
       setAppState(AppState.AUTH);
     };
+    const handleOpenAuthPrompt = (e: any) => {
+      const detail = e.detail || {};
+      openAuthPromptModal(detail.title, detail.description);
+    };
+    const handleShowUnavailable = () => {
+      setShowFeatureUnavailable(true);
+    };
     window.addEventListener('open-quiz-or-login', handleOpenQuizOrLogin);
     window.addEventListener('open-login-modal', handleOpenLoginModal);
+    window.addEventListener('open-auth-prompt', handleOpenAuthPrompt);
+    window.addEventListener('show-feature-unavailable', handleShowUnavailable);
     return () => {
       window.removeEventListener('open-quiz-or-login', handleOpenQuizOrLogin);
       window.removeEventListener('open-login-modal', handleOpenLoginModal);
+      window.removeEventListener('open-auth-prompt', handleOpenAuthPrompt);
+      window.removeEventListener('show-feature-unavailable', handleShowUnavailable);
     };
   }, []);
 
@@ -1331,6 +1530,7 @@ export default function App() {
       }
 
       setRoutines(prev => prev.filter(rt => rt.id !== routineToDelete.id));
+      setRoutinesVersion(v => v + 1);
       setRoutineToDelete(null);
     } catch (e: any) {
       setError(`Error deleting routine: ${formatSupabaseError(e)}`);
@@ -1916,7 +2116,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [routines, trackerData, loading, userProfile, profile]);
+  }, [routines, trackerData, loading, userProfile, profile, routinesVersion]);
 
   useEffect(() => {
     const fetchScoresForRoutines = async () => {
@@ -1937,7 +2137,7 @@ export default function App() {
         .in('product_id', ids);
 
       if (error) {
-        } else if (data) {
+      } else if (data) {
         const map: Record<string, any> = {};
         data.forEach((row: any) => {
           map[String(row.product_id)] = row;
@@ -1949,9 +2149,9 @@ export default function App() {
     if (routines.length > 0) {
       fetchScoresForRoutines();
     }
-  }, [routines, trackerData]);
+  }, [routines, trackerData, routinesVersion]);
 
-  // Supabase listeners
+  // Supabase listeners & live cache synchronization
   useEffect(() => {
     if (!user) return;
 
@@ -1961,15 +2161,11 @@ export default function App() {
 
     const fetchInitialData = async () => {
       try {
-        // Routines
-        const { data: routinesData, error: routinesError } = await supabase
-          .from('routines')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('updated_at', { ascending: true })
-          .abortSignal(signal);
-        if (!routinesError && routinesData && isMounted) {
-          setRoutines(routinesData);
+        // Routines - performed with live join to products, product_scores, and products_filter
+        const liveRoutines = await fetchRoutinesWithLiveProducts(user.id, signal);
+        if (isMounted) {
+          setRoutines(liveRoutines);
+          setRoutinesVersion(v => v + 1);
         }
 
         // Progress
@@ -2015,11 +2211,43 @@ export default function App() {
 
     fetchInitialData();
 
-    // Set up a single consolidated real-time subscription for the current user's tables
+    // Set up consolidated real-time subscription for user tables AND product tables
+    // so any database attribute update instantly reflects in the routine checker UI.
     const userSyncChannel = supabase.channel(`user-sync-${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'routines', filter: `user_id=eq.${user.id}` }, async () => {
-        const { data } = await supabase.from('routines').select('*').eq('user_id', user.id).order('updated_at', { ascending: true });
-        if (data && isMounted) setRoutines(data);
+        const live = await fetchRoutinesWithLiveProducts(user.id);
+        if (live && isMounted) {
+          setRoutines(live);
+          setRoutinesVersion(v => v + 1);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async () => {
+        const live = await fetchRoutinesWithLiveProducts(user.id);
+        if (live && isMounted) {
+          setRoutines(live);
+          setRoutinesVersion(v => v + 1);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_scores' }, async () => {
+        const live = await fetchRoutinesWithLiveProducts(user.id);
+        if (live && isMounted) {
+          setRoutines(live);
+          setRoutinesVersion(v => v + 1);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products_filter' }, async () => {
+        const live = await fetchRoutinesWithLiveProducts(user.id);
+        if (live && isMounted) {
+          setRoutines(live);
+          setRoutinesVersion(v => v + 1);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_metric_culprits' }, async () => {
+        const live = await fetchRoutinesWithLiveProducts(user.id);
+        if (live && isMounted) {
+          setRoutines(live);
+          setRoutinesVersion(v => v + 1);
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tracker', filter: `user_id=eq.${user.id}` }, async () => {
         const { data } = await supabase.from('tracker').select('*').eq('user_id', user.id);
@@ -2049,6 +2277,28 @@ export default function App() {
       supabase.removeChannel(userSyncChannel);
     };
   }, [user]);
+
+  // Invalidate cache and fetch fresh product data when navigating to Routines or Dashboard
+  useEffect(() => {
+    if (user && (appState === AppState.ROUTINES || appState === AppState.DASHBOARD)) {
+      refreshRoutines();
+    }
+  }, [appState, user, refreshRoutines]);
+
+  // Window focus listener: Invalidate cache when user switches tabs (e.g. from Supabase dashboard back to app)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (user && document.visibilityState === 'visible') {
+        refreshRoutines();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [user, refreshRoutines]);
 
   const handleDeleteUPP = async (userProductId: string) => {
     try {
@@ -2297,13 +2547,12 @@ export default function App() {
         throw routineError;
       }
 
-      // Refresh routines immediately
-      const { data: updatedRoutines } = await supabase
-        .from('routines')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: true });
-      if (updatedRoutines) setRoutines(updatedRoutines);
+      // Refresh routines immediately with live product join
+      const updatedRoutines = await fetchRoutinesWithLiveProducts(user.id);
+      if (updatedRoutines) {
+        setRoutines(updatedRoutines);
+        setRoutinesVersion(v => v + 1);
+      }
 
       const userPayload = { onboarding_complete: true };
       const { error: userError } = await supabase
@@ -2429,13 +2678,12 @@ export default function App() {
       }
       // ... continue with success logic
 
-      // Refresh routines immediately
-      const { data: updatedRoutines } = await supabase
-        .from('routines')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: true });
-      if (updatedRoutines) setRoutines(updatedRoutines);
+      // Refresh routines immediately with live product join
+      const updatedRoutines = await fetchRoutinesWithLiveProducts(user.id);
+      if (updatedRoutines) {
+        setRoutines(updatedRoutines);
+        setRoutinesVersion(v => v + 1);
+      }
 
       // Check products against UPP table
       for (const product of processedProducts) {
@@ -2535,6 +2783,7 @@ export default function App() {
 
   const handleDeleteFromTracker = async (id: string) => {
     if (!user) return;
+    setTrackerData(prev => prev.filter(t => t.id !== id));
     await supabase.from('tracker').delete().eq('id', id);
     fetchTrackerData();
   };
@@ -2621,7 +2870,16 @@ export default function App() {
           <div className="flex items-center gap-2 text-black">
             <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>My routines</h3>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button 
+              onClick={() => refreshRoutines()}
+              disabled={isRefreshingRoutines}
+              className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer bg-black/5 hover:bg-black/10 px-2.5 py-1.5 rounded-lg"
+              title="Re-evaluate live product attributes from database"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingRoutines ? 'animate-spin text-venus-accent' : ''}`} />
+              <span className="hidden sm:inline">{isRefreshingRoutines ? 'Syncing...' : 'Live Sync'}</span>
+            </button>
             <button 
               onClick={handleAddRoutine}
               className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2 cursor-pointer"
@@ -2630,7 +2888,7 @@ export default function App() {
               <span className="hidden md:inline">New Routine</span>
             </button>
             <button 
-              onClick={() => dashboardFileInputRef.current?.click()}
+              onClick={() => triggerPhotoScan(dashboardFileInputRef)}
               disabled={isDashboardScanning}
               className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2 cursor-pointer"
             >
@@ -2652,12 +2910,6 @@ export default function App() {
         onChange={handleDashboardPhotoScan}
         className="hidden"
       />
-      
-      {dashboardScanError && (
-        <div className="p-3 bg-red-50 text-red-600 rounded-xl text-xs font-bold border-2 border-red-500/15">
-          {dashboardScanError}
-        </div>
-      )}
       <div className="space-y-8">
         {routines.length === 0 ? (
           <div className="py-12 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50 rounded-2xl">
@@ -2749,8 +3001,20 @@ export default function App() {
                         <div className="mt-4 p-4 rounded-2xl bg-black/[0.02] border border-black/5 space-y-4">
                           {/* Title / Header */}
                           <div className="flex items-center justify-between border-b border-black/5 pb-2">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-black uppercase tracking-wider text-black">Routine Analysis</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  refreshRoutines();
+                                }}
+                                disabled={isRefreshingRoutines}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-black/50 hover:text-venus-accent transition-colors ml-1 cursor-pointer bg-black/5 px-2 py-0.5 rounded-full"
+                                title="Re-evaluate routine with live database product attributes"
+                              >
+                                <RefreshCw className={`w-3 h-3 ${isRefreshingRoutines ? 'animate-spin text-venus-accent' : ''}`} />
+                                <span>{isRefreshingRoutines ? 'Evaluating live DB...' : 'Re-evaluate'}</span>
+                              </button>
                             </div>
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase border ${
                               check.routine_score >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
@@ -3012,20 +3276,11 @@ export default function App() {
 
                   <button 
                     onClick={() => { resetHeaderSearchState(); setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setSocialActiveMainTab('articles'); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.SOCIAL && !isFollowsOpen ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.SOCIAL ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
                   >
                     <Heart className="w-5 h-5 shrink-0" />
                     <span className="text-xs uppercase tracking-widest font-black">The Edit</span>
                   </button>
-                  {user && (
-                    <button 
-                      onClick={() => { resetHeaderSearchState(); setAppState(AppState.SOCIAL); setIsFollowsOpen(true); setSocialTab('Messages'); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.SOCIAL && isFollowsOpen ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
-                    >
-                      <MessageCircle className="w-5 h-5 shrink-0" />
-                      <span className="text-xs uppercase tracking-widest font-black">Messages</span>
-                    </button>
-                  )}
                   {user && (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} 
@@ -3372,8 +3627,6 @@ export default function App() {
               <Social 
                 isFollowsOpen={isFollowsOpen}
                 setIsFollowsOpen={setIsFollowsOpen}
-                socialTab={socialTab}
-                setSocialTab={setSocialTab}
                 activeMainTab={socialActiveMainTab}
                 setActiveMainTab={setSocialActiveMainTab}
               />
@@ -3428,7 +3681,7 @@ export default function App() {
                     </motion.div>
                   </button>
                   <button 
-                    onClick={() => landingFileInputRef.current?.click()}
+                    onClick={() => triggerPhotoScan(landingFileInputRef)}
                     className="p-5 bg-white/60 backdrop-blur-md border border-black/10 text-black hover:bg-white/90 active:scale-95 rounded-full font-black transition-all shadow-xl flex items-center justify-center mx-auto cursor-pointer"
                   >
                     <Camera className="w-7 h-7 text-black" />
@@ -4429,7 +4682,16 @@ export default function App() {
                     Track your daily routines.
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                  <button 
+                    onClick={() => refreshRoutines()}
+                    disabled={isRefreshingRoutines}
+                    className="bg-black/5 hover:bg-black/10 text-black px-3.5 py-2.5 rounded-xl text-xs uppercase tracking-widest font-black transition-colors flex items-center gap-2 cursor-pointer"
+                    title="Re-evaluate live product attributes from database"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingRoutines ? 'animate-spin text-venus-accent' : ''}`} />
+                    <span>{isRefreshingRoutines ? 'Syncing...' : 'Live Sync'}</span>
+                  </button>
                   <button 
                     onClick={handleAddRoutine}
                     className="bg-black text-white px-4 py-2.5 rounded-xl text-xs uppercase tracking-widest font-black hover:bg-venus-accent transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
@@ -4438,7 +4700,7 @@ export default function App() {
                     <span>New Routine</span>
                   </button>
                   <button 
-                    onClick={() => dashboardFileInputRef.current?.click()}
+                    onClick={() => triggerPhotoScan(dashboardFileInputRef)}
                     disabled={isDashboardScanning}
                     className="bg-black/5 hover:bg-black/10 text-black px-4 py-2.5 rounded-xl text-xs uppercase tracking-widest font-black transition-colors flex items-center gap-2 cursor-pointer"
                   >
@@ -5119,9 +5381,6 @@ export default function App() {
                 <h2 className="text-4xl md:text-5xl font-sans font-black text-black uppercase tracking-tighter">
                   My Skin Profile
                 </h2>
-                <p className="text-sm font-medium text-black/50 italic max-w-md mx-auto">
-                  Your customized skin identity based on your dermatological diagnostic details and daily tracking.
-                </p>
               </header>
 
               {!userProfile ? (
@@ -5215,7 +5474,7 @@ export default function App() {
                                Number(userProfile.barrier_status) >= 3 ? 'Moderate Sensitivity Risk' :
                                'Strong Barrier / Healthy'}
                             </span>
-                            <span className="text-[9px] text-black/40">Computed from self-reported skin characteristics & reactivity</span>
+                            <span className="text-[9px] text-black/40">Based on self-reported skin characteristics</span>
                           </div>
                         </div>
                       </div>
@@ -5241,29 +5500,133 @@ export default function App() {
 
                   {/* Skin Goals Card */}
                   <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-black/50 mb-4 flex items-center gap-1.5">
-                      <Heart className="w-4 h-4 text-venus-accent" />
-                      Target Skin Goals
-                    </h4>
-                    {Array.isArray(userProfile.goals) && userProfile.goals.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {userProfile.goals.map((g: string, idx: number) => (
-                          <span 
-                            key={g + idx} 
-                            className="text-xs bg-black text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
+                        <Heart className="w-4 h-4 text-venus-accent" />
+                        Target Skin Goals
+                      </h4>
+                      {!isEditingGoals && (
+                        <button
+                          onClick={() => {
+                            setEditMainConcern(userProfile?.main_concern ? Number(userProfile.main_concern) : 12);
+                            setEditScndConcern(userProfile?.scnd_concern ? Number(userProfile.scnd_concern) : 12);
+                            setGoalsSaveError(null);
+                            setIsEditingGoals(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                          title="Edit skincare goals"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {isEditingGoals ? (
+                      <div className="space-y-4 pt-1">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
+                            Main Concern
+                          </label>
+                          <select
+                            value={editMainConcern}
+                            onChange={(e) => setEditMainConcern(Number(e.target.value))}
+                            className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5 text-venus-pink" />
-                            {g}
-                          </span>
-                        ))}
+                            {SKIN_CONCERN_OPTIONS.map((c) => (
+                              <option key={`edit-main-${c.id}`} value={c.id}>
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
+                            Secondary Concern (Optional)
+                          </label>
+                          <select
+                            value={editScndConcern}
+                            onChange={(e) => setEditScndConcern(Number(e.target.value))}
+                            className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
+                          >
+                            {SKIN_CONCERN_OPTIONS.map((c) => (
+                              <option key={`edit-scnd-${c.id}`} value={c.id}>
+                                {c.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {goalsSaveError && (
+                          <p className="text-xs text-red-600 font-semibold">{goalsSaveError}</p>
+                        )}
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={handleSaveGoals}
+                            disabled={isSavingGoals}
+                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            {isSavingGoals && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            Save Goals
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsEditingGoals(false);
+                              setGoalsSaveError(null);
+                            }}
+                            disabled={isSavingGoals}
+                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                    ) : typeof userProfile.goals === 'string' && userProfile.goals.trim() !== '' ? (
-                      <span className="text-xs bg-black text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-venus-pink" />
-                        {userProfile.goals}
-                      </span>
                     ) : (
-                      <p className="text-xs text-black/40 italic">No specific skincare goals configured.</p>
+                      (() => {
+                        const mainLabel = getSkinConcernLabel(userProfile?.main_concern);
+                        const scndLabel = getSkinConcernLabel(userProfile?.scnd_concern);
+                        const legacyGoals = Array.isArray(userProfile?.goals) 
+                          ? userProfile.goals 
+                          : typeof userProfile?.goals === 'string' && userProfile.goals.trim() !== '' 
+                          ? [userProfile.goals] 
+                          : [];
+
+                        const hasAnyGoals = Boolean(mainLabel || (scndLabel && scndLabel !== mainLabel) || legacyGoals.length > 0);
+
+                        if (!hasAnyGoals) {
+                          return <p className="text-xs text-black/40 italic">No specific skincare goals chosen</p>;
+                        }
+
+                        return (
+                          <div className="flex flex-wrap gap-2">
+                            {mainLabel && (
+                              <span className="text-xs bg-black text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-venus-pink" />
+                                <span>{mainLabel}</span>
+                                <span className="text-[9px] text-white/50 font-normal ml-1">Main</span>
+                              </span>
+                            )}
+                            {scndLabel && scndLabel !== mainLabel && (
+                              <span className="text-xs bg-black text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-venus-pink" />
+                                <span>{scndLabel}</span>
+                                <span className="text-[9px] text-white/50 font-normal ml-1">Secondary</span>
+                              </span>
+                            )}
+                            {legacyGoals.map((g: string, idx: number) => (
+                              <span 
+                                key={g + idx} 
+                                className="text-xs bg-black text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-venus-pink" />
+                                {g}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()
                     )}
                   </div>
 
@@ -5868,7 +6231,7 @@ export default function App() {
             <ShoppingBag className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.RANK ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.RANK)} />
             <div className="w-px h-4 bg-black/10 hidden md:block" />
             <button
-              onClick={() => navFileInputRef.current?.click()}
+              onClick={() => triggerPhotoScan(navFileInputRef)}
               disabled={isNavScanning}
               className="cursor-pointer"
             >
@@ -5928,6 +6291,8 @@ export default function App() {
         onClose={() => setIsTrackerModalOpen(false)}
         userId={user?.id}
         onSave={fetchTrackerData}
+        onProductAdded={handleTrackerProductAdded}
+        onSuccess={handleTrackerProductAdded}
       />
       {isSharingOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
@@ -5957,22 +6322,23 @@ export default function App() {
       {authPromptModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full relative space-y-4 text-center">
-            <button className="absolute top-4 right-4 text-gray-400 hover:text-black transition" onClick={() => setAuthPromptModalOpen(false)}>
+            <button className="absolute top-4 right-4 text-gray-400 hover:text-black transition cursor-pointer p-1" onClick={() => { setAuthPromptModalOpen(false); setAuthPromptConfig(null); }}>
               <X className="w-5 h-5"/>
             </button>
             <div className="w-12 h-12 bg-black/5 rounded-full flex items-center justify-center mx-auto text-black">
               <UserIcon className="w-6 h-6" />
             </div>
             <h3 className="text-base font-black uppercase tracking-tight text-black">
-              Log In or Sign Up to add this to your tracker
+              {authPromptConfig?.title || "Log In or Sign Up to add this to your tracker"}
             </h3>
             <p className="text-xs text-black/60">
-              Create an account or log in to track your skincare routine, products, and skin progress.
+              {authPromptConfig?.description || "Create an account or log in to track your skincare routine, products, and skin progress."}
             </p>
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => {
                   setAuthPromptModalOpen(false);
+                  setAuthPromptConfig(null);
                   setIsSignUp(false);
                   setAppState(AppState.AUTH);
                 }}
@@ -5983,6 +6349,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setAuthPromptModalOpen(false);
+                  setAuthPromptConfig(null);
                   setIsSignUp(true);
                   setAppState(AppState.AUTH);
                 }}
@@ -5994,6 +6361,10 @@ export default function App() {
           </div>
         </div>
       )}
+      <FeatureUnavailableModal
+        isOpen={showFeatureUnavailable}
+        onClose={() => setShowFeatureUnavailable(false)}
+      />
       <ProductConfirmationModal
         isOpen={isDashboardConfirmOpen}
         products={dashboardScanMatched}

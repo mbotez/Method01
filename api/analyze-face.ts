@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAi, parseDataUrl, handleCors } from "./_utils.js";
+import { getAi, parseDataUrl, handleCors, extractErrorMessage } from "./_utils.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleCors(req, res)) return;
@@ -143,6 +143,7 @@ Return ONLY a JSON response conforming to this exact schema (no markdown wrappin
     return res.json({ success: true, ...result });
 
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message || "Failed to analyze skin image." });
+    const error = extractErrorMessage(err, "Failed to analyze skin image.");
+    return res.status(500).json({ success: false, error });
   }
 }

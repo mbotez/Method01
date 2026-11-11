@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   MessageCircle, 
-  Users, 
   Heart, 
   Share2, 
   X, 
@@ -232,8 +231,6 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
 interface SocialProps {
   isFollowsOpen?: boolean;
   setIsFollowsOpen?: (open: boolean) => void;
-  socialTab?: 'Messages' | 'Friends';
-  setSocialTab?: (tab: 'Messages' | 'Friends') => void;
   activeMainTab?: 'videos' | 'articles' | 'guides' | 'community';
   setActiveMainTab?: (tab: 'videos' | 'articles' | 'guides' | 'community') => void;
 }
@@ -241,17 +238,11 @@ interface SocialProps {
 export const Social = ({
   isFollowsOpen: externalIsFollowsOpen,
   setIsFollowsOpen: externalSetIsFollowsOpen,
-  socialTab: externalSocialTab,
-  setSocialTab: externalSetSocialTab,
   activeMainTab: externalActiveMainTab,
   setActiveMainTab: externalSetActiveMainTab,
 }: SocialProps) => {
   const { openProductCard } = useProductCard();
-  const [internalSocialTab, internalSetSocialTab] = useState<'Messages' | 'Friends'>('Friends');
   const [internalIsFollowsOpen, internalSetIsFollowsOpen] = useState(false);
-
-  const socialTab = externalSocialTab !== undefined ? externalSocialTab : internalSocialTab;
-  const setSocialTab = externalSetSocialTab !== undefined ? externalSetSocialTab : internalSetSocialTab;
 
   const isFollowsOpen = externalIsFollowsOpen !== undefined ? externalIsFollowsOpen : internalIsFollowsOpen;
   const setIsFollowsOpen = externalSetIsFollowsOpen !== undefined ? externalSetIsFollowsOpen : internalSetIsFollowsOpen;
@@ -368,61 +359,6 @@ export const Social = ({
   const [userSearch, setUserSearch] = useState('');
   const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
   const [follows, setFollows] = useState<any[]>([]);
-
-  const MessagesTab = () => {
-    const [chats, setChats] = useState<{ [key: string]: { partnerName: string, messages: any[] } }>({});
-    const [expandedChat, setExpandedChat] = useState<string | null>(null);
-
-    useEffect(() => {
-      const fetchMessages = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data, error } = await supabase
-          .from('messages')
-          .select('*, sender:users!messages_sender_id_fkey(username), receiver:users!messages_receiver_id_fkey(username)')
-          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-          .order('timestamp', { ascending: true });
-
-        if (error || !data) return;
-
-        const grouped: { [key: string]: { partnerName: string, messages: any[] } } = {};
-        data.forEach(m => {
-          const chatId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-          const chatPartner = m.sender_id === user.id ? m.receiver?.username : m.sender?.username;
-          if (!grouped[chatId]) grouped[chatId] = { partnerName: chatPartner || 'Unknown', messages: [] };
-          grouped[chatId].messages.push(m);
-        });
-        setChats(grouped);
-      };
-      fetchMessages();
-    }, []);
-
-    return (
-      <div className="space-y-4 flex-1 overflow-y-auto">
-        {Object.entries(chats).map(([chatId, chatData]: [string, { partnerName: string, messages: any[] }]) => (
-          <div key={chatId} className="bg-black/5 rounded-xl overflow-hidden">
-            <button 
-              onClick={() => setExpandedChat(expandedChat === chatId ? null : chatId)}
-              className="w-full text-left p-3 font-black uppercase text-xs hover:bg-black/10 transition-colors"
-            >
-              {chatData.partnerName}
-            </button>
-            {expandedChat === chatId && (
-              <div className="p-3 bg-white border-t border-black/5 space-y-2">
-                {chatData.messages.map((m: any) => (
-                  <div key={m.id} className={`text-[10px] p-2 rounded-lg ${m.sender_id === chatData.messages[0].sender_id ? 'bg-venus-accent/10' : 'bg-black/5'}`}>
-                    <p className="font-black uppercase">{m.sender_id === chatData.messages[0].sender_id ? 'You' : chatData.partnerName}:</p>
-                    <p>{m.message}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    );
-  };
 
   async function handleFollow(following_id: string) {
     const { data: { user } } = await supabase.auth.getUser();
@@ -1160,99 +1096,6 @@ export const Social = ({
         )}
       </AnimatePresence>
 
-      {/* Follows & Messages Drawer */}
-      <AnimatePresence>
-        {isFollowsOpen && (
-          <React.Fragment key="social-modal">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsFollowsOpen(false)}
-              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60]"
-            />
-            <motion.div 
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-y-0 right-0 w-80 bg-white shadow-2xl z-[70] p-6 flex flex-col"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-black" />
-                  <h2 className="text-xl font-black uppercase italic tracking-tighter">Social</h2>
-                </div>
-                <button 
-                  onClick={() => setIsFollowsOpen(false)}
-                  className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center cursor-pointer hover:bg-black/10 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Tabs */}
-              <div className="flex gap-4 mb-6">
-                {['Messages', 'Friends'].map(t => (
-                  <button key={t} onClick={() => setSocialTab(t as 'Messages' | 'Friends')} className={`text-xs font-black uppercase tracking-tight cursor-pointer ${socialTab === t ? 'text-black' : 'text-black/40'}`}>
-                    {t}
-                  </button>
-                ))}
-              </div>
-
-              {socialTab === 'Friends' ? (
-                <>
-                  {/* User Search Bar */}
-                  <div className="relative mb-6">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-black/30 pointer-events-none" />
-                    <input 
-                      type="text" 
-                      placeholder="Search users..."
-                      value={userSearch}
-                      onChange={(e) => setUserSearch(e.target.value)}
-                      className="w-full bg-black/5 border-none rounded-xl py-3 pl-10 pr-4 text-[11px] font-bold focus:ring-2 focus:ring-black/10 outline-none transition-all placeholder:uppercase placeholder:tracking-tighter"
-                    />
-                  </div>
-
-                  <div className="space-y-4 flex-1 overflow-y-auto">
-                    {userSearch ? (
-                      userSearchResults.length > 0 ? (
-                        userSearchResults.map(u => (
-                          <div key={u.id} className="flex items-center justify-between gap-3 p-3 hover:bg-black/5 rounded-xl transition-colors cursor-pointer border border-transparent">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full border-2 border-black bg-venus-accent/10 flex items-center justify-center font-black">
-                                {u.username?.[0] || '?'}
-                              </div>
-                              <p className="text-xs font-black uppercase tracking-tight">{u.username}</p>
-                            </div>
-                            <button onClick={() => handleFollow(u.id)} className="text-[9px] font-black uppercase py-1 px-3 bg-black text-white rounded-lg cursor-pointer">Follow</button>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-black/40 font-bold uppercase italic text-center p-4">No users found</p>
-                      )
-                    ) : (
-                      follows.map(f => (
-                        <div key={f.id} className="flex items-center gap-3 p-3 hover:bg-black/5 rounded-xl transition-colors cursor-pointer border border-transparent">
-                          <div className="w-10 h-10 rounded-full border-2 border-black bg-venus-accent/10 flex items-center justify-center font-black">
-                            {f.following?.username?.[0] || '?'}
-                          </div>
-                          <div>
-                            <p className="text-xs font-black uppercase tracking-tight">{f.following?.username || 'User'}</p>
-                            <p className="text-[10px] text-black/40 font-bold uppercase">{f.following?.skin_type || 'Friend'}</p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </>
-              ) : (
-                <MessagesTab />
-              )}
-            </motion.div>
-          </React.Fragment>
-        )}
-      </AnimatePresence>
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
-import { getAi, parseDataUrl, handleCors } from "./_utils.js";
+import { getAi, parseDataUrl, handleCors, extractErrorMessage } from "./_utils.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleCors(req, res)) return;
@@ -60,6 +60,7 @@ JSON schema:
     return res.json({ success: true, ...result });
 
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message || "An error occurred during face scan." });
+    const error = extractErrorMessage(err, "An error occurred during face scan.");
+    return res.status(500).json({ success: false, error });
   }
 }
