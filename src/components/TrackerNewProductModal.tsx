@@ -149,11 +149,20 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
 
   useEffect(() => {
     const search = async () => {
+      console.log('[TrackerNewProductModal] User searching for new product to add to tracker, query:', JSON.stringify(searchQuery), 'userId:', userId);
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      console.log('[TrackerNewProductModal] Auth session check during tracker search:', {
+        hasSession: !!sessionData?.session,
+        userEmail: sessionData?.session?.user?.email,
+        provider: sessionData?.session?.user?.app_metadata?.provider,
+        sessionError: sessionError?.message
+      });
       const products = await searchProducts(searchQuery);
+      console.log('[TrackerNewProductModal] Search products returned count:', products?.length, 'results:', products);
       setProducts(products);
     };
     search();
-  }, [searchQuery]);
+  }, [searchQuery, userId]);
 
   const handleSave = async () => {
     if (!selectedProduct) return;

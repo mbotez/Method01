@@ -390,11 +390,26 @@ export default function App() {
     const timer = setTimeout(async () => {
       setIsHeaderSearching(true);
       const query = headerSearchQuery.trim();
+      console.log('[HeaderSearch] User using top search bar, query:', JSON.stringify(query));
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      console.log('[HeaderSearch] Auth session check during top search:', {
+        hasSession: !!sessionData?.session,
+        userEmail: sessionData?.session?.user?.email,
+        provider: sessionData?.session?.user?.app_metadata?.provider,
+        sessionError: sessionError?.message
+      });
+
       const { data, error } = await supabase
         .from('products')
         .select('*')
         .or(`name.ilike.%${query}%,brand.ilike.%${query}%,type.ilike.%${query}%`)
         .limit(10);
+
+      console.log('[HeaderSearch] Supabase top search response - data count:', data?.length, 'error:', error);
+      if (error) {
+        console.error('[HeaderSearch] Supabase top search error:', error);
+      }
+
       if (!error && data) {
         setHeaderSearchResults(data);
       } else {
