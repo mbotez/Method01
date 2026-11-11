@@ -150,7 +150,20 @@ export const handleWebAuthCallback = async (
     }
 
     console.log('[Auth] Web auth callback session successfully established for:', data.session.user.email);
+    
+    // Forcefully update session to rebind PostgREST headers
+    await supabase.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    });
+
     onSuccess?.();
+
+    if (hasAuthCallbackPath || window.location.hash.includes('access_token') || window.location.search.includes('code')) {
+      window.location.replace('/dashboard');
+      return true;
+    }
+
     const cleanPath = window.location.pathname.replace(/\/auth\/callback\/?$/, '') || '/dashboard';
     window.history.replaceState(null, '', cleanPath);
     return true;

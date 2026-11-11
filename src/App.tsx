@@ -1816,14 +1816,27 @@ export default function App() {
       const currentUser = session?.user ?? null;
       if (mounted) setUser(currentUser);
 
-      if (currentUser && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
-        // Clean up URL if returning from OAuth redirect
+      if (event === 'SIGNED_IN' && session) {
+        setUser(session.user);
+        setAppState(AppState.DASHBOARD);
+        
+        // Forcefully update session to rebind PostgREST headers
+        await supabase.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        });
+
+        // If returning from the OAuth callback path, force a clean redirect so headers rebind
         if (typeof window !== 'undefined' && (window.location.pathname.includes('/auth/callback') || window.location.hash.includes('access_token') || window.location.search.includes('code'))) {
-          window.history.replaceState(null, '', '/dashboard');
-          if (appState === AppState.AUTH || appState === AppState.LANDING) {
-            setAppState(AppState.DASHBOARD);
-          }
+          window.location.replace('/dashboard');
+          return;
         }
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setAppState(AppState.AUTH);
+      }
+
+      if (currentUser && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
 
         // Save pending questionnaire answers if they exist
         const pending = localStorage.getItem('pendingQuestionnaireAnswers');
