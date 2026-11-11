@@ -53,6 +53,7 @@ export const getApiEndpoint = (endpointPath: string): string => {
  */
 export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
+  console.log('[Auth] Initiating Google sign in with redirectTo:', redirectTo);
   
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -71,106 +72,6 @@ export const signInWithGoogle = async () => {
   }
 
   return data;
-};
-
-export interface AuthTokens {
-  code?: string;
-  access_token?: string;
-  refresh_token?: string;
-  error?: string;
-  error_description?: string;
-}
-
-/**
- * Parses the authorization code (PKCE) or tokens from the URL query and hash parameters.
- */
-export const parseAuthTokensFromUrl = (url: string): AuthTokens => {
-  if (!url) return {};
-
-  try {
-    let hashString = '';
-    if (url.includes('#')) {
-      hashString = url.split('#')[1] || '';
-    }
-    const hashParams = new URLSearchParams(hashString);
-
-    let queryString = '';
-    if (url.includes('?')) {
-      queryString = url.split('?')[1].split('#')[0] || '';
-    }
-    const queryParams = new URLSearchParams(queryString);
-
-    const code = queryParams.get('code') || hashParams.get('code') || undefined;
-    const access_token = hashParams.get('access_token') || queryParams.get('access_token') || undefined;
-    const refresh_token = hashParams.get('refresh_token') || queryParams.get('refresh_token') || undefined;
-    const error = hashParams.get('error') || queryParams.get('error') || undefined;
-    const error_description = hashParams.get('error_description') || queryParams.get('error_description') || undefined;
-
-    return { code, access_token, refresh_token, error, error_description };
-  } catch (err) {
-    return {};
-  }
-};
-
-/**
- * Sets session from authorization code (PKCE) or tokens.
- */
-export const setSessionFromUrl = async (
-  url: string,
-  onSuccess?: () => void,
-  onError?: (errorMessage: string) => void
-): Promise<boolean> => {
-  const { code, access_token, refresh_token, error, error_description } = parseAuthTokensFromUrl(url);
-
-  if (error || error_description) {
-    const errorMsg = error_description || error || 'OAuth authentication failed';
-    onError?.(errorMsg);
-    return false;
-  }
-
-  // 1. Authorization code exchange (PKCE flow)
-  if (code) {
-    try {
-      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-      if (exchangeError) {
-        onError?.(exchangeError.message);
-        return false;
-      }
-
-      onSuccess?.();
-      return true;
-    } catch (err: any) {
-      onError?.(err.message || 'Failed to exchange auth code');
-      return false;
-    }
-  }
-
-  // 2. Token session from hash fragment (fallback)
-  if (access_token && refresh_token) {
-    try {
-      const { data, error: sessionError } = await supabase.auth.setSession({
-        access_token,
-        refresh_token,
-      });
-
-      if (sessionError) {
-        if (sessionError.message?.includes('Refresh Token')) {
-          await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-        }
-        onError?.(sessionError.message);
-        return false;
-      }
-
-      onSuccess?.();
-      return true;
-    } catch (err: any) {
-      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-      onError?.(err.message || 'Failed to set session from tokens');
-      return false;
-    }
-  }
-
-  return false;
 };
 
 /**
@@ -192,7 +93,15 @@ export const setupCapacitorDeepLinkAuth = (
       url.includes('auth-callback');
 
     if (isAuthCallback) {
-      await setSessionFromUrl(url, onSuccess, onError);
+      console.log('[Auth] Capacitor deep link auth callback received:', url);
+      // With detectSessionInUrl: true, supabase client handles code exchange automatically.
+      // We check session validity after a brief moment or trigger success callback.
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) {
+        onSuccess?.();
+      } else {
+        onError?.('Failed to establish session from deep link');
+      }
     }
   };
 
@@ -214,7 +123,9 @@ export const setupCapacitorDeepLinkAuth = (
 };
 
 /**
- * Handles web OAuth callback when landing on `/auth/callback` or with code/token parameters.
+ * Handles web OAuth callback when landing on `/auth/callback`.
+ * With detectSessionInUrl: true and PKCE enabled, Supabase client automatically
+ * exchanges the code. We verify the session and clean up the URL history.
  */
 export const handleWebAuthCallback = async (
   onSuccess?: () => void,
@@ -227,12 +138,22 @@ export const handleWebAuthCallback = async (
   const hasAuthParams = currentUrl.includes('code=') || currentUrl.includes('access_token=');
 
   if (hasAuthCallbackPath || hasAuthParams) {
-    const success = await setSessionFromUrl(currentUrl, onSuccess, onError);
-    if (success) {
-      const cleanPath = window.location.pathname.replace(/\/auth\/callback\/?$/, '') || '/';
-      window.history.replaceState(null, '', cleanPath);
+    console.log('[Auth] Handling web auth callback/params');
+    // Allow Supabase client a moment to finish auto code exchange via detectSessionInUrl
+    await new Promise(r => setTimeout(r, 400));
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error || !data?.session) {
+      console.warn('[Auth] Web auth callback session check warning:', error?.message || 'No session found');
+      onError?.(error?.message || 'Authentication failed');
+      return false;
     }
-    return success;
+
+    console.log('[Auth] Web auth callback session successfully established for:', data.session.user.email);
+    onSuccess?.();
+    const cleanPath = window.location.pathname.replace(/\/auth\/callback\/?$/, '') || '/dashboard';
+    window.history.replaceState(null, '', cleanPath);
+    return true;
   }
 
   return false;

@@ -13,17 +13,11 @@ const supabaseAnonKey =
   (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN0YnBlcnpsbW1zbHJrZHBxYXd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNjk5ODMsImV4cCI6MjA5Mjk0NTk4M30.37UW8BgKqbuw8XfcfY3zWWxkVv44_A0nJng0yDsudx8';
 
-// Non-blocking in-process lock function to eliminate navigator.locks deadlocks in mobile webviews and browsers
-const nonBlockingLock = async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => {
-  return await fn();
-};
-
 /**
  * Custom fetch with a 25-second safeguard timeout to prevent hanging TCP sockets
  * when returning from background or device sleep.
  */
 const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-  // Respect caller's abort signal if already provided
   if (init?.signal) {
     return fetch(input, init);
   }
@@ -42,14 +36,16 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
 };
 
-// Singleton Supabase client instance used throughout the entire app
+// Singleton Supabase client instance with pass-through lock to completely eliminate navigator.locks deadlocks
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
-    lock: nonBlockingLock,
+    lock: async (_name, _acquireTimeout, fn) => {
+      return await fn();
+    },
   },
   global: {
     fetch: customFetch,
@@ -59,6 +55,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+// Expose to window for easy debugging in the browser console
+if (typeof window !== 'undefined') {
+  (window as any).supabase = supabase;
+}
 
 let isRecoveringSession = false;
 let lastRecoveryTimestamp = 0;
@@ -69,7 +69,6 @@ let lastRecoveryTimestamp = 0;
  */
 export async function recoverSupabaseSession(forceRefresh: boolean = false): Promise<boolean> {
   const now = Date.now();
-  // Prevent hammering recovery if invoked multiple times in rapid succession (within 2 seconds)
   if (isRecoveringSession || (!forceRefresh && now - lastRecoveryTimestamp < 2000)) {
     return true;
   }
@@ -80,74 +79,43 @@ export async function recoverSupabaseSession(forceRefresh: boolean = false): Pro
   console.log('[Supabase Session] Initiating session and socket health check...');
 
   try {
-    // 1. Ensure auto-refresh timer loop is started
     try {
       supabase.auth.startAutoRefresh();
-      console.log('[Supabase Session] Auto-refresh started.');
     } catch (e) {
       console.warn('[Supabase Session] Could not start auto refresh:', e);
     }
 
-    // 2. Fetch current session with a 12-second timeout to prevent hanging on stale locks
-    let sessionData: any = { session: null };
-    try {
-      const sessionPromise = supabase.auth.getSession();
-      const timeoutPromise = new Promise<{ data: { session: any }; error: any }>((_, reject) =>
-        setTimeout(() => reject(new Error('getSession timed out')), 12000)
-      );
-
-      const res = await Promise.race([sessionPromise, timeoutPromise]);
-      if (res.error) {
-        console.warn('[Supabase Session] getSession reported error:', res.error.message);
-      }
-      sessionData = res.data;
-    } catch (timeoutErr: any) {
-      console.warn('[Supabase Session] getSession timed out or delayed gracefully:', timeoutErr.message);
-      // Proceed gracefully without failing session recovery
-      return true;
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      console.warn('[Supabase Session] getSession reported error:', sessionError.message);
     }
 
     const session = sessionData?.session;
-
     if (session) {
       const expiresAt = session.expires_at || 0;
       const nowSec = Math.floor(Date.now() / 1000);
-      const isExpiredOrClose = expiresAt - nowSec < 180; // Expired or expiring within 3 minutes
+      const isExpiredOrClose = expiresAt - nowSec < 180;
 
       if (isExpiredOrClose || forceRefresh) {
-        console.log(`[Supabase Session] Token is ${isExpiredOrClose ? 'stale/expiring' : 'force-refreshing'} (expires in ${expiresAt - nowSec}s). Refreshing now...`);
-        const refreshPromise = supabase.auth.refreshSession();
-        const refreshTimeout = new Promise<any>((_, reject) =>
-          setTimeout(() => reject(new Error('refreshSession timed out')), 6000)
-        );
-
-        const { data: refreshed, error: refreshError } = await Promise.race([refreshPromise, refreshTimeout]);
-
+        console.log(`[Supabase Session] Token is ${isExpiredOrClose ? 'stale/expiring' : 'force-refreshing'}. Refreshing now...`);
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
         if (refreshError) {
           console.error('[Supabase Session] Failed to refresh token:', refreshError.message);
-          // If refresh token is explicitly invalid or rejected by Supabase, purge local stale session
           const msg = (refreshError.message || '').toLowerCase();
           if (msg.includes('refresh token') || msg.includes('invalid') || (refreshError as any).status === 400) {
-            console.warn('[Supabase Session] Clearing invalid local session to prevent frozen state.');
+            console.warn('[Supabase Session] Clearing invalid local session.');
             await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
           }
           return false;
         }
-
-        console.log('[Supabase Session] Token refreshed successfully. New expiry in:', (refreshed.session?.expires_at || 0) - nowSec, 's');
-      } else {
-        console.log('[Supabase Session] Active session is valid. Expires in:', expiresAt - nowSec, 's');
+        console.log('[Supabase Session] Token refreshed successfully.');
       }
-    } else {
-      console.log('[Supabase Session] No active session found.');
     }
 
-    // 3. Health-check and reconnect Supabase Realtime socket if dropped
     try {
       if (supabase.realtime) {
         const isConnected = (supabase.realtime as any).isConnected?.() ?? true;
         if (!isConnected) {
-          console.log('[Supabase Realtime] Realtime socket disconnected during backgrounding. Reconnecting...');
           supabase.realtime.connect();
         }
       }
@@ -166,34 +134,22 @@ export async function recoverSupabaseSession(forceRefresh: boolean = false): Pro
 
 let listenersInitialized = false;
 
-/**
- * Sets up visibilitychange (web) and appStateChange (Capacitor) listeners
- * so that backgrounding stops auto-refresh and foregrounding recovers auth and network immediately.
- */
 export function setupVisibilityAndSessionRecovery(): () => void {
   if (listenersInitialized || typeof window === 'undefined') {
     return () => {};
   }
   listenersInitialized = true;
 
-  console.log('[Supabase Lifecycle] Initializing visibility and appState listeners for session recovery.');
-
-  // 1. Web visibilitychange listener
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
-      console.log('[Supabase Lifecycle] Tab visibility changed to visible. Resuming auth & recovering session...');
       recoverSupabaseSession();
     } else if (document.visibilityState === 'hidden') {
-      console.log('[Supabase Lifecycle] Tab visibility changed to hidden. Pausing auto-refresh...');
       try {
         supabase.auth.stopAutoRefresh();
-      } catch (e) {
-        console.warn('[Supabase Lifecycle] Error stopping auto-refresh on hidden:', e);
-      }
+      } catch (e) {}
     }
   };
 
-  // 2. Window focus & online listeners
   const handleFocus = () => {
     if (document.visibilityState === 'visible') {
       recoverSupabaseSession();
@@ -201,7 +157,6 @@ export function setupVisibilityAndSessionRecovery(): () => void {
   };
 
   const handleOnline = () => {
-    console.log('[Supabase Lifecycle] Network connection restored (online). Re-establishing session...');
     recoverSupabaseSession(true);
   };
 
@@ -209,29 +164,21 @@ export function setupVisibilityAndSessionRecovery(): () => void {
   window.addEventListener('focus', handleFocus);
   window.addEventListener('online', handleOnline);
 
-  // 3. Capacitor Native App state listener
   let removeCapacitorListener: (() => void) | null = null;
   if (Capacitor.isNativePlatform()) {
-    console.log('[Supabase Lifecycle] Running on Native Capacitor platform. Registering App.addListener(appStateChange)...');
     App.addListener('appStateChange', (state) => {
-      console.log('[Supabase Lifecycle] Capacitor appStateChange event:', state.isActive ? 'ACTIVE' : 'BACKGROUND');
       if (state.isActive) {
         recoverSupabaseSession();
       } else {
         try {
           supabase.auth.stopAutoRefresh();
-        } catch (e) {
-          console.warn('[Supabase Lifecycle] Error stopping auto-refresh on native background:', e);
-        }
+        } catch (e) {}
       }
     }).then((listener) => {
       removeCapacitorListener = () => listener.remove();
-    }).catch((err) => {
-      console.warn('[Supabase Lifecycle] Could not attach Capacitor appStateChange listener:', err);
-    });
+    }).catch(() => {});
   }
 
-  // Proactively run once on initial setup
   recoverSupabaseSession();
 
   return () => {
@@ -243,7 +190,6 @@ export function setupVisibilityAndSessionRecovery(): () => void {
   };
 }
 
-// Auto-run on module evaluation in browser environment
 if (typeof window !== 'undefined') {
   setupVisibilityAndSessionRecovery();
 }

@@ -1807,30 +1807,24 @@ export default function App() {
     };
   }, []);
 
-  // Auth Listener
+  // Auth Listener & Single Authoritative Session Management
   useEffect(() => {
     let mounted = true;
-    
-    // Quick initialize check
-    supabase.auth.getSession()
-      .then(({ data, error }) => {
-        if (error) {
-          supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-        }
-        if (!data?.session && mounted) {
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-        if (mounted) setLoading(false);
-      });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[Auth] onAuthStateChange event:', event, 'session user:', session?.user?.email || 'none');
       const currentUser = session?.user ?? null;
       if (mounted) setUser(currentUser);
-      
-      if (currentUser) {
+
+      if (currentUser && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
+        // Clean up URL if returning from OAuth redirect
+        if (typeof window !== 'undefined' && (window.location.pathname.includes('/auth/callback') || window.location.hash.includes('access_token') || window.location.search.includes('code'))) {
+          window.history.replaceState(null, '', '/dashboard');
+          if (appState === AppState.AUTH || appState === AppState.LANDING) {
+            setAppState(AppState.DASHBOARD);
+          }
+        }
+
         // Save pending questionnaire answers if they exist
         const pending = localStorage.getItem('pendingQuestionnaireAnswers');
         if (pending) {
@@ -1841,7 +1835,7 @@ export default function App() {
                 setPendingQuestionnaireAnswers(null);
                 await fetchTrackerData(currentUser.id);
             } catch (e: any) {
-                setError(`Error saving profile info: ${e.message}`);
+                console.error('Error saving pending questionnaire:', e);
             }
         }
 
@@ -1870,21 +1864,21 @@ export default function App() {
                   .select();
 
                 if (insertError) {
-                  }
+                  console.error('Error inserting cached landing products:', insertError);
+                }
 
                 await fetchTrackerData(currentUser.id);
 
-                // Open the product card for the first scanned product using openProductCard so it displays the exact ProductCard / ProductCardContent
                 if (productsToEvaluate.length > 0) {
                    const firstProd = productsToEvaluate[0];
                    const trackerMatch = insertedTrackerItems?.find(item => String(item.product_id) === String(firstProd.id) || (item.brand === firstProd.brand && item.product_name === firstProd.name));
                    openProductCard(firstProd.id, trackerMatch);
                 }
 
-                // Clear the cached products
                 localStorage.removeItem('cachedLandingProducts');
             } catch (cacheErr) {
-                } finally {
+                console.error('Error processing cached landing products:', cacheErr);
+            } finally {
                 if (mounted) setIsLandingEvaluating(false);
             }
         }
@@ -1896,31 +1890,29 @@ export default function App() {
             .eq('id', currentUser.id)
             .single();
 
-          if (error) { }
-
-          if (data && mounted) {
+          if (!error && data && mounted) {
             setProfile(data);
             if (data.skin_type) setSkinType(data.skin_type);
             if (data.primary_issue) setConcern(data.primary_issue);
           }
 
-          // Fetch user_profile as well
           const { data: uProfile, error: uProfileError } = await supabase
             .from('user_profile')
             .select('*')
             .eq('id', currentUser.id)
             .maybeSingle();
 
-          if (uProfileError) {
-            } else if (uProfile && mounted) {
+          if (!uProfileError && uProfile && mounted) {
             setUserProfile(uProfile);
           }
         } catch (e) {
-          } finally {
+          console.error('Error fetching user profile data:', e);
+        } finally {
           if (mounted) setLoading(false);
         }
-      } else {
+      } else if (event === 'SIGNED_OUT' || !currentUser) {
         if (mounted) {
+            setUser(null);
             setProfile(null);
             setUserProfile(null);
             setLoading(false);
@@ -1930,7 +1922,7 @@ export default function App() {
 
     return () => {
         mounted = false;
-        subscription.unsubscribe();
+        subscription?.unsubscribe();
     };
   }, []);
 
