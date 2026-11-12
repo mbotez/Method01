@@ -834,7 +834,7 @@ export const Social = ({
           </div>
         ) : activeMainTab === 'articles' ? (
           /* Tab 2: ARTICLES */
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-6 pb-32">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6 pb-32">
             {filteredArticles.length === 0 ? (
               <div className="col-span-2 text-center py-12 bg-black/[0.02] rounded-2xl border border-dashed border-black/10">
                 <p className="text-xs text-black/40 font-bold uppercase italic">No articles match your search query</p>
@@ -858,12 +858,11 @@ export const Social = ({
                       {article.excerpt || article.article_content || article.summary}
                     </p>
                   </div>
-                  <div className="pt-3 mt-3 border-t border-black/5 flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-black">
+                  <div className="pt-3 mt-3 border-t border-black/5 flex items-center justify-end text-[10px] font-black uppercase tracking-wider text-black">
                     <span className="group-hover:underline flex items-center gap-1">
-                      Read Article
+                      Read
                       <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-0.5" />
                     </span>
-                    <span className="text-[9px] text-black/40 font-bold lowercase">canonic.lab</span>
                   </div>
                 </div>
               ))
@@ -894,7 +893,7 @@ export const Social = ({
                 <p className="text-xs text-black/40 font-bold uppercase italic">No guides found matching your criteria</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6">
                 {filteredGuides.map((guide) => {
                   const isSaved = savedGuideIds.includes(guide.id);
                   return (
@@ -912,8 +911,6 @@ export const Social = ({
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5 text-[10px] text-black/50">
                             <span className="font-black uppercase tracking-wider text-venus-accent">{guide.category}</span>
-                            <span>·</span>
-                            <span>{guide.readTime}</span>
                           </div>
                           <button
                             onClick={(e) => toggleSaveGuide(guide.id, e)}
@@ -940,7 +937,7 @@ export const Social = ({
 
                       <div className="pt-3 mt-3 border-t border-black/5 flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-wider text-black group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
-                          Read Protocol
+                          Read
                           <ChevronRight className="w-3 h-3" />
                         </span>
                         <span className="text-[9px] font-bold text-black/40 uppercase tracking-widest">{guide.steps.length} Steps</span>
@@ -1099,8 +1096,6 @@ export const Social = ({
                 <div>
                   <div className="flex items-center gap-2 text-xs text-black/50 mb-1">
                     <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">{selectedGuide.category}</span>
-                    <span>·</span>
-                    <span>{selectedGuide.readTime}</span>
                   </div>
                   <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black">
                     {selectedGuide.title}

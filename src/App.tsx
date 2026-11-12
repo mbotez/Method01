@@ -4037,8 +4037,6 @@ export default function App() {
                                 <span className="font-black uppercase tracking-wider text-[10px] text-venus-accent">
                                   {article.category || 'Editorial'}
                                 </span>
-                                <span aria-hidden="true">·</span>
-                                <span>{article.readTime || '4 min read'}</span>
                               </div>
                               <h3 className="text-sm md:text-base font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2 leading-snug">
                                 {article.title}
@@ -4048,12 +4046,11 @@ export default function App() {
                               </p>
                             </div>
 
-                            <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-between text-xs font-black uppercase tracking-wider text-black">
+                            <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-end text-xs font-black uppercase tracking-wider text-black">
                               <span className="group-hover:underline flex items-center gap-1.5">
-                                Read Article
+                                Read
                                 <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
                               </span>
-                              <span className="text-[10px] text-black/40 font-bold lowercase">canonic.lab</span>
                             </div>
                           </article>
                         ))}
@@ -4794,11 +4791,10 @@ export default function App() {
                           <img src={landingGuide.imageUrl} alt={landingGuide.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                         </div>
                       )}
-                      <div className="flex items-center justify-between text-xs text-black/50">
+                      <div className="flex items-center text-xs text-black/50">
                         <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">
                           {landingGuide.category}
                         </span>
-                        <span>{landingGuide.readTime}</span>
                       </div>
                       <div>
                         <h4 className="text-sm font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors">
