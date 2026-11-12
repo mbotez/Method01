@@ -64,6 +64,7 @@ import { checkRoutine, RoutineCheckResult, UserProfile } from './utils/RoutineCh
 import { fetchRoutinesWithLiveProducts } from './utils/routineFetcher';
 import { BREAKOUT_PHOTO_OPTIONS, getBreakoutTitle, breakoutTypeStringToId } from './data/breakoutOptions';
 import { setupCapacitorDeepLinkAuth, handleWebAuthCallback, isNativePlatform } from './utils/auth';
+import { Browser } from '@capacitor/browser';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { FeatureUnavailableModal } from './components/FeatureUnavailableModal';
 import { checkPhotoRecognitionLimit, recordPhotoScanUsage } from './utils/photoRecognitionLimit';
@@ -3523,12 +3524,23 @@ export default function App() {
                   </>
                 )}
                 <div className="pt-2 px-1 flex items-center justify-between text-[11px] text-black/50">
-                  <button 
-                    onClick={() => { resetHeaderSearchState(); navigateTo(AppState.PRIVACY_POLICY); setIsMobileNavOpen(false); }}
+                  <a 
+                    href="https://www.canonic.co.uk/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (isNativePlatform()) {
+                        e.preventDefault();
+                        Browser.open({ url: 'https://www.canonic.co.uk/privacy' });
+                        setIsMobileNavOpen(false);
+                      } else {
+                        setIsMobileNavOpen(false);
+                      }
+                    }}
                     className="hover:text-black underline cursor-pointer transition-colors font-semibold"
                   >
                     Privacy Policy
-                  </button>
+                  </a>
                   <span>© Canonic</span>
                 </div>
               </div>
