@@ -135,40 +135,43 @@ export const handleWebAuthCallback = async (
   if (typeof window === 'undefined') return false;
 
   const currentUrl = window.location.href;
+  const urlParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  
+  const errorDescription = urlParams.get('error_description') || hashParams.get('error_description') || urlParams.get('error') || hashParams.get('error');
+  if (errorDescription) {
+    const decodedError = decodeURIComponent(errorDescription.replace(/\+/g, ' '));
+    console.error('[Auth] OAuth error in URL:', decodedError);
+    onError?.(decodedError);
+    return false;
+  }
+
   const hasAuthCallbackPath = window.location.pathname.includes('/auth/callback');
   const hasAuthParams = currentUrl.includes('code=') || currentUrl.includes('access_token=');
 
   if (hasAuthCallbackPath || hasAuthParams) {
-    console.log('[Auth] Handling web auth callback/params');
-    // Allow Supabase client a moment to finish auto code exchange via detectSessionInUrl
-    await new Promise(r => setTimeout(r, 400));
-    const { data, error } = await supabase.auth.getSession();
-
-    if (error || !data?.session) {
-      console.warn('[Auth] Web auth callback session check warning:', error?.message || 'No session found');
-      onError?.(error?.message || 'Authentication failed');
-      return false;
-    }
-
-    console.log('[Auth] Web auth callback session successfully established for:', data.session.user.email);
-    await debugAuthAndProfileSession();
+    console.log('[Auth] Handling web auth callback/params via onAuthStateChange');
     
-    // Forcefully update session to rebind PostgREST headers
-    await supabase.auth.setSession({
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
+    return new Promise((resolve) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          console.log('[Auth] Web auth callback SIGNED_IN event received for:', session.user.email);
+          subscription.unsubscribe();
+          window.history.replaceState(null, '', '/dashboard');
+          onSuccess?.();
+          resolve(true);
+        }
+      });
+
+      supabase.auth.getSession().then(({ data }) => {
+        if (data?.session) {
+          subscription.unsubscribe();
+          window.history.replaceState(null, '', '/dashboard');
+          onSuccess?.();
+          resolve(true);
+        }
+      });
     });
-
-    onSuccess?.();
-
-    if (hasAuthCallbackPath || window.location.hash.includes('access_token') || window.location.search.includes('code')) {
-      window.location.replace('/dashboard');
-      return true;
-    }
-
-    const cleanPath = window.location.pathname.replace(/\/auth\/callback\/?$/, '') || '/dashboard';
-    window.history.replaceState(null, '', cleanPath);
-    return true;
   }
 
   return false;

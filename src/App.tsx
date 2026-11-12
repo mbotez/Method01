@@ -1840,36 +1840,21 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[Auth] onAuthStateChange event:', event, 'session user:', session?.user?.email || 'none');
       const currentUser = session?.user ?? null;
       if (mounted) setUser(currentUser);
 
-      if (session) {
-        await debugAuthAndProfileSession();
-      }
-
       if (event === 'SIGNED_IN' && session) {
         setUser(session.user);
         setAppState(AppState.DASHBOARD);
-        
-        // Forcefully update session to rebind PostgREST headers
-        await supabase.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        });
-
-        // If returning from the OAuth callback path, force a clean redirect so headers rebind
-        if (typeof window !== 'undefined' && (window.location.pathname.includes('/auth/callback') || window.location.hash.includes('access_token') || window.location.search.includes('code'))) {
-          window.location.replace('/dashboard');
-          return;
-        }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setAppState(AppState.AUTH);
       }
 
       if (currentUser && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
+        setTimeout(async () => {
 
         // Save pending questionnaire answers if they exist
         const pending = localStorage.getItem('pendingQuestionnaireAnswers');
@@ -1956,6 +1941,7 @@ export default function App() {
         } finally {
           if (mounted) setLoading(false);
         }
+      }, 0);
       } else if (event === 'SIGNED_OUT' || !currentUser) {
         if (mounted) {
             setUser(null);
@@ -1970,6 +1956,11 @@ export default function App() {
         mounted = false;
         subscription?.unsubscribe();
     };
+  }, []);
+
+  // Separate useEffect to call debugAuthAndProfileSession
+  useEffect(() => {
+    debugAuthAndProfileSession();
   }, []);
 
   // Navigation Logic

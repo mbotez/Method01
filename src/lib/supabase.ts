@@ -43,9 +43,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
     flowType: 'pkce',
-    lock: async (_name, _acquireTimeout, fn) => {
-      return await fn();
-    },
   },
   global: {
     fetch: customFetch,
