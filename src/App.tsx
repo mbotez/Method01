@@ -43,7 +43,7 @@ import {
   Check
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
-import { supabase, recoverSupabaseSession, debugAuthAndProfileSession } from './lib/supabase';
+import { supabase, recoverSupabaseSession } from './lib/supabase';
 import { ProductCardProvider, useProductCard } from './context/ProductCardContext';
 import { Login } from './components/Login';
 import { ProductDetailModalNew } from './components/ProductDetailModalNew';
@@ -67,6 +67,7 @@ import { setupCapacitorDeepLinkAuth, handleWebAuthCallback, isNativePlatform } f
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { FeatureUnavailableModal } from './components/FeatureUnavailableModal';
 import { checkPhotoRecognitionLimit, recordPhotoScanUsage } from './utils/photoRecognitionLimit';
+import { generateUniqueUsername } from './utils/usernameGenerator';
 
 export const SKIN_CONCERN_OPTIONS = [
   { id: 1, label: 'Breakouts & post-breakout marks' },
@@ -575,15 +576,32 @@ export default function App() {
     setIsSavingUsername(true);
     setUsernameSaveError(null);
     const trimmedUsername = editUsernameVal.trim();
+    if (!trimmedUsername) {
+      setUsernameSaveError('Username cannot be empty');
+      setIsSavingUsername(false);
+      return;
+    }
+
+    // Check if username is already taken by another user
+    const { data: existing, error: checkError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('username', trimmedUsername)
+      .neq('id', user.id);
+
+    if (existing && existing.length > 0) {
+      setUsernameSaveError('username already taken');
+      setIsSavingUsername(false);
+      return;
+    }
+
     const username = trimmedUsername;
     console.log('[Profile] Saving username to Supabase for user.id:', user.id, 'username:', username);
     try {
       const { data, error } = await supabase
         .from('users')
-        .update({ username })
-        .eq('id', user.id)
+        .upsert({ id: user.id, username }, { onConflict: 'id' })
         .select();
-      console.log('[DEBUG] Username update result:', { rowsUpdated: data?.length, data, error });
       if (error) throw error;
       setProfile((prev: any) => prev ? { ...prev, username } : { username });
       setIsEditingUsername(false);
@@ -1915,13 +1933,27 @@ export default function App() {
         }
 
         try {
-          const { data, error } = await supabase
+          let { data, error } = await supabase
             .from('users')
             .select('*')
             .eq('id', currentUser.id)
             .single();
 
-          if (!error && data && mounted) {
+          if (error || !data || !data.username || data.username === 'skincareenthusiast') {
+            const generated = await generateUniqueUsername(supabase);
+            const { data: upsertedData, error: upsertError } = await supabase
+              .from('users')
+              .upsert({ id: currentUser.id, username: generated }, { onConflict: 'id' })
+              .select()
+              .single();
+            if (!upsertError && upsertedData) {
+              data = upsertedData;
+            } else if (!data) {
+              data = { id: currentUser.id, username: generated };
+            }
+          }
+
+          if (data && mounted) {
             setProfile(data);
             if (data.skin_type) setSkinType(data.skin_type);
             if (data.primary_issue) setConcern(data.primary_issue);
@@ -1958,10 +1990,7 @@ export default function App() {
     };
   }, []);
 
-  // Separate useEffect to call debugAuthAndProfileSession
-  useEffect(() => {
-    debugAuthAndProfileSession();
-  }, []);
+
 
   // Navigation Logic
   useEffect(() => {
@@ -3698,7 +3727,7 @@ export default function App() {
       <main className={
         appState === AppState.LANDING 
           ? 'p-0 m-0 w-full h-[calc(100dvh-65px)] overflow-hidden' 
-          : `pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`
+          : `pt-0 md:pt-0 ${appState === AppState.ONBOARDING_DETAILS ? 'p-0 h-[calc(100dvh-73px)] md:h-[calc(100dvh-75px)] overflow-hidden bg-transparent' : 'pb-24 pt-4 md:pt-6'} px-0 md:px-0 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`
       }>
         <AnimatePresence mode="wait">
           

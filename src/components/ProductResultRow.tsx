@@ -61,7 +61,6 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
 
         // 3. Fetch compatibility and scores for both logged in and unauthenticated users
         if (product.id && !String(product.id).startsWith('custom-') && !String(product.id).startsWith('scanned-') && isMounted && !signal.aborted) {
-          console.log('[DEBUG] Calling RPC function: evaluate_product_compatibility');
           const { data: rpcData, error: rpcError } = await supabase
             .rpc('evaluate_product_compatibility', {
               p_user_id: user?.id || '00000000-0000-0000-0000-000000000000',

@@ -223,7 +223,9 @@ export const ChatQuestionnaire = ({
 
   const handleBack = () => {
     if (stepIndex > 0) {
+      userHasScrolledUpRef.current = false;
       setStepIndex(stepIndex - 1);
+      setTimeout(() => scrollToBottom(true), 50);
     }
   };
 
@@ -275,8 +277,76 @@ export const ChatQuestionnaire = ({
     }
   }, [debouncedIngredientSearchQuery, currentStep.type]);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const messagesContentRef = useRef<HTMLDivElement>(null);
+  const endElementRef = useRef<HTMLDivElement>(null);
+  const userHasScrolledUpRef = useRef(false);
+  const lastMessageCountRef = useRef(messages.length);
+  const lastStepIdRefString = useRef(currentStep.id);
   const lastStepIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
+  }, []);
+
+  const handleScroll = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceToBottom > 60) {
+      userHasScrolledUpRef.current = true;
+    } else if (distanceToBottom < 20) {
+      userHasScrolledUpRef.current = false;
+    }
+  };
+
+  const scrollToBottom = (force = false) => {
+    const container = scrollContainerRef.current;
+    const endEl = endElementRef.current;
+    if (!container || !endEl) return;
+
+    if (userHasScrolledUpRef.current && !force) return;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!container) return;
+        const { scrollHeight, clientHeight } = container;
+        if (scrollHeight <= clientHeight && !force) {
+          return;
+        }
+        endEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      });
+    });
+  };
+
+  useEffect(() => {
+    const content = messagesContentRef.current;
+    if (!content) return;
+
+    const observer = new ResizeObserver(() => {
+      if (!userHasScrolledUpRef.current) {
+        scrollToBottom();
+      }
+    });
+
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > lastMessageCountRef.current || currentStep.id !== lastStepIdRefString.current) {
+      userHasScrolledUpRef.current = false;
+    }
+    lastMessageCountRef.current = messages.length;
+    lastStepIdRefString.current = currentStep.id;
+    scrollToBottom(true);
+  }, [messages, currentStep]);
+
   const [isScanningFace, setIsScanningFace] = useState(false);
   const [isHardGated, setIsHardGated] = useState(false);
 
@@ -596,11 +666,7 @@ export const ChatQuestionnaire = ({
     });
   };
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isTyping, currentStep]);
+
 
   useEffect(() => {
     const handler = setTimeout(() => { setDebouncedProductSearchQuery(inputText); }, 250);
@@ -1194,57 +1260,64 @@ export const ChatQuestionnaire = ({
   }
 
   return (
-    <div className="flex flex-col h-full bg-neutral-50">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
-        {messages.map((msg) => (
-          <motion.div
-            key={msg.id}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`${msg.type === 'breakout_options' ? 'w-full' : 'w-11/12'} p-3 rounded-2xl text-[15px] md:text-lg ${
-                msg.sender === 'bot'
-                  ? 'bg-white border border-neutral-200 text-neutral-800 rounded-bl-none'
-                  : 'bg-amber-100 text-neutral-900 rounded-br-none'
-              }`}
-            >
-              {msg.text}
-              {msg.tooltip && (
-                <div className="mt-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTooltipId(activeTooltipId === msg.id ? null : msg.id)}
-                    className="text-xs text-amber-700 font-bold flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/80 w-fit hover:bg-amber-100 transition-colors shadow-sm"
-                  >
-                    <Info className="w-4 h-4 text-amber-500 shrink-0" />
-                    <span>{activeTooltipId === msg.id ? 'Hide note' : 'Question note'}</span>
-                  </button>
-                  {activeTooltipId === msg.id && (
-                    <p className="mt-2 text-xs md:text-sm text-neutral-600 bg-neutral-50 p-3 rounded-xl border border-neutral-200 leading-relaxed font-normal animate-fadeIn">
-                      {msg.tooltip}
-                    </p>
+    <div className="flex flex-col h-full w-full bg-neutral-50 relative overflow-hidden">
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 md:p-6 min-h-0"
+      >
+        <div ref={messagesContentRef} className="flex flex-col justify-end min-h-full space-y-4" style={{ paddingBottom: '12vh' }}>
+          {messages.map((msg, index) => {
+            const isLatestBotMsg = msg.sender === 'bot' && index === messages.length - 1;
+            return (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`${msg.type === 'breakout_options' ? 'w-full' : 'w-11/12 md:w-3/4'} p-4 rounded-2xl text-[15px] md:text-lg ${
+                    msg.sender === 'bot'
+                      ? 'bg-white border border-neutral-200 text-neutral-800 rounded-bl-none shadow-xs'
+                      : 'bg-amber-100 text-neutral-900 rounded-br-none shadow-xs'
+                  }`}
+                >
+                  {msg.text}
+                  {msg.tooltip && (
+                    <div className="mt-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltipId(activeTooltipId === msg.id ? null : msg.id)}
+                        className="text-xs text-amber-700 font-bold flex items-center gap-1.5 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/80 w-fit hover:bg-amber-100 transition-colors shadow-sm cursor-pointer"
+                      >
+                        <Info className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span>{activeTooltipId === msg.id ? 'Hide note' : 'Question note'}</span>
+                      </button>
+                      {activeTooltipId === msg.id && (
+                        <p className="mt-2 text-xs md:text-sm text-neutral-600 bg-neutral-50 p-3 rounded-xl border border-neutral-200 leading-relaxed font-normal animate-fadeIn">
+                          {msg.tooltip}
+                        </p>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
-              {msg.type === 'scan_results' && msg.scanResults && (
-                <div className="mt-3 p-3 bg-white rounded-lg border border-emerald-100 shadow-sm text-neutral-800">
-                    <p className="font-semibold text-xs mb-2">Dermal Scan Report</p>
-                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  {msg.type === 'scan_results' && msg.scanResults && (
+                    <div className="mt-3 p-3 bg-white rounded-lg border border-emerald-100 shadow-sm text-neutral-800">
+                      <p className="font-semibold text-xs mb-2">Dermal Scan Report</p>
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
                         <p>Redness: <span className="font-medium text-emerald-600">{msg.scanResults.redness_score}/10</span></p>
                         <p>Wrinkles: <span className="font-medium text-emerald-600">{msg.scanResults.wrinkles_score}/10</span></p>
                         <p className="col-span-2">Breakout type: <span className="font-medium text-emerald-600">{msg.scanResults.blemish_assessment || msg.scanResults.scan_breakout_type}</span></p>
+                      </div>
                     </div>
-                </div>
-              )}
-              {msg.type === 'breakout_options' && (
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                    {[...BREAKOUT_PHOTO_OPTIONS, { value: 'dont_know', fullTitle: 'I don\'t know.', img: '' }].map((opt: any) => (
+                  )}
+                  {msg.type === 'breakout_options' && isLatestBotMsg && (
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      {[...BREAKOUT_PHOTO_OPTIONS, { value: 'dont_know', fullTitle: 'I don\'t know.', img: '' }].map((opt: any) => (
                         <button
                           key={opt.value}
                           onClick={() => handleOptionClick(opt.value)}
-                          className="flex flex-col items-center gap-1.5 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 hover:border-amber-300 transition-colors"
+                          className="flex flex-col items-center gap-1.5 p-2 bg-white rounded-lg shadow-sm border border-neutral-200 hover:border-amber-300 transition-colors cursor-pointer"
                         >
                           <div className="w-full h-20 bg-neutral-100 rounded-md overflow-hidden flex items-center justify-center">
                             {opt.img ? (
@@ -1255,205 +1328,221 @@ export const ChatQuestionnaire = ({
                           </div>
                           <span className="text-[12px] md:text-[14px] text-center text-neutral-800 font-medium leading-tight">{opt.fullTitle}</span>
                         </button>
-                    ))}
+                      ))}
+                    </div>
+                  )}
+                  {msg.sender === 'bot' && msg.showBack && (
+                    <button onClick={handleBack} className="block mt-2 text-neutral-400 hover:text-neutral-700 cursor-pointer">
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+
+          {!isTyping && (
+            <div className="pt-2 pb-12">
+              {(currentStep.type === 'single' || currentStep.type === 'multiple') && currentStep.options && currentStep.id !== 'breakoutType' && (
+                <div className="flex flex-wrap gap-2">
+                  {currentStep.options.filter((opt: string) => !(currentStep.id === 'scndConcern' && opt === answers.mainConcern)).map((opt: any) => (
+                    <button
+                      key={opt}
+                      onClick={() => handleOptionClick(opt)}
+                      className={`px-4 py-2.5 rounded-full text-[15px] md:text-lg font-medium transition-all cursor-pointer ${
+                        (currentStep.type === 'multiple' && answers[currentStep.key]?.includes(opt)) || (currentStep.type === 'single' && answers[currentStep.key] === opt)
+                        ? 'bg-amber-300 text-neutral-900 shadow-sm'
+                        : 'bg-white border border-neutral-300 text-neutral-800 hover:bg-neutral-100'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                  {currentStep.type === 'multiple' && (
+                    <button 
+                      onClick={() => {
+                        const ans = answersRef.current[currentStep.key] || [];
+                        addUserMessage(ans.length > 0 ? ans.join(", ") : "None / Skip");
+                        handleNext(answersRef.current);
+                      }} 
+                      className="bg-neutral-900 text-white px-5 py-2.5 rounded-full text-[15px] md:text-lg font-medium hover:bg-neutral-800 transition-colors cursor-pointer"
+                    >
+                      Next
+                    </button>
+                  )}
                 </div>
               )}
-              {msg.sender === 'bot' && msg.showBack && (
-                  <button onClick={handleBack} className="block mt-1 text-neutral-400 hover:text-neutral-700">
-                      <ArrowLeft className="w-3 h-3" />
-                  </button>
-              )}
-            </div>
-          </motion.div>
-        ))}
-        {/* Removed Face Scan button */}
-      </div>
-        
-      <div className="p-4 pt-0">
-        {(currentStep.type === 'single' || currentStep.type === 'multiple') && currentStep.options && currentStep.id !== 'breakoutType' && (
-          <div className="flex flex-wrap gap-2">
-            {currentStep.options.filter((opt: string) => !(currentStep.id === 'scndConcern' && opt === answers.mainConcern)).map((opt: any) => (
-               <button
-                 key={opt}
-                 onClick={() => handleOptionClick(opt)}
-                 className={`px-4 py-2 rounded-full text-[15px] md:text-lg font-medium transition-colors ${
-                     (currentStep.type === 'multiple' && answers[currentStep.key]?.includes(opt)) || (currentStep.type === 'single' && answers[currentStep.key] === opt)
-                     ? 'bg-amber-300 text-neutral-900'
-                     : 'bg-white border border-neutral-300 text-neutral-800 hover:bg-neutral-100'
-                 }`}
-               >
-                 {opt}
-               </button>
-            ))}
-            {currentStep.type === 'multiple' && (
-                <button onClick={() => {
-                    const ans = answersRef.current[currentStep.key] || [];
-                    addUserMessage(ans.length > 0 ? ans.join(", ") : "None / Skip");
-                    handleNext(answersRef.current);
-                }} className="bg-neutral-800 text-white px-4 py-2 rounded-full text-[15px] md:text-lg font-medium hover:bg-neutral-900 transition-colors">
-                    Next
-                </button>
-            )}
-          </div>
-        )}
-      </div>
 
-      {['text', 'age'].includes(currentStep.type) && (
-        <div className="p-4 pt-0 flex flex-col gap-2">
-            <div className="flex gap-2">
-                <input 
+              {['text', 'age'].includes(currentStep.type) && (
+                <div className="flex gap-2 w-full max-w-md">
+                  <input 
                     type="text"
                     inputMode={currentStep.type === 'age' ? 'numeric' : 'text'}
                     pattern={currentStep.type === 'age' ? '[0-9]*' : undefined}
                     value={inputText}
                     onChange={(e) => {
-                        const val = e.target.value;
-                        if (currentStep.type === 'age') {
-                            setInputText(val.replace(/\D/g, ''));
-                        } else {
-                            setInputText(val);
-                        }
+                      const val = e.target.value;
+                      if (currentStep.type === 'age') {
+                        setInputText(val.replace(/\D/g, ''));
+                      } else {
+                        setInputText(val);
+                      }
                     }}
                     placeholder={currentStep.type === 'age' ? "Enter your age (numbers only)..." : "Type your answer..."}
-                    className="flex-1 p-3 rounded-xl border border-neutral-300 focus:outline-none focus:border-emerald-500 text-[15px] md:text-lg"
+                    className="flex-1 p-3.5 rounded-2xl border border-neutral-300 focus:outline-none focus:border-amber-500 text-[15px] md:text-lg bg-white shadow-xs"
                     onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
-                />
-                <button 
+                    autoFocus
+                  />
+                  <button 
                     onClick={handleTextSubmit} 
-                    className="bg-amber-300 hover:bg-amber-400 text-neutral-900 px-5 py-3 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                >
+                    className="bg-amber-300 hover:bg-amber-400 text-neutral-900 px-6 py-3.5 rounded-2xl font-bold uppercase text-xs tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+                  >
                     <span>Submit</span>
                     <Send className="w-4 h-4" />
-                </button>
-            </div>
-        </div>
-      )}
-
-      {currentStep.type === 'search_ingredients' && (
-        <div className="p-4 pt-0 relative">
-          {(answers[currentStep.key] || []).length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-2">
-              {(answers[currentStep.key] || []).map((ing: string, i: number) => (
-                <div key={i} className="flex items-center gap-1.5 bg-amber-100 text-neutral-900 px-3 py-1.5 rounded-full text-[15px] md:text-lg font-medium">
-                  <span>{ing}</span>
-                  <button onClick={() => updateAnswer(currentStep.key, (answers[currentStep.key] || []).filter((_: any, index: number) => index !== i))}>
-                    <X className="w-3.5 h-3.5 text-neutral-600 hover:text-neutral-900" />
                   </button>
                 </div>
-              ))}
-            </div>
-          )}
-          {isIngredientDropdownOpen && ingredientSearchResults.length > 0 && (
-            <div className="absolute bottom-full mb-2 left-4 right-4 bg-white border border-neutral-200 rounded-xl shadow-lg max-h-40 overflow-y-auto z-50">
-              {ingredientSearchResults.map((ingName: string, idx: number) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    const currentList = answers[currentStep.key] || [];
-                    if (!currentList.includes(ingName)) {
-                      updateAnswer(currentStep.key, [...currentList, ingName]);
-                    }
-                    setIngredientSearchQuery('');
-                    setIsIngredientDropdownOpen(false);
-                  }}
-                  className="block w-full text-left p-3 hover:bg-neutral-100 text-[15px] md:text-lg text-neutral-800 border-b border-neutral-100 last:border-b-0 font-medium"
-                >
-                  {ingName}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={ingredientSearchQuery}
-                onChange={(e) => setIngredientSearchQuery(e.target.value)}
-                placeholder="Search ingredients to avoid (e.g., fragrance, alcohol)..."
-                className="flex-1 p-3 rounded-xl border border-neutral-300 focus:outline-none focus:border-amber-500 text-[15px] md:text-lg bg-white"
-              />
-              <button 
-                onClick={() => {
-                  const ans = answersRef.current[currentStep.key] || [];
-                  addUserMessage(ans.length > 0 ? ans.join(", ") : "None");
-                  handleNext(answersRef.current);
-                }} 
-                className="bg-amber-300 text-neutral-900 px-4 py-2 rounded-xl text-[15px] md:text-lg font-bold hover:bg-amber-400 transition-colors"
-              >
-                Done
-              </button>
-            </div>
-            <button 
-              onClick={() => {
-                addUserMessage("Skip");
-                handleNext(answersRef.current);
-              }} 
-              className="text-neutral-500 hover:text-neutral-700 text-[15px] md:text-lg py-2 font-medium w-full text-center"
-            >
-              Skip
-            </button>
-          </div>
-        </div>
-      )}
+              )}
 
-      {currentStep.type === 'search_products' && (
-        <div className="p-4 pt-0 relative">
-          {(answers[currentStep.key] || []).length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-2">
-              {(answers[currentStep.key] || []).map((p: string, i: number) => (
-                <div key={i} className="flex items-center gap-1 bg-emerald-100 px-3 py-1.5 rounded-full text-[15px] md:text-lg">
-                  <span>{p}</span>
-                  <button onClick={() => updateAnswer(currentStep.key, (answers[currentStep.key] || []).filter((_: any, index: number) => index !== i))}>X</button>
+              {currentStep.type === 'search_ingredients' && (
+                <div className="relative w-full max-w-md">
+                  {(answers[currentStep.key] || []).length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {(answers[currentStep.key] || []).map((ing: string, i: number) => (
+                        <div key={i} className="flex items-center gap-1.5 bg-amber-100 text-neutral-900 px-3.5 py-1.5 rounded-full text-[15px] md:text-lg font-medium shadow-xs">
+                          <span>{ing}</span>
+                          <button onClick={() => updateAnswer(currentStep.key, (answers[currentStep.key] || []).filter((_: any, index: number) => index !== i))}>
+                            <X className="w-3.5 h-3.5 text-neutral-600 hover:text-neutral-900" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isIngredientDropdownOpen && ingredientSearchResults.length > 0 && (
+                    <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-neutral-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-50">
+                      {ingredientSearchResults.map((ingName: string, idx: number) => (
+                        <button
+                          key={idx}
+                          onClick={() => {
+                            const currentList = answers[currentStep.key] || [];
+                            if (!currentList.includes(ingName)) {
+                              updateAnswer(currentStep.key, [...currentList, ingName]);
+                            }
+                            setIngredientSearchQuery('');
+                            setIsIngredientDropdownOpen(false);
+                          }}
+                          className="block w-full text-left p-3.5 hover:bg-neutral-100 text-[15px] md:text-lg text-neutral-800 border-b border-neutral-100 last:border-b-0 font-medium cursor-pointer"
+                        >
+                          {ingName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={ingredientSearchQuery}
+                        onChange={(e) => setIngredientSearchQuery(e.target.value)}
+                        placeholder="Search ingredients to avoid (e.g., fragrance, alcohol)..."
+                        className="flex-1 p-3.5 rounded-2xl border border-neutral-300 focus:outline-none focus:border-amber-500 text-[15px] md:text-lg bg-white shadow-xs"
+                        autoFocus
+                      />
+                      <button 
+                        onClick={() => {
+                          const ans = answersRef.current[currentStep.key] || [];
+                          addUserMessage(ans.length > 0 ? ans.join(", ") : "None");
+                          handleNext(answersRef.current);
+                        }} 
+                        className="bg-amber-300 text-neutral-900 px-5 py-3.5 rounded-2xl text-[15px] md:text-lg font-bold hover:bg-amber-400 transition-colors cursor-pointer shadow-xs"
+                      >
+                        Done
+                      </button>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        addUserMessage("Skip");
+                        handleNext(answersRef.current);
+                      }} 
+                      className="text-neutral-500 hover:text-neutral-700 text-[15px] md:text-lg py-2 font-medium w-full text-center cursor-pointer"
+                    >
+                      Skip
+                    </button>
+                  </div>
                 </div>
-              ))}
+              )}
+
+              {currentStep.type === 'search_products' && (
+                <div className="relative w-full max-w-md">
+                  {(answers[currentStep.key] || []).length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {(answers[currentStep.key] || []).map((p: string, i: number) => (
+                        <div key={i} className="flex items-center gap-1.5 bg-emerald-100 px-3.5 py-1.5 rounded-full text-[15px] md:text-lg font-medium shadow-xs">
+                          <span>{p}</span>
+                          <button onClick={() => updateAnswer(currentStep.key, (answers[currentStep.key] || []).filter((_: any, index: number) => index !== i))}>
+                            <X className="w-3.5 h-3.5 text-neutral-600 hover:text-neutral-900" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isDropdownOpen && searchResults.length > 0 && (
+                    <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-neutral-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-50">
+                      {searchResults.map((product) => (
+                        <button
+                          key={product.id}
+                          onClick={() => {
+                            const currentList = answers[currentStep.key] || [];
+                            updateAnswer(currentStep.key, [...currentList, `${product.brand} - ${product.name}`]);
+                            setInputText('');
+                            setIsDropdownOpen(false);
+                          }}
+                          className="block w-full text-left p-3.5 hover:bg-neutral-100 text-[15px] md:text-lg font-medium cursor-pointer"
+                        >
+                          {product.brand} - {product.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={inputText}
+                        onChange={(e) => setInputText(e.target.value)}
+                        placeholder="Search products..."
+                        className="flex-1 p-3.5 rounded-2xl border border-neutral-300 focus:outline-none focus:border-amber-500 text-[15px] md:text-lg bg-white shadow-xs"
+                        autoFocus
+                      />
+                      <button 
+                        onClick={() => {
+                          const ans = answersRef.current[currentStep.key] || [];
+                          addUserMessage(ans.length > 0 ? ans.join(", ") : "Skip");
+                          handleNext(answersRef.current);
+                        }} 
+                        className="bg-amber-300 text-neutral-900 px-5 py-3.5 rounded-2xl text-[15px] md:text-lg font-bold hover:bg-amber-400 transition-colors cursor-pointer shadow-xs"
+                      >
+                        Done
+                      </button>
+                    </div>
+                    {currentStep.id === 'currentProducts' && (
+                      <button 
+                        onClick={() => {
+                          addUserMessage("Skip");
+                          handleNext(answersRef.current);
+                        }} 
+                        className="text-neutral-500 hover:text-neutral-700 text-[15px] md:text-lg py-2 font-medium w-full text-center cursor-pointer"
+                      >
+                        Skip
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-          {isDropdownOpen && searchResults.length > 0 && (
-            <div className="absolute bottom-full mb-2 left-4 right-4 bg-white border border-neutral-200 rounded-xl shadow-lg max-h-40 overflow-y-auto">
-              {searchResults.map((product) => (
-                <button
-                  key={product.id}
-                  onClick={() => {
-                    const currentList = answers[currentStep.key] || [];
-                    updateAnswer(currentStep.key, [...currentList, `${product.brand} - ${product.name}`]);
-                    setInputText('');
-                    setIsDropdownOpen(false);
-                  }}
-                  className="block w-full text-left p-3 hover:bg-neutral-100 text-[15px] md:text-lg"
-                >
-                  {product.brand} - {product.name}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder="Search products..."
-                className="flex-1 p-3 rounded-xl border border-neutral-300 focus:outline-none focus:border-emerald-500 text-[15px] md:text-lg"
-              />
-              <button onClick={() => {
-                  const ans = answersRef.current[currentStep.key] || [];
-                  addUserMessage(ans.length > 0 ? ans.join(", ") : "Skip");
-                  handleNext(answersRef.current);
-              }} className="bg-amber-300 text-neutral-900 px-4 py-2 rounded-xl text-[15px] md:text-lg font-medium">
-                Done
-              </button>
-            </div>
-            {currentStep.id === 'currentProducts' && (
-                <button onClick={() => {
-                    addUserMessage("Skip");
-                    handleNext(answersRef.current);
-                }} className="text-neutral-500 hover:text-neutral-700 text-[15px] md:text-lg py-2 font-medium w-full text-center">
-                    Skip
-                </button>
-            )}
-          </div>
+          <div ref={endElementRef} className="h-1 w-full" />
         </div>
-      )}
+      </div>
     </div>
   );
 };

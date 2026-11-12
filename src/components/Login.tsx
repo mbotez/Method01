@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { supabase, debugAuthAndProfileSession } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { signInWithGoogle } from '../utils/auth';
 
 interface LoginProps {
@@ -29,24 +29,41 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
     
     try {
       if (isSignUp) {
+        const trimmedUsername = username.trim();
+        if (!trimmedUsername) {
+          throw new Error('Please enter a username');
+        }
+
+        // Check if username already exists in database
+        const { data: existingUser, error: checkError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', trimmedUsername)
+          .maybeSingle();
+
+        if (existingUser) {
+          throw new Error('Username is already taken');
+        }
+
         const { error } = await supabase.auth.signUp({ 
           email, 
           password,
           options: {
             data: {
-              username: username
+              username: trimmedUsername
             }
           }
         });
         if (error) throw error;
         
-        // Rows in public.users, public.user_profile, public.user_contacts 
-        // are created automatically by database trigger on auth.users insert.
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await supabase.from('users').upsert({ id: session.user.id, username: trimmedUsername }, { onConflict: 'id' });
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
-      await debugAuthAndProfileSession();
       onSuccess?.();
     } catch (err: any) {
       setLocalError(err.message);
