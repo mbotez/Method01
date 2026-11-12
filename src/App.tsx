@@ -530,6 +530,7 @@ export default function App() {
   const [productFilter, setProductFilter] = useState('All');
   const [leaderboardFilter, setLeaderboardFilter] = useState('All');
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
   const [pendingQuestionnaireAnswers, setPendingQuestionnaireAnswers] = useState<any>(null); // NEW
   const [isQuizBannerDismissed, setIsQuizBannerDismissed] = useState(false);
@@ -1524,28 +1525,18 @@ export default function App() {
     setIsDeleting(true);
     setError(null);
     try {
-      const userId = user.id;
-      await supabase.from('user_profile').delete().eq('id', userId);
-      await supabase.from('user_contacts').delete().eq('user_id', userId);
-      await supabase.from('tracker').delete().eq('user_id', userId);
-      await supabase.from('routines').delete().eq('user_id', userId);
-      await supabase.from('progress').delete().eq('user_id', userId);
-      await supabase.from('upp').delete().eq('user_id', userId);
-      await supabase.from('product_user_ratings').delete().eq('user_id', userId);
-      await supabase.from('comments').delete().eq('user_id', userId);
-      await supabase.from('posts').delete().eq('user_id', userId);
-      await supabase.from('messages').delete().or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
-      await supabase.from('follows').delete().or(`follower_id.eq.${userId},following_id.eq.${userId}`);
-      await supabase.from('users').delete().eq('id', userId);
-
-      try {
-        await supabase.rpc('delete_user_account');
-      } catch {}
+      const { data, error: fnError } = await supabase.functions.invoke('delete-account');
+      if (fnError) {
+        throw new Error(fnError.message || 'Failed to delete account');
+      }
 
       await supabase.auth.signOut();
       setUser(null);
       setProfile(null);
       setUserProfile(null);
+      setDeleteConfirmationText('');
+      setError(null);
+      setSuccessMessage('Your account has been deleted.');
       navigateTo(AppState.LANDING, '/');
     } catch (err: any) {
       setError(`Failed to delete account: ${err.message || err}`);
@@ -3741,6 +3732,12 @@ export default function App() {
           ? 'p-0 m-0 w-full h-[calc(100dvh-65px)] overflow-hidden' 
           : `pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`
       }>
+        {successMessage && (
+          <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-2xl mb-4 text-xs font-bold flex items-center justify-between shadow-sm">
+            <span>{successMessage}</span>
+            <button onClick={() => setSuccessMessage(null)} className="text-green-800 hover:text-green-950 font-black cursor-pointer">×</button>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           
           {appState === AppState.AUTH && (

@@ -1,0 +1,9 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/((?!privacy|delete-account|assets/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

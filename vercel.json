@@ -2,7 +2,7 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/((?!privacy|assets/).*)",
+      "source": "/((?!privacy|delete-account|assets/).*)",
       "destination": "/index.html"
     }
   ]
