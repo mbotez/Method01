@@ -583,8 +583,7 @@ export default function App() {
       const resolvedType = feelMap[editSkinTypeVal] || editSkinTypeVal;
       const { error } = await supabase
         .from('user_profile')
-        .update({ skin_type: resolvedType })
-        .eq('id', user.id);
+        .upsert({ id: user.id, skin_type: resolvedType });
       if (error) throw error;
       setUserProfile((prev: any) => prev ? { ...prev, skin_type: resolvedType } : { skin_type: resolvedType });
       setIsEditingSkinType(false);
@@ -612,13 +611,13 @@ export default function App() {
 
       const { error } = await supabase
         .from('user_profile')
-        .update({
+        .upsert({
+          id: user.id,
           barrier_status: barrierScore,
           sensitivity: editSensitivity,
           skin_characteristics: symptomsScore,
           new_product_reaction: reactionScore
-        })
-        .eq('id', user.id);
+        });
       if (error) throw error;
       setUserProfile((prev: any) => prev ? {
         ...prev,
@@ -647,8 +646,7 @@ export default function App() {
     try {
       const { error } = await supabase
         .from('user_profile')
-        .update({ breakout_type: editBreakoutTypes })
-        .eq('id', user.id);
+        .upsert({ id: user.id, breakout_type: editBreakoutTypes });
       if (error) throw error;
       setUserProfile((prev: any) => prev ? { ...prev, breakout_type: editBreakoutTypes } : { breakout_type: editBreakoutTypes });
       setIsEditingBreakout(false);
@@ -660,17 +658,18 @@ export default function App() {
   };
 
   const handleSaveGoals = async () => {
+    console.log('[Profile] Save goals clicked, user.id:', user?.id, 'editMainConcern:', editMainConcern, 'editScndConcern:', editScndConcern);
     if (!user?.id) return;
     setIsSavingGoals(true);
     setGoalsSaveError(null);
     try {
       const { error: updateError } = await supabase
         .from('user_profile')
-        .update({
+        .upsert({
+          id: user.id,
           main_concern: editMainConcern,
           scnd_concern: editScndConcern,
-        })
-        .eq('id', user.id);
+        });
 
       if (updateError) {
         throw updateError;
@@ -2461,11 +2460,17 @@ export default function App() {
         await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       });
       setUser(null);
+      setUserProfile(null);
+      setProfile(null);
       setAppState(AppState.AUTH);
+      window.location.replace('/auth');
     } catch {
       await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
       setUser(null);
+      setUserProfile(null);
+      setProfile(null);
       setAppState(AppState.AUTH);
+      window.location.replace('/auth');
     }
   };
 
@@ -3553,7 +3558,7 @@ export default function App() {
                 </button>
                 <button 
                   onClick={() => { resetHeaderSearchState(); setIsSignUp(true); setAppState(AppState.AUTH); }}
-                  className="bg-black text-white text-xs md:text-sm font-black uppercase tracking-widest px-4 py-2 rounded-lg hover:bg-venus-accent transition-colors cursor-pointer whitespace-nowrap"
+                  className="text-xs md:text-sm font-black uppercase tracking-widest text-black/60 hover:text-black transition-colors cursor-pointer whitespace-nowrap"
                 >
                   Join
                 </button>
@@ -3637,7 +3642,7 @@ export default function App() {
       </header>
       
       {(() => {
-        const hasCompletedQuiz = profile?.onboarding_complete || (userProfile && (userProfile.main_concern || userProfile.skin_type));
+        const hasCompletedQuiz = Boolean(userProfile?.skin_type && userProfile.skin_type.trim() !== '');
         const showQuizBanner = user && !hasCompletedQuiz && !isQuizBannerDismissed && appState !== AppState.ONBOARDING_DETAILS;
         if (!showQuizBanner) return null;
         return (
@@ -5492,7 +5497,7 @@ export default function App() {
               </header>
 
               {(() => {
-                const hasCompletedQuiz = profile?.onboarding_complete || (userProfile && (userProfile.main_concern || userProfile.skin_type));
+                const hasCompletedQuiz = Boolean(userProfile?.skin_type && userProfile.skin_type.trim() !== '');
                 return !hasCompletedQuiz;
               })() ? (
                 <div className="clean-card bg-white border border-black/10 rounded-3xl p-8 shadow-sm text-center space-y-6">
@@ -5773,6 +5778,7 @@ export default function App() {
                       {!isEditingGoals && (
                         <button
                           onClick={() => {
+                            console.log('[Profile] Target Skin Goals clicked, user.id:', user?.id, 'current userProfile:', userProfile);
                             setEditMainConcern(userProfile?.main_concern ? Number(userProfile.main_concern) : 12);
                             setEditScndConcern(userProfile?.scnd_concern ? Number(userProfile.scnd_concern) : 12);
                             setGoalsSaveError(null);

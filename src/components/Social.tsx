@@ -422,13 +422,42 @@ export const Social = ({
       console.log('[Supabase Articles] Result:', { articleData, articleError });
 
       if (checkMounted && !checkMounted()) return;
-      if (articleError) {
-        console.error('[Supabase Articles] Error fetching articles:', articleError);
-        setArticles([]);
-      } else if (articleData) {
-        setArticles(articleData);
+      if (articleError || !articleData || articleData.length === 0) {
+        console.warn('[Supabase Articles] No articles found or error, using default articles fallback:', articleError);
+        setArticles([
+          {
+            id: 'layering-mastery',
+            title: 'The Ultimate Skincare Layering Order',
+            category: 'Layering',
+            readTime: '4 min read',
+            article_content: 'Master the exact order of application from thinnest water-based textures to richest lipid creams to guarantee maximum dermal absorption without pilling or flushing.',
+            image_url: '/assets/g1.jpg',
+            created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+            article_link: '#'
+          },
+          {
+            id: 'actives-compatibility',
+            title: 'Active Ingredients Compatibility Matrix',
+            category: 'Actives',
+            readTime: '5 min read',
+            article_content: 'The go-to reference table explaining which dermatological actives can be combined in the same regimen, and which combinations cause chemical degradation or micro-inflammation.',
+            image_url: '/assets/g2.jpg',
+            created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+            article_link: '#'
+          },
+          {
+            id: 'barrier-repair',
+            title: 'Barrier Repair & Stratum Corneum Recovery',
+            category: 'Barrier',
+            readTime: '4 min read',
+            article_content: 'How to identify an acid-mantle breakdown, eliminate micro-irritants, and rapidly restore compromised skin using physiological 3:1:1:1 lipid ratios.',
+            image_url: '/assets/g3.jpg',
+            created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
+            article_link: '#'
+          }
+        ]);
       } else {
-        setArticles([]);
+        setArticles(articleData);
       }
 
       let guidesQuery = supabase
