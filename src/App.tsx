@@ -565,6 +565,33 @@ export default function App() {
   const [isSavingBreakout, setIsSavingBreakout] = useState(false);
   const [breakoutSaveError, setBreakoutSaveError] = useState<string | null>(null);
 
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
+  const [editUsernameVal, setEditUsernameVal] = useState('');
+  const [isSavingUsername, setIsSavingUsername] = useState(false);
+  const [usernameSaveError, setUsernameSaveError] = useState<string | null>(null);
+
+  const handleSaveUsername = async () => {
+    if (!user?.id) return;
+    setIsSavingUsername(true);
+    setUsernameSaveError(null);
+    const trimmedUsername = editUsernameVal.trim();
+    console.log('[Profile] Saving username to Supabase for user.id:', user.id, 'username:', trimmedUsername);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .upsert({ id: user.id, username: trimmedUsername });
+      console.log('[Profile] Supabase username update result:', { error });
+      if (error) throw error;
+      setProfile((prev: any) => prev ? { ...prev, username: trimmedUsername } : { username: trimmedUsername });
+      setIsEditingUsername(false);
+    } catch (err: any) {
+      console.error('[Profile] Failed to update username:', err);
+      setUsernameSaveError(err?.message || 'Failed to update username');
+    } finally {
+      setIsSavingUsername(false);
+    }
+  };
+
   const handleSaveSkinType = async () => {
     if (!user?.id) return;
     setIsSavingSkinType(true);
@@ -5490,6 +5517,61 @@ export default function App() {
               <header className="text-center space-y-3">
                 <div className="inline-flex p-3 bg-black/5 rounded-full mb-2">
                   <UserIcon className="w-8 h-8 text-black" />
+                </div>
+                <div className="flex flex-col items-center justify-center gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-black/50">Username:</span>
+                    {isEditingUsername ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editUsernameVal}
+                          onChange={(e) => setEditUsernameVal(e.target.value)}
+                          placeholder="Enter new username"
+                          className="bg-black/5 border border-black/10 rounded-xl px-3 py-1.5 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
+                        />
+                        <button
+                          onClick={handleSaveUsername}
+                          disabled={isSavingUsername}
+                          className="bg-black text-white px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1 cursor-pointer shadow-sm"
+                        >
+                          {isSavingUsername && <Loader2 className="w-3 h-3 animate-spin" />}
+                          Save
+                        </button>
+                        <button
+                          onClick={() => {
+                            setIsEditingUsername(false);
+                            setUsernameSaveError(null);
+                          }}
+                          disabled={isSavingUsername}
+                          className="bg-black/5 hover:bg-black/10 text-black px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl font-black text-black">
+                          {profile?.username && profile.username.trim() !== '' ? profile.username : (user?.user_metadata?.username && user.user_metadata.username.trim() !== '' ? user.user_metadata.username : 'xxx')}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setEditUsernameVal(profile?.username || user?.user_metadata?.username || '');
+                            setUsernameSaveError(null);
+                            setIsEditingUsername(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                          title="Edit username"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {usernameSaveError && (
+                    <p className="text-xs text-red-600 font-semibold">{usernameSaveError}</p>
+                  )}
                 </div>
                 <h2 className="text-4xl md:text-5xl font-sans font-black text-black uppercase tracking-tighter">
                   My Skin Profile
