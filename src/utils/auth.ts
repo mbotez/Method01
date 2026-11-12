@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { App, type URLOpenListenerEvent } from '@capacitor/app';
-import { supabase } from '../lib/supabase';
+import { supabase, debugAuthAndProfileSession } from '../lib/supabase';
 
 /**
  * Detect whether the app is running natively on mobile using Capacitor.
@@ -98,6 +98,7 @@ export const setupCapacitorDeepLinkAuth = (
       // We check session validity after a brief moment or trigger success callback.
       const { data } = await supabase.auth.getSession();
       if (data?.session) {
+        await debugAuthAndProfileSession();
         onSuccess?.();
       } else {
         onError?.('Failed to establish session from deep link');
@@ -150,6 +151,7 @@ export const handleWebAuthCallback = async (
     }
 
     console.log('[Auth] Web auth callback session successfully established for:', data.session.user.email);
+    await debugAuthAndProfileSession();
     
     // Forcefully update session to rebind PostgREST headers
     await supabase.auth.setSession({

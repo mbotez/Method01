@@ -43,7 +43,7 @@ import {
   Check
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
-import { supabase, recoverSupabaseSession } from './lib/supabase';
+import { supabase, recoverSupabaseSession, debugAuthAndProfileSession } from './lib/supabase';
 import { ProductCardProvider, useProductCard } from './context/ProductCardContext';
 import { Login } from './components/Login';
 import { ProductDetailModalNew } from './components/ProductDetailModalNew';
@@ -575,14 +575,17 @@ export default function App() {
     setIsSavingUsername(true);
     setUsernameSaveError(null);
     const trimmedUsername = editUsernameVal.trim();
-    console.log('[Profile] Saving username to Supabase for user.id:', user.id, 'username:', trimmedUsername);
+    const username = trimmedUsername;
+    console.log('[Profile] Saving username to Supabase for user.id:', user.id, 'username:', username);
     try {
-      const { error } = await supabase
-        .from('users')
-        .upsert({ id: user.id, username: trimmedUsername });
-      console.log('[Profile] Supabase username update result:', { error });
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ username })
+        .eq('id', user.id)
+        .select();
+      console.log('[DEBUG] Profile update result:', { rowsUpdated: data?.length, data, error });
       if (error) throw error;
-      setProfile((prev: any) => prev ? { ...prev, username: trimmedUsername } : { username: trimmedUsername });
+      setProfile((prev: any) => prev ? { ...prev, username } : { username });
       setIsEditingUsername(false);
     } catch (err: any) {
       console.error('[Profile] Failed to update username:', err);
@@ -1841,6 +1844,10 @@ export default function App() {
       console.log('[Auth] onAuthStateChange event:', event, 'session user:', session?.user?.email || 'none');
       const currentUser = session?.user ?? null;
       if (mounted) setUser(currentUser);
+
+      if (session) {
+        await debugAuthAndProfileSession();
+      }
 
       if (event === 'SIGNED_IN' && session) {
         setUser(session.user);

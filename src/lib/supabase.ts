@@ -193,3 +193,35 @@ export function setupVisibilityAndSessionRecovery(): () => void {
 if (typeof window !== 'undefined') {
   setupVisibilityAndSessionRecovery();
 }
+
+export async function debugAuthAndProfileSession() {
+  const { data: { session } } = await supabase.auth.getSession();
+  console.log('[DEBUG] Auth state:', {
+    hasSession: !!session,
+    provider: session?.user?.app_metadata?.provider,
+    userId: session?.user?.id,
+    tokenRole: session?.access_token ? JSON.parse(atob(session.access_token.split('.')[1])).role : null,
+    expiresAt: session?.expires_at
+  });
+  if (session?.user) {
+    const { data: profileRow, error: profileErr } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .maybeSingle();
+    console.log('[DEBUG] Profile row lookup:', {
+      userId: session.user.id,
+      provider: session.user.app_metadata?.provider,
+      profileExists: !!profileRow,
+      profileRow,
+      profileErr
+    });
+  }
+}
+
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    debugAuthAndProfileSession();
+  }, 1000);
+}
+

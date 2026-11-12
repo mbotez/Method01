@@ -162,6 +162,7 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
 
         const rpcPromise = (async () => {
           try {
+            console.log('[DEBUG] Calling RPC function: evaluate_product_compatibility');
             return await supabase
               .rpc('evaluate_product_compatibility', {
                 p_user_id: targetUserId,

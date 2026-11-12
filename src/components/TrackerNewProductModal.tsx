@@ -174,6 +174,7 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
       let breakoutReasons: string[] = [];
       try {
         if (selectedProduct.id && userId) {
+          console.log('[DEBUG] Calling RPC function: evaluate_product_compatibility');
           const { data, error } = await supabase.rpc('evaluate_product_compatibility', {
             p_user_id: userId,
             p_product_id: selectedProduct.id.toString()

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { supabase } from '../lib/supabase';
+import { supabase, debugAuthAndProfileSession } from '../lib/supabase';
 import { signInWithGoogle } from '../utils/auth';
 
 interface LoginProps {
@@ -46,6 +46,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
+      await debugAuthAndProfileSession();
       onSuccess?.();
     } catch (err: any) {
       setLocalError(err.message);
