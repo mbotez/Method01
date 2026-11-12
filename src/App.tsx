@@ -3418,7 +3418,7 @@ export default function App() {
                   {user && (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.DASHBOARD); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.DASHBOARD ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.DASHBOARD ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
                     >
                       <FlaskConical className="w-5 h-5 shrink-0" />
                       <span className="text-xs uppercase tracking-widest font-black">Home</span>
@@ -3427,7 +3427,7 @@ export default function App() {
                   {user ? (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.ROUTINES); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.ROUTINES ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.ROUTINES ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
                     >
                       <Sun className="w-5 h-5 shrink-0" />
                       <span className="text-xs uppercase tracking-widest font-black">My Routines</span>
@@ -3444,7 +3444,7 @@ export default function App() {
                   {user && (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.TRACKER); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.TRACKER ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.TRACKER ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
                     >
                       <CheckSquare className="w-5 h-5 shrink-0" />
                       <span className="text-xs uppercase tracking-widest font-black">Tracker</span>
@@ -3452,7 +3452,7 @@ export default function App() {
                   )}
                   <button 
                     onClick={() => { resetHeaderSearchState(); setAppState(AppState.RANK); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.RANK ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.RANK ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
                   >
                     <ShoppingBag className="w-5 h-5 shrink-0" />
                     <span className="text-xs uppercase tracking-widest font-black">Products</span>
@@ -3467,7 +3467,7 @@ export default function App() {
                       }
                       setIsMobileNavOpen(false); 
                     }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.RANK ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.RANK ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
                   >
                     <Sliders className="w-5 h-5 shrink-0" />
                     <span className="text-xs uppercase tracking-widest font-black">AI Compare</span>
@@ -3475,7 +3475,7 @@ export default function App() {
 
                   <button 
                     onClick={() => { resetHeaderSearchState(); setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setSocialActiveMainTab('articles'); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.SOCIAL ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.SOCIAL ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
                   >
                     <Heart className="w-5 h-5 shrink-0" />
                     <span className="text-xs uppercase tracking-widest font-black">The Edit</span>
@@ -3483,7 +3483,7 @@ export default function App() {
                   {user && (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.PROFILE ? 'bg-black text-white font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.PROFILE ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
                     >
                       <UserIcon className="w-5 h-5 shrink-0" />
                       <span className="text-xs uppercase tracking-widest font-black">Profile</span>
