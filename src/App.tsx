@@ -3070,7 +3070,7 @@ export default function App() {
               title="Re-evaluate live product attributes from database"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingRoutines ? 'animate-spin text-venus-accent' : ''}`} />
-              <span className="hidden sm:inline">{isRefreshingRoutines ? 'Syncing...' : 'Live Sync'}</span>
+              <span className="hidden sm:inline">{isRefreshingRoutines ? 'Syncing...' : 'Sync'}</span>
             </button>
             <button 
               onClick={handleAddRoutine}
