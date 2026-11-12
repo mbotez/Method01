@@ -202,7 +202,7 @@ export async function debugAuthAndProfileSession() {
   });
   if (session?.user) {
     const { data: profileRow, error: profileErr } = await supabase
-      .from('profiles')
+      .from('user_profile')
       .select('*')
       .eq('id', session.user.id)
       .maybeSingle();

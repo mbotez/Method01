@@ -579,11 +579,11 @@ export default function App() {
     console.log('[Profile] Saving username to Supabase for user.id:', user.id, 'username:', username);
     try {
       const { data, error } = await supabase
-        .from('profiles')
+        .from('users')
         .update({ username })
         .eq('id', user.id)
         .select();
-      console.log('[DEBUG] Profile update result:', { rowsUpdated: data?.length, data, error });
+      console.log('[DEBUG] Username update result:', { rowsUpdated: data?.length, data, error });
       if (error) throw error;
       setProfile((prev: any) => prev ? { ...prev, username } : { username });
       setIsEditingUsername(false);
