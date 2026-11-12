@@ -3727,7 +3727,7 @@ export default function App() {
       <main className={
         appState === AppState.LANDING 
           ? 'p-0 m-0 w-full h-[calc(100dvh-65px)] overflow-hidden' 
-          : `pt-0 md:pt-0 ${appState === AppState.ONBOARDING_DETAILS ? 'p-0 h-[calc(100dvh-73px)] md:h-[calc(100dvh-75px)] overflow-hidden bg-transparent' : 'pb-24 pt-4 md:pt-6'} px-0 md:px-0 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`
+          : `pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`
       }>
         <AnimatePresence mode="wait">
           
