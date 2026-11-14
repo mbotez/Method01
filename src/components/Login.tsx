@@ -6,14 +6,16 @@ import { signInWithGoogle } from '../utils/auth';
 interface LoginProps {
   onSuccess?: () => void;
   onError?: (error: string) => void;
+  onAwaitingApproval?: () => void;
   isSignUp: boolean;
   setIsSignUp: (isSignUp: boolean) => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setIsSignUp }) => {
+export const Login: React.FC<LoginProps> = ({ onSuccess, onError, onAwaitingApproval, isSignUp, setIsSignUp }) => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -34,6 +36,10 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
           throw new Error('Please enter a username');
         }
 
+        if (password !== confirmPassword) {
+          throw new Error('Passwords do not match');
+        }
+
         // Check if username already exists in database
         const { data: existingUser, error: checkError } = await supabase
           .from('users')
@@ -45,7 +51,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
           throw new Error('Username is already taken');
         }
 
-        const { error } = await supabase.auth.signUp({ 
+        const { data: authData, error } = await supabase.auth.signUp({ 
           email, 
           password,
           options: {
@@ -56,18 +62,36 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
         });
         if (error) throw error;
         
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await supabase.from('users').upsert({ id: session.user.id, username: trimmedUsername }, { onConflict: 'id' });
+        const sessionUser = authData.user || (await supabase.auth.getSession()).data.session?.user;
+        if (sessionUser) {
+          await supabase.from('users').upsert({ id: sessionUser.id, username: trimmedUsername, is_approved: false }, { onConflict: 'id' });
         }
+        
+        await supabase.auth.signOut();
+        onAwaitingApproval?.();
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        
+        const sessionUser = authData.user;
+        if (sessionUser) {
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('is_approved')
+            .eq('id', sessionUser.id)
+            .maybeSingle();
+          
+          if (!userData || userData.is_approved !== true) {
+            await supabase.auth.signOut();
+            throw new Error('Awaiting approval');
+          }
+        }
+        onSuccess?.();
       }
-      onSuccess?.();
     } catch (err: any) {
-      setLocalError(err.message);
-      onError?.(err.message);
+      const msg = err.message === 'Awaiting approval' ? 'Awaiting approval' : (err.message || 'Authentication failed');
+      setLocalError(msg);
+      onError?.(msg);
     } finally {
       setLoading(false);
       setIsSubmitting(false);
@@ -185,6 +209,20 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
               placeholder="••••••••"
             />
           </div>
+
+          {isSignUp && (
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-black/40 block mb-2">Repeat Password</label>
+              <input 
+                type="password" 
+                required={isSignUp}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full bg-black/5 border-2 border-black/5 rounded-xl px-4 py-3 font-medium outline-none focus:border-black transition-colors"
+                placeholder="••••••••"
+              />
+            </div>
+          )}
 
           {localError && (
             <p className="text-venus-accent text-xs font-bold text-center">{localError}</p>

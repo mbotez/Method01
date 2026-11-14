@@ -40,7 +40,8 @@ import {
   RefreshCw,
   Sparkles,
   Sliders,
-  Check
+  Check,
+  MessageSquare
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase, recoverSupabaseSession } from './lib/supabase';
@@ -129,7 +130,8 @@ enum AppState {
   PRODUCT_PAGE,
   ROUTINES,
   PRIVACY_POLICY,
-  DELETE_ACCOUNT
+  DELETE_ACCOUNT,
+  FEEDBACK
 }
 
 const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
@@ -219,6 +221,7 @@ export default function App() {
       const hasHash = window.location.hash.includes('access_token=') || window.location.hash.includes('code=');
       if (path.startsWith('/privacy')) return AppState.PRIVACY_POLICY;
       if (path.startsWith('/delete-account')) return AppState.DELETE_ACCOUNT;
+      if (path.startsWith('/feedback')) return AppState.FEEDBACK;
       if (path.startsWith('/dashboard') || path.startsWith('/auth/callback') || hasHash) return AppState.DASHBOARD;
       if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
       if (path.startsWith('/tracker')) return AppState.TRACKER;
@@ -247,6 +250,7 @@ export default function App() {
         case AppState.ROUTINES: urlPath = '/routines'; break;
         case AppState.PRIVACY_POLICY: urlPath = '/privacy'; break;
         case AppState.DELETE_ACCOUNT: urlPath = '/delete-account'; break;
+        case AppState.FEEDBACK: urlPath = '/feedback'; break;
       }
       if (path) urlPath = path;
       window.history.pushState(null, '', urlPath);
@@ -261,6 +265,8 @@ export default function App() {
           setAppState(AppState.PRIVACY_POLICY);
         } else if (path.startsWith('/delete-account')) {
           setAppState(AppState.DELETE_ACCOUNT);
+        } else if (path.startsWith('/feedback')) {
+          setAppState(AppState.FEEDBACK);
         } else if (path.startsWith('/dashboard') || path.startsWith('/auth/callback')) {
           setAppState(AppState.DASHBOARD);
         } else if (path.startsWith('/products') || path.startsWith('/rank')) {
@@ -532,6 +538,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [awaitingApproval, setAwaitingApproval] = useState(false);
   const [pendingQuestionnaireAnswers, setPendingQuestionnaireAnswers] = useState<any>(null); // NEW
   const [isQuizBannerDismissed, setIsQuizBannerDismissed] = useState(false);
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
@@ -745,6 +752,36 @@ export default function App() {
       setGoalsSaveError(err?.message || 'Failed to update skin goals');
     } finally {
       setIsSavingGoals(false);
+    }
+  };
+
+  const [feedbackText, setFeedbackText] = useState('');
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackSuccessMessage, setFeedbackSuccessMessage] = useState<string | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    if (!feedbackText.trim()) return;
+    setIsSubmittingFeedback(true);
+    setFeedbackError(null);
+    setFeedbackSuccessMessage(null);
+    try {
+      const { error } = await supabase
+        .from('feedback')
+        .insert({
+          user_id: user.id,
+          feedback: feedbackText.trim(),
+          timestamp: new Date().toISOString()
+        });
+      if (error) throw error;
+      setFeedbackSuccessMessage('Thank you! Your feedback has been submitted successfully.');
+      setFeedbackText('');
+    } catch (err: any) {
+      setFeedbackError(err?.message || 'Failed to submit feedback.');
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   };
   const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'articles' | 'guides' | 'community'>('videos');
@@ -1931,18 +1968,35 @@ export default function App() {
             .eq('id', currentUser.id)
             .single();
 
-          if (error || !data || !data.username || data.username === 'skincareenthusiast') {
+          if (error || !data) {
             const generated = await generateUniqueUsername(supabase);
             const { data: upsertedData, error: upsertError } = await supabase
               .from('users')
-              .upsert({ id: currentUser.id, username: generated }, { onConflict: 'id' })
+              .upsert({ id: currentUser.id, username: generated, is_approved: false }, { onConflict: 'id' })
               .select()
               .single();
             if (!upsertError && upsertedData) {
               data = upsertedData;
             } else if (!data) {
-              data = { id: currentUser.id, username: generated };
+              data = { id: currentUser.id, username: generated, is_approved: false };
             }
+          }
+
+          if (data && data.is_approved !== true) {
+            await supabase.auth.signOut();
+            if (mounted) {
+              setUser(null);
+              setAppState(AppState.LANDING);
+              setAwaitingApproval(true);
+              setError('Awaiting approval');
+            }
+            return;
+          }
+
+          if (data && (!data.username || data.username === 'skincareenthusiast')) {
+            const generated = await generateUniqueUsername(supabase);
+            await supabase.from('users').upsert({ id: currentUser.id, username: generated }, { onConflict: 'id' });
+            data.username = generated;
           }
 
           if (data && mounted) {
@@ -3489,6 +3543,15 @@ export default function App() {
                       <span className="text-xs uppercase tracking-widest font-black">Profile</span>
                     </button>
                   )}
+                  {user && (
+                    <button 
+                      onClick={() => { resetHeaderSearchState(); setAppState(AppState.FEEDBACK); setIsMobileNavOpen(false); }} 
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.FEEDBACK ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    >
+                      <MessageSquare className="w-5 h-5 shrink-0" />
+                      <span className="text-xs uppercase tracking-widest font-black">Feedback</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -3892,462 +3955,58 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* LANDING */}
-          {appState === AppState.LANDING && (
-            <>
-              {/* MOBILE VIEW LANDING */}
-              {!isWeb && (
-                <motion.div 
-                  key="landing-mobile"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className={`text-center flex flex-col items-center justify-between overflow-hidden touch-none ${isNativePlatform() ? 'h-screen w-screen fixed inset-0 z-0 pt-16' : 'w-full h-[calc(100dvh-65px)] fixed inset-x-0 bottom-0 z-10 pt-8'} bg-[url('/assets/landing_banner.png')] bg-cover bg-center px-6 pb-12`}
-                >
-                  <div className="flex flex-col items-center gap-4 w-full max-w-sm">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <h1 className="text-5xl md:text-6xl font-cursive font-bold leading-[0.9] text-white tracking-normal drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
-                        Canonic
-                      </h1>
-                      <p className="text-xl md:text-2xl font-cursive font-bold text-white tracking-normal drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)]">
-                        Beauty, Smarter
-                      </p>
-                    </div>
-                    <button 
-                      onClick={() => setAppState(AppState.ONBOARDING_DETAILS)}
-                      className="w-full flex items-center justify-center cursor-pointer mt-2"
-                    >
-                      <motion.div
-                        animate={{ y: [0, -6, 0] }}
-                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                        className="flex items-center justify-center gap-2 bg-white/80 backdrop-blur-md border border-white/40 text-black text-lg md:text-xl font-bold px-6 py-3 rounded-full shadow-lg hover:bg-white transition-all w-full"
-                      >
-                        <span>Take skin quiz</span>
-                        <ChevronRight className="w-5 h-5" />
-                      </motion.div>
-                    </button>
+          {/* EARLY ACCESS LANDING / AUTH */}
+          {(appState === AppState.LANDING || appState === AppState.AUTH) && (
+            <motion.div
+              key="early-access-landing"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="min-h-[calc(100vh-100px)] flex flex-col items-center justify-center px-4 py-12"
+            >
+              <div className="text-center mb-8">
+                <h1 className="text-4xl font-black uppercase tracking-tight text-black mb-2" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
+                  Canonic Early Access
+                </h1>
+                <p className="text-sm font-medium text-black/50 uppercase tracking-widest">
+                  Sign Up for Waiting List
+                </p>
+              </div>
+
+              {error === 'Awaiting approval' || awaitingApproval ? (
+                <div className="max-w-md mx-auto p-10 bg-white border-2 border-black/5 shadow-2xl rounded-3xl text-center space-y-6 w-full">
+                  <div className="w-16 h-16 bg-black/5 rounded-full flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-8 h-8 text-black" />
                   </div>
-                  <button 
-                    onClick={() => triggerPhotoScan(landingFileInputRef)}
-                    className="p-4 bg-white/80 backdrop-blur-md border border-black/10 text-black hover:bg-white active:scale-95 rounded-full font-black transition-all shadow-xl flex items-center justify-center mx-auto cursor-pointer mb-4"
-                    title="Scan product photo"
+                  <h3 className="text-2xl font-black uppercase tracking-tight text-black">Awaiting approval</h3>
+                  <p className="text-sm text-black/60 font-medium leading-relaxed">
+                    Your early access request has been received. You will be able to sign in once your account is approved.
+                  </p>
+                  <button
+                    onClick={() => { setError(null); setAwaitingApproval(false); setIsSignUp(false); }}
+                    className="w-full bg-black text-white font-black uppercase tracking-widest text-xs py-3.5 rounded-xl hover:bg-neutral-800 transition-all cursor-pointer"
                   >
-                    <Camera className="w-6 h-6 text-black" />
+                    Back to Sign In
                   </button>
-                  
-                  <ProductConfirmationModal
-                    isOpen={isLandingConfirmOpen}
-                    products={landingScanMatched}
-                    onConfirm={handleLandingConfirmScan}
-                    onCancel={() => setIsLandingConfirmOpen(false)}
-                    user={user}
-                    onLogin={(confirmed) => {
-                      localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
-                      setAppState(AppState.AUTH);
-                      setIsLandingConfirmOpen(false);
-                    }}
-                  />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    ref={landingFileInputRef}
-                    onChange={handleLandingPhotoScan}
-                    className="hidden"
-                  />
-                </motion.div>
+                </div>
+              ) : (
+                <Login 
+                  isSignUp={isSignUp}
+                  setIsSignUp={setIsSignUp}
+                  onSuccess={() => {
+                    setAppState(AppState.DASHBOARD);
+                  }}
+                  onAwaitingApproval={() => {
+                    setAwaitingApproval(true);
+                  }}
+                  onError={(err) => {
+                    setError(err);
+                  }}
+                />
               )}
-
-              {/* WEBSITE VIEW LANDING */}
-              {isWeb && (
-                <motion.div 
-                  key="landing-web"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="w-full"
-                >
-                  {/* Hero Banner (1/3 of screen height) */}
-                  <div 
-                    onClick={() => setAppState(AppState.RANK)}
-                    className="w-full h-[calc((100vh-65px)/3)] min-h-[200px] max-h-[320px] relative overflow-hidden bg-[#B0D8FA] cursor-pointer group flex items-center justify-center"
-                    title="Explore Products"
-                  >
-                    <img 
-                      src="/assets/b2.jpg" 
-                      alt="Canonic" 
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover object-[center_46%] transition-transform duration-700 ease-out group-hover:scale-[1.01]" 
-                    />
-                  </div>
-
-                  {/* Main Landing Sections */}
-                  <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-12 space-y-12 md:space-y-16 w-full">
-                    {/* SECTION 1: THE EDIT (FIRST 3 ARTICLES) */}
-                    <section className="space-y-6 w-full">
-                      <div className="flex items-center justify-between pb-3 border-b border-black/10">
-                        <div className="flex items-baseline gap-3">
-                          <h2 
-                            className="text-xl md:text-2xl font-black uppercase tracking-tight text-black cursor-pointer hover:text-venus-accent transition-colors" 
-                            style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}
-                            onClick={() => {
-                              resetHeaderSearchState();
-                              setAppState(AppState.SOCIAL);
-                              setSocialActiveMainTab('articles');
-                              setIsFollowsOpen(false);
-                            }}
-                          >
-                            The Edit
-                          </h2>
-                          <span className="text-xs text-black/40 font-medium hidden sm:inline">Skincare guides & rituals</span>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            resetHeaderSearchState();
-                            setAppState(AppState.SOCIAL);
-                            setSocialActiveMainTab('articles');
-                            setIsFollowsOpen(false);
-                          }}
-                          className="group inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors cursor-pointer py-1.5 px-3 rounded-lg hover:bg-black/5"
-                          title="View all articles in The Edit"
-                          aria-label="View all articles in The Edit"
-                        >
-                          <span>View All</span>
-                          <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1 text-black" />
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 w-full">
-                        {landingArticles.slice(0, 3).map((article, idx) => (
-                          <article 
-                            key={article.id || article.article_id || idx}
-                            onClick={() => {
-                              resetHeaderSearchState();
-                              setAppState(AppState.SOCIAL);
-                              setSocialActiveMainTab('articles');
-                              setIsFollowsOpen(false);
-                            }}
-                            className="clean-card bg-white border border-black/10 hover:border-black p-5 rounded-2xl transition-all duration-300 hover:shadow-lg cursor-pointer flex flex-col justify-between group h-full"
-                          >
-                            <div className="space-y-3">
-                              <div className="rounded-xl overflow-hidden border border-black/5 bg-[#F5F4F0] aspect-[16/10] w-full relative">
-                                <img 
-                                  src={article.image_url || `/assets/g${(idx % 6) + 1}.jpg`} 
-                                  alt={article.title} 
-                                  referrerPolicy="no-referrer"
-                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                  onError={(e) => {
-                                    const target = e.currentTarget;
-                                    target.src = `/assets/g${(idx % 6) + 1}.jpg`;
-                                  }}
-                                />
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-black/50">
-                                <span className="font-black uppercase tracking-wider text-[10px] text-venus-accent">
-                                  {article.category || 'Editorial'}
-                                </span>
-                              </div>
-                              <h3 className="text-sm md:text-base font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2 leading-snug">
-                                {article.title}
-                              </h3>
-                              <p className="text-xs text-black/70 font-medium leading-relaxed line-clamp-3">
-                                {article.article_content || article.summary}
-                              </p>
-                            </div>
-
-                            <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-end text-xs font-black uppercase tracking-wider text-black">
-                              <span className="group-hover:underline flex items-center gap-1.5">
-                                Read
-                                <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
-                              </span>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    </section>
-
-                    {/* SECTION 2: BROWSE PRODUCTS (ONE ROW) */}
-                    <section className="space-y-6 w-full">
-                      <div className="flex items-center justify-between pb-3 border-b border-black/10">
-                        <div className="flex items-baseline gap-3">
-                          <h2 
-                            className="text-xl md:text-2xl font-black uppercase tracking-tight text-black cursor-pointer hover:text-venus-accent transition-colors" 
-                            style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}
-                            onClick={() => {
-                              resetHeaderSearchState();
-                              setAppState(AppState.RANK);
-                            }}
-                          >
-                            Browse Products
-                          </h2>
-                          <span className="text-xs text-black/40 font-medium hidden sm:inline">Skin-matched catalog</span>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            resetHeaderSearchState();
-                            setAppState(AppState.RANK);
-                          }}
-                          className="group inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors cursor-pointer py-1.5 px-3 rounded-lg hover:bg-black/5"
-                          title="View all products on Products page"
-                          aria-label="View all products on Products page"
-                        >
-                          <span>View All</span>
-                          <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1 text-black" />
-                        </button>
-                      </div>
-
-                      {/* Primary Filter Bubbles */}
-                      <div className="flex flex-nowrap justify-start sm:justify-center md:justify-center gap-3 md:gap-4 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 snap-x snap-mandatory w-full">
-                        {[
-                          { name: 'Type', image: 'https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=300&q=80', filterKey: 'By Type' },
-                          { name: 'Ingredient', image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=300&q=80', filterKey: 'By Ingredient' },
-                          { name: 'Concern', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=300&q=80', filterKey: 'By Concern' },
-                          { name: 'Trending', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=300&q=80', filterKey: 'Trending' },
-                          { name: 'Pregnancy-safe', image: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=300&q=80', filterKey: 'Pregnancy-safe' }
-                        ].map(item => {
-                          const isActive = (primaryFilter === 'By Type' && (subFilter === item.filterKey || (item.filterKey === 'By Type' && subFilter === 'All'))) || primaryFilter === item.filterKey;
-                          return (
-                            <button
-                              key={item.name}
-                              onClick={() => {
-                                if (item.filterKey === 'By Type') {
-                                  setPrimaryFilter('By Type');
-                                  setSubFilter('All');
-                                } else {
-                                  setPrimaryFilter(item.filterKey);
-                                  setSubFilter('all');
-                                }
-                              }}
-                              className="flex flex-col items-center gap-1.5 shrink-0 snap-start group cursor-pointer w-20 sm:w-24 md:w-28 text-center"
-                            >
-                              <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-md mx-auto ${
-                                isActive ? 'border-black scale-105 shadow-lg ring-2 ring-black/20' : 'border-black/10 group-hover:border-black/40'
-                              }`}>
-                                <img src={item.image} alt={item.name} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                              </div>
-                              <span className={`text-[9px] md:text-xs font-black uppercase tracking-wider text-center w-full whitespace-normal leading-tight ${
-                                isActive ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/70 group-hover:text-black'
-                              }`}>
-                                {item.name}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Sub-bar Filter */}
-                      {(primaryFilter === 'By Type' || primaryFilter === 'Pregnancy-safe') && (
-                        <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
-                          {['All', 'Cleanser', 'SPF', 'Cream', 'Serum', 'Toner', 'Retinol', 'Moisturizer'].map((type) => (
-                            <button
-                              key={type}
-                              onClick={() => setSubFilter(type)}
-                              className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === type.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
-                            >
-                              {type}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {primaryFilter === 'By Ingredient' && (
-                        <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
-                          {['all', 'Retinols', 'Hyaluronic Acid', 'PDRN', 'Collagen', 'Niacinamide', 'Salicylic Acid', 'Vitamin C', 'Vitamin E', 'Glycolic Acid', 'Peptides', 'Ceramides', 'AHA/BHA'].map((ing) => (
-                            <button
-                              key={ing}
-                              onClick={() => setSubFilter(ing)}
-                              className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === ing.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
-                            >
-                              {ing}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {primaryFilter === 'By Concern' && (
-                        <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
-                          {['all', 'Blemish-prone skin', 'Redness', 'Dry Skin', 'Aging skin'].map((concern) => (
-                            <button
-                              key={concern}
-                              onClick={() => setSubFilter(concern)}
-                              className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === concern.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
-                            >
-                              {concern}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {primaryFilter === 'Trending' && (
-                        <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
-                          {['all', 'K-Beauty', 'J-Beauty', 'Glass Skin', 'PDRN', 'Natural', 'Winter Care'].map((trend) => (
-                            <button
-                              key={trend}
-                              onClick={() => setSubFilter(trend)}
-                              className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === trend.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
-                            >
-                              {trend}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Exactly ONE row of products (4 products on desktop, 2x2 on mobile) */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-3 md:gap-4 w-full">
-                        {(() => {
-                          const baseList = products && products.length > 0 ? products : INVENTORY;
-                          const filtered = baseList.filter(p => {
-                            const pType = (p.type || p.Type || '').toLowerCase();
-                            const pName = (p.name || p.Name || p.ProductName || p['Product Name'] || '').toLowerCase();
-                            const pBrand = (p.brand || p.Brand || '').toLowerCase();
-                            const pDesc = (p.description || '').toLowerCase();
-                            const pIngs = Array.isArray(p.ingredients) ? p.ingredients.map((i: string) => i.toLowerCase()) : [];
-
-                            const cat2 = (p.product_scores?.cat2 || '').toLowerCase();
-                            const pf = (Array.isArray(p.products_filter) ? p.products_filter[0] : p.products_filter) || {};
-                            const pregSafe = pf.preg_safe === true;
-
-                            if (primaryFilter === 'By Type') {
-                              if (subFilter === 'All' || subFilter === 'all') return true;
-                              const sub = subFilter.toLowerCase();
-                              if (sub === 'cleanser') return pType.includes('clean') || cat2.includes('clean');
-                              if (sub === 'spf') return pType.includes('spf') || pType.includes('sun') || cat2.includes('spf');
-                              if (sub === 'cream') return pType.includes('cream') || cat2.includes('cream');
-                              if (sub === 'serum') return pType.includes('serum') || cat2.includes('serum');
-                              if (sub === 'toner') return pType.includes('toner') || cat2.includes('toner');
-                              if (sub === 'retinol') return pf.c_retinol === true || pType.includes('retinol') || pName.includes('retinol') || pIngs.some(i => i.includes('retinol'));
-                              if (sub === 'moisturizer') return pType.includes('moist') || cat2.includes('moist');
-                              return pType.includes(sub) || cat2.includes(sub);
-                            }
-                            if (primaryFilter === 'Pregnancy-safe') {
-                              if (!pregSafe && !pDesc.includes('pregnancy-safe')) return false;
-                              if (subFilter === 'All' || subFilter === 'all') return true;
-                              const sub = subFilter.toLowerCase();
-                              return pType.includes(sub) || cat2.includes(sub);
-                            }
-                            if (primaryFilter === 'By Ingredient') {
-                              if (subFilter === 'all' || subFilter === 'All') return true;
-                              const target = subFilter.toLowerCase();
-                              if (target === 'retinols' || target === 'retinol') {
-                                if (pf.c_retinol === true) return true;
-                              } else if (target === 'hyaluronic acid' || target === 'ha') {
-                                if (pf.c_ha === true) return true;
-                              } else if (target === 'pdrn') {
-                                if (pf.c_pdrn === true || pf.pdrn === true) return true;
-                              } else if (target === 'collagen') {
-                                if (pf.c_collagen === true) return true;
-                              } else if (target === 'niacinamide') {
-                                if (pf.c_niac === true) return true;
-                              } else if (target === 'salicylic acid' || target === 'salicylic') {
-                                if (pf.c_salicylic === true) return true;
-                              } else if (target === 'vitamin c' || target === 'vit c' || target === 'vitc') {
-                                if (pf.c_vitc === true) return true;
-                              } else if (target === 'vitamin e' || target === 'vit e' || target === 'vite') {
-                                if (pf.c_vite === true) return true;
-                              } else if (target === 'glycolic acid' || target === 'glycolic') {
-                                if (pf.c_glycolic === true) return true;
-                              } else if (target === 'peptides' || target === 'peptide') {
-                                if (pf.c_peptides === true) return true;
-                              } else if (target === 'ceramides' || target === 'ceramide') {
-                                if (pf.c_ceramide === true) return true;
-                              } else if (target === 'aha/bha') {
-                                if (pf.c_ahabha === true) return true;
-                              }
-                              const cleanTarget = target.replace(/s$/, '');
-                              return pIngs.some((i: string) => i.includes(target) || (cleanTarget.length > 2 && i.includes(cleanTarget))) ||
-                                     pDesc.includes(target) || (cleanTarget.length > 2 && pDesc.includes(cleanTarget)) ||
-                                     pName.includes(target) || (cleanTarget.length > 2 && pName.includes(cleanTarget));
-                            }
-                            if (primaryFilter === 'By Concern') {
-                              if (subFilter === 'all' || subFilter === 'All') return true;
-                              const target = subFilter.toLowerCase();
-                              if (target === 'blemish-prone skin') return pf.blem_prone === true;
-                              if (target === 'redness') return pf.red === true;
-                              if (target === 'dry skin') return pf.dry === true;
-                              if (target === 'aging skin') return pf.aging === true;
-                              return pDesc.includes(target) || pName.includes(target);
-                            }
-                            if (primaryFilter === 'Trending') {
-                              if (subFilter === 'all' || subFilter === 'All') return true;
-                              const target = subFilter.toLowerCase();
-                              if (target === 'k-beauty') return pf.k_beauty === true;
-                              if (target === 'j-beauty') return pf.j_beauty === true;
-                              if (target === 'glass skin') return pf.glass === true;
-                              if (target === 'pdrn') return pf.c_pdrn === true || pf.pdrn === true;
-                              if (target === 'natural') return pf.natural === true;
-                              return pDesc.includes(target) || pName.includes(target) || pBrand.includes(target) || pIngs.some((i: string) => i.includes(target));
-                            }
-                            return true;
-                          });
-
-                          const displayList = (filtered.length > 0 ? filtered : baseList).slice(0, 4);
-
-                          return displayList.map((p: any) => {
-                            const userProd = userProducts.find(up => (up?.product_name === (p.name || p.Name || p.ProductName || p['Product Name'])));
-                            return (
-                              <div 
-                                key={p.id} 
-                                onClick={() => openProductCard(String(p.id))} 
-                                className="cursor-pointer clean-card p-3 border-2 bg-white border-black/5 hover:border-black transition-all flex flex-col items-center text-center justify-between gap-2 relative group w-full"
-                                data-product-id={p.id}
-                              >
-                                {p.photo_url ? (
-                                  <img 
-                                    src={p.photo_url} 
-                                    alt={p.name || p.Name || p.ProductName || p['Product Name'] || 'Product'} 
-                                    referrerPolicy="no-referrer"
-                                    className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-black/10 flex-shrink-0 group-hover:scale-105 transition-transform mx-auto" 
-                                  />
-                                ) : (
-                                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black/5 rounded-xl border border-black/10 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40 mx-auto">
-                                    No Image
-                                  </div>
-                                )}
-                                <div className="w-full min-w-0 text-center">
-                                  <div className="text-[9px] font-black uppercase tracking-widest text-venus-accent mb-0.5 whitespace-normal break-words text-center">
-                                    {p.brand || p.Brand || 'Unknown'}
-                                  </div>
-                                  <h3 className="text-[10px] md:text-xs font-black text-black uppercase leading-tight whitespace-normal break-words text-center line-clamp-2">
-                                    {p.name || p.Name || p.ProductName || p['Product Name'] || 'Unnamed'}
-                                  </h3>
-                                </div>
-                                <div className="absolute top-2 right-2">
-                                  {userProd ? (
-                                    <button 
-                                      onClick={(e) => { e.stopPropagation(); handleDeleteUPP(userProd.id); }} 
-                                      className="p-1 hover:bg-black/10 rounded-full shrink-0"
-                                      title="Remove from routine"
-                                    >
-                                      <Trash2 className="w-3 h-3 text-black/70"/>
-                                    </button>
-                                  ) : (
-                                    <button 
-                                      onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        if (!user) {
-                                          setAuthPromptModalOpen(true);
-                                          return;
-                                        }
-                                        setSelectedProductForUPP(p); 
-                                      }} 
-                                      className="p-1 hover:bg-black/5 rounded-full shrink-0"
-                                      title="Add to routine"
-                                    >
-                                      <Plus className="w-3 h-3 text-black/50"/>
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </section>
-                  </div>
-                </motion.div>
-              )}
-            </>
+            </motion.div>
           )}
+
 
           {/* ONBOARDING: DETAILS */}
           {appState === AppState.ONBOARDING_DETAILS && (
@@ -6139,6 +5798,69 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* FEEDBACK PAGE */}
+          {appState === AppState.FEEDBACK && (
+            <motion.div
+              key="feedback"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6 max-w-2xl mx-auto pb-12 w-full"
+            >
+              <header className="text-center space-y-3">
+                <div className="inline-flex p-3 bg-black/5 rounded-full mb-2">
+                  <MessageSquare className="w-8 h-8 text-black" />
+                </div>
+                <h2 className="text-4xl md:text-5xl font-sans font-black text-black uppercase tracking-tighter">
+                  Send Feedback
+                </h2>
+                <p className="text-xs md:text-sm font-semibold text-black/60 max-w-md mx-auto">
+                  We value your feedback to help us improve Canonic. Let us know your thoughts, feature requests, or suggestions.
+                </p>
+              </header>
+
+              <div className="clean-card bg-white border border-black/10 rounded-3xl p-6 md:p-8 shadow-sm space-y-6">
+                <form onSubmit={handleFeedbackSubmit} className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-black uppercase tracking-wider text-black block">
+                      Your Feedback
+                    </label>
+                    <textarea
+                      value={feedbackText}
+                      onChange={(e) => setFeedbackText(e.target.value)}
+                      placeholder="Type your feedback, suggestions or comments here..."
+                      rows={8}
+                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl p-4 text-sm font-medium text-black focus:outline-none focus:ring-2 focus:ring-black resize-y"
+                      required
+                    />
+                  </div>
+
+                  {feedbackError && (
+                    <div className="p-4 bg-red-50 border border-red-500/20 text-red-700 text-xs font-semibold rounded-2xl">
+                      {feedbackError}
+                    </div>
+                  )}
+
+                  {feedbackSuccessMessage && (
+                    <div className="p-4 bg-green-50 border border-green-500/20 text-green-800 text-xs font-semibold rounded-2xl flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                      <span>{feedbackSuccessMessage}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingFeedback || !feedbackText.trim()}
+                    className="w-full bg-black text-white py-4 rounded-2xl uppercase tracking-widest text-xs font-black hover:bg-black/80 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    {isSubmittingFeedback && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <span>Submit Feedback</span>
+                  </button>
+                </form>
+              </div>
+            </motion.div>
+          )}
+
 
         </AnimatePresence>
       </main>
@@ -6558,7 +6280,7 @@ export default function App() {
       )}
 
       {/* Bottom Nav Hint */}
-      {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
+      {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.FEEDBACK || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
         <div className="fixed bottom-0 left-0 right-0 flex justify-center bg-gradient-to-t from-white to-transparent z-40">
           <div className="clean-card py-3 px-6 flex justify-between md:justify-center gap-6 md:gap-8 items-center w-full md:w-auto bg-white border-t-2 md:border-2 border-black/5 shadow-2xl md:rounded-3xl">
             {user && (

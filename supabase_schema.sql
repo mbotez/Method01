@@ -6,6 +6,8 @@ CREATE TABLE public.users (
   onboarding_complete boolean DEFAULT false,
   created_at timestamp with time zone DEFAULT now(),
   username text,
+  is_approved boolean DEFAULT false,
+  waitlist_notes text,
   CONSTRAINT users_pkey PRIMARY KEY (id),
   CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
