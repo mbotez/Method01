@@ -991,8 +991,7 @@ export const ProductCardContent = ({
       </button>
       <Loader2 className="w-10 h-10 animate-spin text-purple-600" />
       <div className="text-center">
-        <p className="text-sm font-black uppercase tracking-wider text-black">Analyzing Ingredients...</p>
-        <p className="text-[10px] text-black/50 mt-1 font-mono">Running database skin engine compatibility checks</p>
+        <p className="text-sm font-black uppercase tracking-wider text-black">Fetching Ingredients...</p>
       </div>
     </div>
   );
@@ -1132,7 +1131,7 @@ export const ProductCardContent = ({
         >
           <div className="flex items-center gap-1.5">
             <Star className="w-3.5 h-3.5 fill-purple-600 text-purple-600" />
-            <span>Community Rating: {globalRatingsSummary.avg > 0 ? `${globalRatingsSummary.avg} / 5` : 'No ratings yet'}</span>
+            <span>Ratings: {globalRatingsSummary.avg > 0 ? `${globalRatingsSummary.avg} / 5` : 'None yet'}</span>
             <span className="text-[10px] text-black/40 font-normal lowercase font-mono">({globalRatingsSummary.count} reviews)</span>
           </div>
           {isRatingsDropdownOpen ? <ChevronUp className="w-4 h-4 text-purple-700" /> : <ChevronDown className="w-4 h-4 text-purple-700" />}
