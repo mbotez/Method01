@@ -108,7 +108,6 @@ const GlowingBackground = ({ appState }: { appState: AppState }) => (
 const ErrorModal = ({ error, onClose }: { error: string, onClose: () => void }) => (
   <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
     <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-md w-full">
-      <h2 className="text-xl font-bold mb-4 text-red-600">Database Error</h2>
       <p className="text-sm text-gray-700 mb-6 bg-red-50 p-4 rounded-lg">{error}</p>
       <button className="w-full bg-black text-white p-3 rounded-lg uppercase tracking-widest text-xs font-black" onClick={onClose}>Close</button>
     </div>
