@@ -33,12 +33,24 @@ export function parseDataUrl(dataUrl: string) {
 }
 
 export function handleCors(req: VercelRequest, res: VercelResponse): boolean {
+  const origin = req.headers.origin as string;
+  const allowedOrigins = [
+    'https://localhost',
+    'capacitor://localhost',
+    'https://canonic.vercel.app',
+    'https://www.canonic.co.uk',
+    'https://canonic.co.uk'
+  ];
+  if (origin && (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.run.app'))) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
   res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,PATCH,DELETE,POST,PUT");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
+    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
   );
   if (req.method === "OPTIONS") {
     res.status(200).end();
@@ -58,4 +70,3 @@ export function extractErrorMessage(err: any, fallback: string = "An unexpected 
   } catch {}
   return raw;
 }
-

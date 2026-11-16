@@ -4,6 +4,7 @@ import { Send, ArrowLeft, Camera, X, Info, Trash2, Check, ArrowRight } from 'luc
 import { BREAKOUT_PHOTO_OPTIONS } from '../data/breakoutOptions';
 import { supabase } from '../lib/supabase';
 import { mapAnswersToProfile, generateSkinReportText } from '../skin_report';
+import { API_BASE } from '../utils/auth';
 
 interface Message {
   id: string;
@@ -537,7 +538,7 @@ export const ChatQuestionnaire = ({
     }, 450);
 
     try {
-      const response = await fetch("/api/analyze-face", {
+      const response = await fetch(`${API_BASE}/api/analyze-face`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

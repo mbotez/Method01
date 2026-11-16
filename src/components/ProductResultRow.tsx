@@ -217,7 +217,7 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
                       {ings.length} Ingr
                     </span>
                   </div>
-                  <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                  <div className="space-y-1 pr-0.5">
                     {ings.map((item: any, iIdx: number) => (
                       <div key={iIdx} className="flex items-center justify-between bg-white px-2 py-1.5 rounded-lg border border-purple-100 text-[11px] shadow-2xs">
                         <div className="flex items-center gap-1.5 min-w-0 pr-1">
@@ -319,7 +319,7 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
                       {ings.length} Ingr
                     </span>
                   </div>
-                  <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                  <div className="space-y-1 pr-0.5">
                     {ings.map((item: any, iIdx: number) => (
                       <div key={iIdx} className="flex items-center justify-between bg-white px-2 py-1.5 rounded-lg border border-amber-100 text-[11px] shadow-2xs">
                         <div className="flex items-center gap-1.5 min-w-0 pr-1">

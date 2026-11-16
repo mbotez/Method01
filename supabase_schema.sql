@@ -6,6 +6,8 @@ CREATE TABLE public.users (
   onboarding_complete boolean DEFAULT false,
   created_at timestamp with time zone DEFAULT now(),
   username text,
+  is_approved boolean DEFAULT false,
+  waitlist_notes text,
   CONSTRAINT users_pkey PRIMARY KEY (id),
   CONSTRAINT users_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
@@ -303,6 +305,7 @@ CREATE TABLE public.product_user_ratings (
   layer smallint CHECK (layer >= 1 AND layer <= 5),
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  avg smallint,
   CONSTRAINT product_user_ratings_pkey PRIMARY KEY (product_id, user_id),
   CONSTRAINT product_user_ratings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
@@ -392,4 +395,32 @@ CREATE TABLE public.articles (
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT articles_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.product_comments (
+  id integer NOT NULL DEFAULT nextval('product_comments_id_seq'::regclass),
+  product_id text NOT NULL,
+  user_id uuid NOT NULL,
+  comment text NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT product_comments_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.feedback (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  feedback text NOT NULL,
+  timestamp timestamp with time zone DEFAULT now(),
+  CONSTRAINT feedback_pkey PRIMARY KEY (id),
+  CONSTRAINT feedback_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.ingr_enriched (
+  ingr_id bigint NOT NULL,
+  ingr_name text,
+  short_description text,
+  deep_dive text,
+  benefits jsonb,
+  roles_in_formulas jsonb,
+  comedogenic_rating bigint,
+  irritancy_rating bigint,
+  academic_sources jsonb,
+  CONSTRAINT ingr_enriched_pkey PRIMARY KEY (ingr_id)
 );

@@ -40,7 +40,8 @@ import {
   RefreshCw,
   Sparkles,
   Sliders,
-  Check
+  Check,
+  MessageSquare
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase, recoverSupabaseSession } from './lib/supabase';
@@ -129,7 +130,8 @@ enum AppState {
   PRODUCT_PAGE,
   ROUTINES,
   PRIVACY_POLICY,
-  DELETE_ACCOUNT
+  DELETE_ACCOUNT,
+  FEEDBACK
 }
 
 const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
@@ -176,6 +178,13 @@ const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
   ]
 };
 
+const ACTIVES_TEXT_MAP: Record<number | string, string> = {
+  1: 'Prescription retinoids (tretinoin, adapalene etc)',
+  2: 'Over-the-counter retinols',
+  3: 'Exfoliating acids (salicylic, glycolic etc)',
+  4: "None/ I'm not sure"
+};
+
 const DEFAULT_LANDING_ARTICLES = [
   {
     id: 'layering-mastery',
@@ -219,6 +228,7 @@ export default function App() {
       const hasHash = window.location.hash.includes('access_token=') || window.location.hash.includes('code=');
       if (path.startsWith('/privacy')) return AppState.PRIVACY_POLICY;
       if (path.startsWith('/delete-account')) return AppState.DELETE_ACCOUNT;
+      if (path.startsWith('/feedback')) return AppState.FEEDBACK;
       if (path.startsWith('/dashboard') || path.startsWith('/auth/callback') || hasHash) return AppState.DASHBOARD;
       if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
       if (path.startsWith('/tracker')) return AppState.TRACKER;
@@ -247,6 +257,7 @@ export default function App() {
         case AppState.ROUTINES: urlPath = '/routines'; break;
         case AppState.PRIVACY_POLICY: urlPath = '/privacy'; break;
         case AppState.DELETE_ACCOUNT: urlPath = '/delete-account'; break;
+        case AppState.FEEDBACK: urlPath = '/feedback'; break;
       }
       if (path) urlPath = path;
       window.history.pushState(null, '', urlPath);
@@ -261,6 +272,8 @@ export default function App() {
           setAppState(AppState.PRIVACY_POLICY);
         } else if (path.startsWith('/delete-account')) {
           setAppState(AppState.DELETE_ACCOUNT);
+        } else if (path.startsWith('/feedback')) {
+          setAppState(AppState.FEEDBACK);
         } else if (path.startsWith('/dashboard') || path.startsWith('/auth/callback')) {
           setAppState(AppState.DASHBOARD);
         } else if (path.startsWith('/products') || path.startsWith('/rank')) {
@@ -531,6 +544,36 @@ export default function App() {
   const [leaderboardFilter, setLeaderboardFilter] = useState('All');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id) return;
+    const trimmed = feedbackText.trim();
+    if (!trimmed) {
+      setFeedbackError('Please enter your feedback.');
+      return;
+    }
+    setFeedbackSubmitting(true);
+    setFeedbackError(null);
+    setFeedbackSuccess(null);
+    try {
+      const { error } = await supabase.from('feedback').insert({
+        user_id: user.id,
+        feedback: trimmed
+      });
+      if (error) throw error;
+      setFeedbackSuccess('Thank you! Your feedback has been successfully submitted.');
+      setFeedbackText('');
+    } catch (err: any) {
+      setFeedbackError(err.message || 'Failed to submit feedback. Please try again.');
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  };
   const [isSignUp, setIsSignUp] = useState(false);
   const [pendingQuestionnaireAnswers, setPendingQuestionnaireAnswers] = useState<any>(null); // NEW
   const [isQuizBannerDismissed, setIsQuizBannerDismissed] = useState(false);
@@ -567,6 +610,50 @@ export default function App() {
   const [editBreakoutTypes, setEditBreakoutTypes] = useState<number[]>([]);
   const [isSavingBreakout, setIsSavingBreakout] = useState(false);
   const [breakoutSaveError, setBreakoutSaveError] = useState<string | null>(null);
+
+  const [isEditingPregnant, setIsEditingPregnant] = useState(false);
+  const [editPregnantVal, setEditPregnantVal] = useState('No');
+  const [isSavingPregnant, setIsSavingPregnant] = useState(false);
+  const [pregnantSaveError, setPregnantSaveError] = useState<string | null>(null);
+
+  const [isEditingActives, setIsEditingActives] = useState(false);
+  const [editActivesVal, setEditActivesVal] = useState<string[]>([]);
+  const [isSavingActives, setIsSavingActives] = useState(false);
+  const [activesSaveError, setActivesSaveError] = useState<string | null>(null);
+
+  const [isEditingPastProblems, setIsEditingPastProblems] = useState(false);
+  const [editPastProblemsVal, setEditPastProblemsVal] = useState<string[]>([]);
+  const [newProblemInput, setNewProblemInput] = useState('');
+  const [ingredientSuggestions, setIngredientSuggestions] = useState<string[]>([]);
+  const [isIngredientSuggestionsOpen, setIsIngredientSuggestionsOpen] = useState(false);
+  const [isSavingPastProblems, setIsSavingPastProblems] = useState(false);
+  const [pastProblemsSaveError, setPastProblemsSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = newProblemInput.trim();
+    if (!isEditingPastProblems || q.length < 2) {
+      setIngredientSuggestions([]);
+      setIsIngredientSuggestionsOpen(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ingredient_scores')
+          .select('ingredient')
+          .ilike('ingredient', `%${q}%`)
+          .limit(10);
+        if (!error && data) {
+          const unique = Array.from(new Set(data.map((d: any) => d.ingredient).filter(Boolean)));
+          setIngredientSuggestions(unique);
+          setIsIngredientSuggestionsOpen(unique.length > 0);
+        }
+      } catch {
+        // silent
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [newProblemInput, isEditingPastProblems]);
 
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [editUsernameVal, setEditUsernameVal] = useState('');
@@ -704,6 +791,61 @@ export default function App() {
       setBreakoutSaveError(err?.message || 'Failed to update breakout types');
     } finally {
       setIsSavingBreakout(false);
+    }
+  };
+
+  const handleSavePregnant = async () => {
+    if (!user?.id) return;
+    setIsSavingPregnant(true);
+    setPregnantSaveError(null);
+    try {
+      const { error } = await supabase
+        .from('user_profile')
+        .upsert({ id: user.id, pregnant: editPregnantVal });
+      if (error) throw error;
+      setUserProfile((prev: any) => prev ? { ...prev, pregnant: editPregnantVal } : { pregnant: editPregnantVal });
+      setIsEditingPregnant(false);
+    } catch (err: any) {
+      setPregnantSaveError(err?.message || 'Failed to update pregnancy status');
+    } finally {
+      setIsSavingPregnant(false);
+    }
+  };
+
+  const handleSaveActives = async () => {
+    if (!user?.id) return;
+    setIsSavingActives(true);
+    setActivesSaveError(null);
+    try {
+      const { error } = await supabase
+        .from('user_profile')
+        .upsert({ id: user.id, actives_used: editActivesVal });
+      if (error) throw error;
+      setUserProfile((prev: any) => prev ? { ...prev, actives_used: editActivesVal } : { actives_used: editActivesVal });
+      setIsEditingActives(false);
+    } catch (err: any) {
+      setActivesSaveError(err?.message || 'Failed to update actives used');
+    } finally {
+      setIsSavingActives(false);
+    }
+  };
+
+  const handleSavePastProblems = async () => {
+    if (!user?.id) return;
+    setIsSavingPastProblems(true);
+    setPastProblemsSaveError(null);
+    try {
+      const pastProblemsStr = editPastProblemsVal.join(', ');
+      const { error } = await supabase
+        .from('user_profile')
+        .upsert({ id: user.id, past_problems: pastProblemsStr });
+      if (error) throw error;
+      setUserProfile((prev: any) => prev ? { ...prev, past_problems: pastProblemsStr } : { past_problems: pastProblemsStr });
+      setIsEditingPastProblems(false);
+    } catch (err: any) {
+      setPastProblemsSaveError(err?.message || 'Failed to update past problems');
+    } finally {
+      setIsSavingPastProblems(false);
     }
   };
 
@@ -972,7 +1114,7 @@ export default function App() {
       setIsDashboardConfirmOpen(true);
     } catch (err: any) {
       console.error('[App:DashboardScan] Photo scan failed with error:', err);
-      setShowFeatureUnavailable(true);
+      setDashboardScanError(err.message || 'Photo scan failed. Please try again.');
     } finally {
       setIsDashboardScanning(false);
       if (dashboardFileInputRef.current) {
@@ -996,7 +1138,7 @@ export default function App() {
           "You've used your 1 free photo recognition scan. Please sign in or create an account to continue."
         );
       } else {
-        setShowFeatureUnavailable(true);
+        setNavScanError("Photo recognition limit reached. Please sign in.");
       }
       if (navFileInputRef.current) {
         navFileInputRef.current.value = '';
@@ -1016,7 +1158,7 @@ export default function App() {
       setIsNavConfirmOpen(true);
     } catch (err: any) {
       console.error('[App:NavScan] Photo scan failed with error:', err);
-      setShowFeatureUnavailable(true);
+      setNavScanError(err.message || 'Photo scan failed. Please try again.');
     } finally {
       setIsNavScanning(false);
       if (navFileInputRef.current) {
@@ -1040,7 +1182,7 @@ export default function App() {
           "You've used your 1 free photo recognition scan. Please sign in or create an account to continue."
         );
       } else {
-        setShowFeatureUnavailable(true);
+        setLandingScanError("Photo recognition limit reached. Please sign in.");
       }
       if (landingFileInputRef.current) {
         landingFileInputRef.current.value = '';
@@ -1060,7 +1202,7 @@ export default function App() {
       setIsLandingConfirmOpen(true);
     } catch (err: any) {
       console.error('[App:LandingScan] Photo scan failed with error:', err);
-      setShowFeatureUnavailable(true);
+      setLandingScanError(err.message || 'Photo scan failed. Please try again.');
     } finally {
       setIsLandingScanning(false);
       if (landingFileInputRef.current) {
@@ -1079,7 +1221,9 @@ export default function App() {
         setIsNavScanning(false);
         setIsDashboardScanning(false);
         setIsLandingEvaluating(false);
-        setShowFeatureUnavailable(true);
+        setLandingScanError('Photo scan timed out. Please try again.');
+        setNavScanError('Photo scan timed out. Please try again.');
+        setDashboardScanError('Photo scan timed out. Please try again.');
       }, 30000);
       return () => clearTimeout(watchdog);
     }
@@ -3094,6 +3238,20 @@ export default function App() {
         onChange={handleDashboardPhotoScan}
         className="hidden"
       />
+      {dashboardScanError && (
+        <div className="p-3 mb-4 bg-red-50 text-red-700 rounded-xl border border-red-100 text-center space-y-2">
+          <p className="text-xs font-bold">{dashboardScanError}</p>
+          <button
+            onClick={() => {
+              setDashboardScanError(null);
+              triggerPhotoScan(dashboardFileInputRef);
+            }}
+            className="px-3 py-1 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-700 transition-all cursor-pointer"
+          >
+            Retry Scan
+          </button>
+        </div>
+      )}
       <div className="space-y-8">
         {routines.length === 0 ? (
           <div className="py-12 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50 rounded-2xl">
@@ -3481,13 +3639,22 @@ export default function App() {
                     <span className="text-xs uppercase tracking-widest font-black">The Edit</span>
                   </button>
                   {user && (
-                    <button 
-                      onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.PROFILE ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
-                    >
-                      <UserIcon className="w-5 h-5 shrink-0" />
-                      <span className="text-xs uppercase tracking-widest font-black">Profile</span>
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} 
+                        className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.PROFILE ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      >
+                        <UserIcon className="w-5 h-5 shrink-0" />
+                        <span className="text-xs uppercase tracking-widest font-black">Profile</span>
+                      </button>
+                      <button 
+                        onClick={() => { resetHeaderSearchState(); setAppState(AppState.FEEDBACK); setIsMobileNavOpen(false); }} 
+                        className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.FEEDBACK ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      >
+                        <MessageSquare className="w-5 h-5 shrink-0" />
+                        <span className="text-xs uppercase tracking-widest font-black">Feedback</span>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -3862,6 +4029,78 @@ export default function App() {
             </motion.div>
           )}
 
+          {appState === AppState.FEEDBACK && (
+            <motion.div
+              key="feedback"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-6 max-w-xl mx-auto pb-12 w-full pt-6"
+            >
+              <div className="clean-card bg-white border border-black/10 rounded-3xl p-8 shadow-sm space-y-6">
+                <div className="text-center space-y-3">
+                  <div className="inline-flex p-3 bg-black/5 rounded-full mb-2">
+                    <MessageSquare className="w-8 h-8 text-black" />
+                  </div>
+                  <h2 className="text-3xl md:text-4xl font-sans font-black text-black uppercase tracking-tighter">
+                    Feedback
+                  </h2>
+                  <p className="text-xs md:text-sm text-black/60 font-medium max-w-sm mx-auto">
+                    We value your thoughts, feature requests, and bug reports. Let us know how we can improve your experience.
+                  </p>
+                </div>
+
+                {!user ? (
+                  <div className="space-y-6 text-center bg-black/[0.02] p-6 rounded-2xl border border-black/5">
+                    <p className="text-sm font-medium text-black/80">
+                      You are currently not signed in. Please log in to send feedback.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setIsSignUp(false);
+                        setAppState(AppState.AUTH);
+                        window.history.pushState(null, '', '/auth');
+                      }}
+                      className="w-full bg-black text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-venus-accent transition-colors shadow-md cursor-pointer"
+                    >
+                      Log In to Proceed
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-black/40 block mb-2">Your Feedback</label>
+                      <textarea 
+                        rows={6}
+                        required
+                        value={feedbackText}
+                        onChange={(e) => setFeedbackText(e.target.value)}
+                        placeholder="Type your feedback here..."
+                        className="w-full bg-black/5 border-2 border-black/5 rounded-2xl p-4 font-medium outline-none focus:border-black transition-colors text-xs md:text-sm resize-y"
+                      />
+                    </div>
+
+                    {feedbackError && (
+                      <p className="text-red-600 text-xs font-bold text-center bg-red-50 p-3 rounded-xl">{feedbackError}</p>
+                    )}
+
+                    {feedbackSuccess && (
+                      <p className="text-green-700 text-xs font-bold text-center bg-green-50 p-3 rounded-xl">{feedbackSuccess}</p>
+                    )}
+
+                    <button 
+                      type="submit" 
+                      disabled={feedbackSubmitting}
+                      className="w-full bg-black text-white font-black uppercase tracking-widest py-3.5 rounded-xl hover:bg-neutral-800 transition-all disabled:opacity-50 cursor-pointer text-xs"
+                    >
+                      {feedbackSubmitting ? 'Submitting...' : 'Submit Feedback'}
+                    </button>
+                  </form>
+                )}
+              </div>
+            </motion.div>
+          )}
+
           {appState === AppState.SOCIAL && (
             <motion.div 
               key="social"
@@ -3955,6 +4194,20 @@ export default function App() {
                     onChange={handleLandingPhotoScan}
                     className="hidden"
                   />
+                  {landingScanError && (
+                    <div className="p-3 mb-4 bg-red-50 text-red-700 rounded-xl border border-red-100 text-center space-y-2 max-w-sm mx-auto">
+                      <p className="text-xs font-bold">{landingScanError}</p>
+                      <button
+                        onClick={() => {
+                          setLandingScanError(null);
+                          triggerPhotoScan(landingFileInputRef);
+                        }}
+                        className="px-3 py-1 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-700 transition-all cursor-pointer"
+                      >
+                        Retry Scan
+                      </button>
+                    </div>
+                  )}
                 </motion.div>
               )}
 
@@ -6118,6 +6371,354 @@ export default function App() {
                     )}
                   </div>
 
+                  {/* Pregnancy Status Card */}
+                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
+                        <Heart className="w-4 h-4 text-pink-500" />
+                        Pregnant or Breastfeeding Status
+                      </h4>
+                      {!isEditingPregnant && (
+                        <button
+                          onClick={() => {
+                            setEditPregnantVal(userProfile?.pregnant || 'No');
+                            setPregnantSaveError(null);
+                            setIsEditingPregnant(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                          title="Edit pregnancy status"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {isEditingPregnant ? (
+                      <div className="space-y-4 pt-1">
+                        <select
+                          value={editPregnantVal}
+                          onChange={(e) => setEditPregnantVal(e.target.value)}
+                          className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
+                        >
+                          <option value="Yes">Yes</option>
+                          <option value="No">No</option>
+                          <option value="Prefer not to say">Prefer not to say</option>
+                        </select>
+
+                        {pregnantSaveError && (
+                          <p className="text-xs text-red-600 font-semibold">{pregnantSaveError}</p>
+                        )}
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={handleSavePregnant}
+                            disabled={isSavingPregnant}
+                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            {isSavingPregnant && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            Save Status
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsEditingPregnant(false);
+                              setPregnantSaveError(null);
+                            }}
+                            disabled={isSavingPregnant}
+                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs bg-pink-50 text-pink-900 border border-pink-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider inline-block shadow-sm">
+                        {userProfile?.pregnant || 'No'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Actives Used Card */}
+                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
+                        <FlaskConical className="w-4 h-4 text-amber-500" />
+                        Active Skincare Ingredients Used
+                      </h4>
+                      {!isEditingActives && (
+                        <button
+                          onClick={() => {
+                            const currentActives = Array.isArray(userProfile?.actives_used) 
+                              ? userProfile.actives_used 
+                              : (userProfile?.actives_used ? [String(userProfile.actives_used)] : []);
+                            setEditActivesVal(currentActives);
+                            setActivesSaveError(null);
+                            setIsEditingActives(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                          title="Edit actives used"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {isEditingActives ? (
+                      <div className="space-y-4 pt-1">
+                        <p className="text-xs text-black/60 font-medium">Select active ingredients you currently use:</p>
+                        <div className="space-y-2">
+                          {[
+                            'Prescription retinoids (tretinoin, adapalene etc)',
+                            'Over-the-counter retinols',
+                            'Exfoliating acids (salicylic, glycolic etc)',
+                            "None/ I'm not sure"
+                          ].map((activeOpt) => {
+                            const isSelected = editActivesVal.includes(activeOpt);
+                            return (
+                              <label key={activeOpt} className="flex items-center gap-2 text-xs font-medium text-black/85 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setEditActivesVal([...editActivesVal, activeOpt]);
+                                    } else {
+                                      setEditActivesVal(editActivesVal.filter(a => a !== activeOpt));
+                                    }
+                                  }}
+                                  className="rounded border-black/20 text-black focus:ring-black w-4 h-4"
+                                />
+                                <span>{activeOpt}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+
+                        {activesSaveError && (
+                          <p className="text-xs text-red-600 font-semibold">{activesSaveError}</p>
+                        )}
+
+                        <div className="flex items-center gap-2 pt-2">
+                          <button
+                            onClick={handleSaveActives}
+                            disabled={isSavingActives}
+                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            {isSavingActives && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            Save Actives Used
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsEditingActives(false);
+                              setActivesSaveError(null);
+                            }}
+                            disabled={isSavingActives}
+                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      Array.isArray(userProfile?.actives_used) && userProfile.actives_used.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {userProfile.actives_used.map((act: any, idx: number) => {
+                            const displayText = ACTIVES_TEXT_MAP[act] || String(act);
+                            return (
+                              <span 
+                                key={String(act) + idx} 
+                                className="text-xs bg-amber-50 text-amber-900 border border-amber-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                {displayText}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : userProfile?.actives_used != null && userProfile.actives_used !== '' ? (
+                        <span className="text-xs bg-amber-50 text-amber-900 border border-amber-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                          {ACTIVES_TEXT_MAP[userProfile.actives_used] || String(userProfile.actives_used)}
+                        </span>
+                      ) : (
+                        <p className="text-xs text-black/40 italic">No actives currently specified.</p>
+                      )
+                    )}
+                  </div>
+
+                  {/* Past Problems / Ingredients to Avoid Card */}
+                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                        Past Problems / Ingredients to Avoid
+                      </h4>
+                      {!isEditingPastProblems && (
+                        <button
+                          onClick={() => {
+                            const rawProblems = userProfile?.past_problems;
+                            let problemsList: string[] = [];
+                            if (Array.isArray(rawProblems)) {
+                              problemsList = rawProblems;
+                            } else if (typeof rawProblems === 'string' && rawProblems.trim() !== '') {
+                              problemsList = rawProblems.split(',').map(s => s.trim()).filter(Boolean);
+                            }
+                            setEditPastProblemsVal(problemsList);
+                            setNewProblemInput('');
+                            setPastProblemsSaveError(null);
+                            setIsEditingPastProblems(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                          title="Edit past problems"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {isEditingPastProblems ? (
+                      <div className="space-y-4 pt-1">
+                        <p className="text-xs text-black/60 font-medium">Add or remove ingredients you wish to avoid because of past skin issues:</p>
+                        
+                        <div className="relative">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={newProblemInput}
+                              onChange={(e) => setNewProblemInput(e.target.value)}
+                              onFocus={() => {
+                                if (ingredientSuggestions.length > 0) setIsIngredientSuggestionsOpen(true);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  if (newProblemInput.trim() && !editPastProblemsVal.includes(newProblemInput.trim())) {
+                                    setEditPastProblemsVal([...editPastProblemsVal, newProblemInput.trim()]);
+                                    setNewProblemInput('');
+                                    setIsIngredientSuggestionsOpen(false);
+                                  }
+                                }
+                              }}
+                              placeholder="Search ingredient from database (e.g. Salicylic acid)..."
+                              className="flex-1 bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (newProblemInput.trim() && !editPastProblemsVal.includes(newProblemInput.trim())) {
+                                  setEditPastProblemsVal([...editPastProblemsVal, newProblemInput.trim()]);
+                                  setNewProblemInput('');
+                                  setIsIngredientSuggestionsOpen(false);
+                                }
+                              }}
+                              className="bg-black text-white px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors cursor-pointer"
+                            >
+                              Add
+                            </button>
+                          </div>
+
+                          {isIngredientSuggestionsOpen && ingredientSuggestions.length > 0 && (
+                            <div className="absolute left-0 right-12 top-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto">
+                              {ingredientSuggestions.map((ingName, idx) => (
+                                <button
+                                  key={ingName + idx}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!editPastProblemsVal.includes(ingName)) {
+                                      setEditPastProblemsVal([...editPastProblemsVal, ingName]);
+                                    }
+                                    setNewProblemInput('');
+                                    setIngredientSuggestions([]);
+                                    setIsIngredientSuggestionsOpen(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs font-bold text-black hover:bg-black/5 transition-colors border-b border-black/5 last:border-b-0 cursor-pointer"
+                                >
+                                  {ingName}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 pt-2">
+                          {editPastProblemsVal.map((prob, idx) => (
+                            <span
+                              key={prob + idx}
+                              className="text-xs bg-red-50 text-red-900 border border-red-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-2 shadow-sm"
+                            >
+                              <span>{prob}</span>
+                              <button
+                                type="button"
+                                onClick={() => setEditPastProblemsVal(editPastProblemsVal.filter((_, i) => i !== idx))}
+                                className="w-4 h-4 rounded-full bg-red-200/60 hover:bg-red-300 text-red-800 flex items-center justify-center cursor-pointer transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                          {editPastProblemsVal.length === 0 && (
+                            <p className="text-xs text-black/40 italic">No ingredients added yet.</p>
+                          )}
+                        </div>
+
+                        {pastProblemsSaveError && (
+                          <p className="text-xs text-red-600 font-semibold">{pastProblemsSaveError}</p>
+                        )}
+
+                        <div className="flex items-center gap-2 pt-2">
+                          <button
+                            onClick={handleSavePastProblems}
+                            disabled={isSavingPastProblems}
+                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            {isSavingPastProblems && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            Save Ingredients to Avoid
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsEditingPastProblems(false);
+                              setPastProblemsSaveError(null);
+                            }}
+                            disabled={isSavingPastProblems}
+                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      (() => {
+                        const rawProblems = userProfile?.past_problems;
+                        let problemsList: string[] = [];
+                        if (Array.isArray(rawProblems)) {
+                          problemsList = rawProblems;
+                        } else if (typeof rawProblems === 'string' && rawProblems.trim() !== '') {
+                          problemsList = rawProblems.split(',').map(s => s.trim()).filter(Boolean);
+                        }
+
+                        if (problemsList.length === 0) {
+                          return <p className="text-xs text-black/40 italic">No specific past problem ingredients specified.</p>;
+                        }
+
+                        return (
+                          <div className="flex flex-wrap gap-2">
+                            {problemsList.map((prob: string, idx: number) => (
+                              <span 
+                                key={prob + idx} 
+                                className="text-xs bg-red-50 text-red-900 border border-red-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                {prob}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+
                   <div className="pt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
                     <button
                       onClick={handleSignOut}
@@ -6776,6 +7377,20 @@ export default function App() {
         onChange={handleNavPhotoScan}
         className="hidden"
       />
+      {navScanError && (
+        <div className="fixed bottom-6 left-6 right-6 z-[210] p-4 bg-red-50 text-red-700 rounded-2xl border border-red-200 text-center space-y-2 shadow-2xl max-w-md mx-auto">
+          <p className="text-xs font-bold">{navScanError}</p>
+          <button
+            onClick={() => {
+              setNavScanError(null);
+              triggerPhotoScan(navFileInputRef);
+            }}
+            className="px-3 py-1 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-700 transition-all cursor-pointer"
+          >
+            Retry Scan
+          </button>
+        </div>
+      )}
     </div>
   </>
 );

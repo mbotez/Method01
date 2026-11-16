@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { App, type URLOpenListenerEvent } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -8,6 +9,11 @@ import { supabase } from '../lib/supabase';
 export const isNativePlatform = (): boolean => {
   return Capacitor.isNativePlatform();
 };
+
+/**
+ * API base constant: Vercel URL when Capacitor.isNativePlatform(), otherwise an empty string.
+ */
+export const API_BASE = isNativePlatform() ? 'https://www.canonic.co.uk' : '';
 
 /**
  * Set the OAuth redirect URL dynamically:
@@ -27,35 +33,18 @@ export const getOAuthRedirectUrl = (): string => {
  */
 export const getApiEndpoint = (endpointPath: string): string => {
   const cleanPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
-  
-  const envBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || '';
-  if (envBase) {
-    return `${envBase.replace(/\/+$/, '')}${cleanPath}`;
-  }
-
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    const origin = window.location.origin;
-    if (!origin.startsWith('capacitor://') && !origin.startsWith('ionic://')) {
-      return cleanPath;
-    }
-  }
-
-  const appUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_APP_URL) || '';
-  if (appUrl) {
-    return `${appUrl.replace(/\/+$/, '')}${cleanPath}`;
-  }
-
-  return cleanPath;
+  return `${API_BASE}${cleanPath}`;
 };
 
 /**
  * Call supabase.auth.signInWithOAuth using provider 'google' and PKCE flow.
+ * For Capacitor native, uses skipBrowserRedirect: true and opens Browser.open(data.url).
  */
 export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
   console.log('[Auth] Initiating Google sign in with redirectTo:', redirectTo);
   
-  const { data, error } = await supabase.auth.signInWithOAuth({
+  const options: any = {
     provider: 'google',
     options: {
       redirectTo,
@@ -64,11 +53,21 @@ export const signInWithGoogle = async () => {
         prompt: 'consent',
       },
     },
-  });
+  };
+
+  if (isNativePlatform()) {
+    options.options.skipBrowserRedirect = true;
+  }
+
+  const { data, error } = await supabase.auth.signInWithOAuth(options);
 
   if (error) {
     console.error("Supabase OAuth Error:", error);
     throw error;
+  }
+
+  if (isNativePlatform() && data?.url) {
+    await Browser.open({ url: data.url });
   }
 
   return data;
@@ -76,7 +75,8 @@ export const signInWithGoogle = async () => {
 
 /**
  * Set up deep link token handling for Capacitor (using App.addListener('appUrlOpen', ...))
- * for PKCE / OAuth redirect callbacks.
+ * for PKCE / OAuth redirect callbacks. Parses code, handles error_description, closes Browser,
+ * calls supabase.auth.exchangeCodeForSession(code), and guards against handling the same URL twice.
  */
 export const setupCapacitorDeepLinkAuth = (
   onSuccess?: () => void,
@@ -86,21 +86,59 @@ export const setupCapacitorDeepLinkAuth = (
     return () => {};
   }
 
+  let lastHandledUrl = '';
+
   const handleDeepLinkUrl = async (url: string) => {
-    if (!url) return;
+    if (!url || url === lastHandledUrl) return;
     const isAuthCallback =
       url.startsWith('com.daybreak.canonic://auth-callback') ||
       url.includes('auth-callback');
 
     if (isAuthCallback) {
+      lastHandledUrl = url;
       console.log('[Auth] Capacitor deep link auth callback received:', url);
-      // With detectSessionInUrl: true, supabase client handles code exchange automatically.
-      // We check session validity after a brief moment or trigger success callback.
-      const { data } = await supabase.auth.getSession();
-      if (data?.session) {
-        onSuccess?.();
-      } else {
-        onError?.('Failed to establish session from deep link');
+
+      try {
+        const parsedUrl = new URL(url);
+        const searchParams = parsedUrl.searchParams;
+        const hashParams = new URLSearchParams(parsedUrl.hash.replace(/^#/, ''));
+
+        const errorDesc = searchParams.get('error_description') || hashParams.get('error_description') || searchParams.get('error') || hashParams.get('error');
+        if (errorDesc) {
+          const decoded = decodeURIComponent(errorDesc.replace(/\+/g, ' '));
+          console.error('[Auth] OAuth error in deep link:', decoded);
+          try { await Browser.close(); } catch {}
+          onError?.(decoded);
+          return;
+        }
+
+        const code = searchParams.get('code') || hashParams.get('code');
+        if (code) {
+          try { await Browser.close(); } catch {}
+          console.log('[Auth] Exchanging code for session...');
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            console.error('[Auth] exchangeCodeForSession error:', error);
+            onError?.(error.message);
+          } else if (data?.session) {
+            console.log('[Auth] Session established successfully via code exchange for:', data.session.user.email);
+            onSuccess?.();
+          } else {
+            onError?.('Failed to establish session from code');
+          }
+        } else {
+          try { await Browser.close(); } catch {}
+          const { data } = await supabase.auth.getSession();
+          if (data?.session) {
+            onSuccess?.();
+          } else {
+            onError?.('No authorization code found in redirect URL');
+          }
+        }
+      } catch (err: any) {
+        try { await Browser.close(); } catch {}
+        console.error('[Auth] Error handling deep link:', err);
+        onError?.(err?.message || 'Authentication error');
       }
     }
   };
@@ -118,14 +156,13 @@ export const setupCapacitorDeepLinkAuth = (
   });
 
   return () => {
+    lastHandledUrl = '';
     listenerPromise.then((listener) => listener.remove()).catch(() => {});
   };
 };
 
 /**
  * Handles web OAuth callback when landing on `/auth/callback`.
- * With detectSessionInUrl: true and PKCE enabled, Supabase client automatically
- * exchanges the code. We verify the session and clean up the URL history.
  */
 export const handleWebAuthCallback = async (
   onSuccess?: () => void,

@@ -21,6 +21,108 @@ const CONCERN_MAP: Record<number, string> = {
   12: 'Not Sure'
 };
 
+interface FormattedDeepDiveProps {
+  text: string;
+}
+
+const FormattedDeepDive: React.FC<FormattedDeepDiveProps> = ({ text }) => {
+  if (!text) return null;
+
+  // 1. Strip any invisible zero-width spaces (\u200B) and normalize whitespace.
+  const cleaned = text.replace(/\u200B/g, '').replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+
+  // 2. Detect if the text contains an inline numbered list matching /:\s*1\.\s+/.
+  const hasNumberedList = /:\s*1\.\s+/.test(cleaned);
+
+  if (!hasNumberedList) {
+    // If it does NOT match, split the text on existing newlines (\n+) or right before "When it comes to"
+    const segments = cleaned
+      .split(/\n+/)
+      .flatMap(seg => seg.split(/(?=\bWhen it comes to\b)/i))
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    return (
+      <>
+        {segments.map((seg, i) => (
+          <p
+            key={i}
+            style={i < segments.length - 1 ? { marginBottom: '1rem' } : {}}
+          >
+            {seg}
+          </p>
+        ))}
+      </>
+    );
+  }
+
+  // If it DOES match:
+  // a. Take all text up to and including the colon (:), then split off the final sentence (after the last ". ")
+  const colonIndex = cleaned.search(/:\s*1\.\s+/);
+  const upToColon = cleaned.substring(0, colonIndex + 1);
+  const lastDotSpace = upToColon.lastIndexOf('. ');
+  let introParagraph = '';
+  let leadInSentence = '';
+
+  if (lastDotSpace !== -1 && lastDotSpace < upToColon.length - 1) {
+    introParagraph = upToColon.substring(0, lastDotSpace + 1).trim();
+    leadInSentence = upToColon.substring(lastDotSpace + 2).trim();
+  } else {
+    leadInSentence = upToColon.trim();
+  }
+
+  // b. Extract sequential numbered items (1., 2., 3., etc.) strictly up to their first period followed by space or end of string.
+  const listStartIndex = cleaned.indexOf('1.');
+  const items: string[] = [];
+  let lastIndex = listStartIndex;
+  const regex = /(\d+)\.\s+([^.]+\.)/g;
+  regex.lastIndex = listStartIndex;
+  let match;
+  while ((match = regex.exec(cleaned)) !== null) {
+    items.push(match[2].trim());
+    lastIndex = regex.lastIndex;
+  }
+
+  // c. Everything after the final numbered item's period is postListText
+  const postListText = cleaned.substring(lastIndex).trim();
+
+  const trailingSegments = postListText
+    ? postListText
+        .split(/\n+/)
+        .flatMap(seg => seg.split(/(?=\bWhen it comes to\b)/i))
+        .map(s => s.trim())
+        .filter(Boolean)
+    : [];
+
+  return (
+    <>
+      {introParagraph && (
+        <p style={{ marginBottom: '1rem' }}>{introParagraph}</p>
+      )}
+      {leadInSentence && (
+        <p style={{ marginBottom: '0.35rem' }}>{leadInSentence}</p>
+      )}
+      {items.length > 0 && (
+        <ol className="list-decimal pl-5" style={{ marginBottom: '1rem', paddingLeft: '1.25rem' }}>
+          {items.map((item, idx) => (
+            <li key={idx} style={{ marginBottom: '0.25rem' }}>
+              {item}
+            </li>
+          ))}
+        </ol>
+      )}
+      {trailingSegments.map((seg, i) => (
+        <p
+          key={i}
+          style={i < trailingSegments.length - 1 ? { marginBottom: '1rem' } : {}}
+        >
+          {seg}
+        </p>
+      ))}
+    </>
+  );
+};
+
 export function computeProductKeyBenefits(product: any, scores: any, rpcBenefits?: string[]): string[] {
   const benefits: string[] = [];
   const s = scores || {};
@@ -377,6 +479,75 @@ export const ProductCardContent = ({
   const [isIngredientsExpanded, setIsIngredientsExpanded] = useState(false);
   const [rpcErrorObj, setRpcErrorObj] = useState<any>(null);
 
+  const [productIngredientsList, setProductIngredientsList] = useState<any[]>([]);
+  const [selectedIngredientModal, setSelectedIngredientModal] = useState<any | null>(null);
+  const [enrichedIngrData, setEnrichedIngrData] = useState<any | null>(null);
+  const [isLoadingEnriched, setIsLoadingEnriched] = useState(false);
+
+  const handleOpenIngredientCard = async (ingItem: any) => {
+    console.log('[IngredientCard] Clicked ingredient item:', ingItem);
+    setSelectedIngredientModal(ingItem);
+    setEnrichedIngrData(null);
+    setIsLoadingEnriched(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const authed = !!session?.user?.id;
+      setIsAuthenticated(authed);
+
+      const ingName = ingItem.ingredient || ingItem['Full name'] || ingItem.ingredient_name || ingItem;
+
+      if (!authed) {
+        setIsLoadingEnriched(false);
+        setEnrichedIngrData({
+          needsAuth: true,
+          ingr_name: ingName
+        });
+        return;
+      }
+
+      const ingId = ingItem.ingr_id ?? ingItem.ingredient_id;
+      console.log('[IngredientCard] Querying ingr_enriched table in Supabase. ingId:', ingId, 'ingName:', ingName);
+
+      let queryData: any = null;
+      let queryError: any = null;
+
+      if (ingId != null) {
+        const res = await supabase
+          .from('ingr_enriched')
+          .select('*')
+          .eq('ingr_id', ingId)
+          .maybeSingle();
+        queryData = res.data;
+        queryError = res.error;
+        console.log('[IngredientCard] Result querying by ID:', { data: queryData, error: queryError });
+      }
+
+      if (queryError) {
+        console.error('[IngredientCard] Supabase error reaching ingr_enriched table:', queryError);
+      }
+
+      if (queryData) {
+        console.log('[IngredientCard] Successfully loaded enriched data:', queryData);
+        setEnrichedIngrData(queryData);
+      } else {
+        console.warn('[IngredientCard] No enriched data found in ingr_enriched table for:', ingName, '. Using fallback.');
+        setEnrichedIngrData({
+          ingr_name: ingName,
+          short_description: 'Active or structural ingredient in formulation.',
+          benefits: 'General skin conditioning and formulation support.',
+          roles_in_formula: 'Emollient / Active',
+          comedogenic_rating: '0-2',
+          irritancy_rating: 'Low',
+          deep_dive: 'Plays a specific functional role in stabilizing or enhancing product performance and skin delivery.'
+        });
+      }
+    } catch (err) {
+      console.error('[IngredientCard] Exception in handleOpenIngredientCard:', err);
+    } finally {
+      setIsLoadingEnriched(false);
+    }
+  };
+
   const [culprits, setCulprits] = useState<any[]>([]);
   const [expandedBenefitFlag, setExpandedBenefitFlag] = useState<string | null>(null);
   const [expandedIrritantFlag, setExpandedIrritantFlag] = useState<string | null>(null);
@@ -696,6 +867,26 @@ export const ProductCardContent = ({
             })()
           : Promise.resolve({ data: null, error: null });
 
+        console.log('[ProductCard] Fetching ingredients for targetProductId:', targetProductId);
+
+        const productIngredientsPromise = targetProductId != null
+          ? (async () => {
+              try {
+                const res = await supabase
+                  .from('product_ingredients')
+                  .select('product_id, "Full name", "Position", ingredient, ingredient_id')
+                  .eq('product_id', targetProductId)
+                  .order('"Position"', { ascending: true })
+                  .abortSignal(signal);
+                console.log('[ProductCard] product_ingredients query result:', res);
+                return res;
+              } catch (err) {
+                console.error('[ProductCard] product_ingredients query exception:', err);
+                return { data: [], error: err };
+              }
+            })()
+          : Promise.resolve({ data: [] });
+
         // Always invoke database engine calculation via RPC for both auth and unauth users
         const rpcPromise = (async () => {
           try {
@@ -710,11 +901,12 @@ export const ProductCardContent = ({
           }
         })();
 
-        const [rpcResult, culpritsResult, productTableResult, scoreTableResult] = await Promise.all([
+        const [rpcResult, culpritsResult, productTableResult, scoreTableResult, prodIngResult] = await Promise.all([
           rpcPromise,
           culpritsPromise,
           productTablePromise,
-          scoreTablePromise
+          scoreTablePromise,
+          productIngredientsPromise
         ]);
         if (!active || signal.aborted) return;
 
@@ -728,8 +920,11 @@ export const ProductCardContent = ({
           tableProd.cat2 = fetchedCat2;
         }
 
+        const rpcData = rpcResult?.data || null;
         const { data, error } = rpcResult;
 
+        console.log('[ProductCard] Final prodIngResult.data:', prodIngResult?.data, 'error:', (prodIngResult as any)?.error);
+        setProductIngredientsList(prodIngResult?.data || []);
         if (error) {
           // If the RPC failed but direct product row exists, gracefully display the product
           if (tableProd) {
@@ -1132,7 +1327,7 @@ export const ProductCardContent = ({
         >
           <div className="flex items-center gap-1.5">
             <Star className="w-3.5 h-3.5 fill-purple-600 text-purple-600" />
-            <span>Community Rating: {globalRatingsSummary.avg > 0 ? `${globalRatingsSummary.avg} / 5` : 'No ratings yet'}</span>
+            <span>Ratings: {globalRatingsSummary.avg > 0 ? `${globalRatingsSummary.avg} / 5` : 'None yet. Be the first to add one!'}</span>
             <span className="text-[10px] text-black/40 font-normal lowercase font-mono">({globalRatingsSummary.count} reviews)</span>
           </div>
           {isRatingsDropdownOpen ? <ChevronUp className="w-4 h-4 text-purple-700" /> : <ChevronDown className="w-4 h-4 text-purple-700" />}
@@ -1254,7 +1449,7 @@ export const ProductCardContent = ({
                       {ings.length} Ingr
                     </span>
                   </div>
-                  <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                  <div className="space-y-1 pr-0.5">
                     {ings.map((item: any, iIdx: number) => (
                       <div key={iIdx} className="flex items-center justify-between bg-white px-2 py-1.5 rounded-lg border border-purple-100 text-[11px] shadow-2xs">
                         <div className="flex items-center gap-1.5 min-w-0 pr-1">
@@ -1356,7 +1551,7 @@ export const ProductCardContent = ({
                       {ings.length} Ingr
                     </span>
                   </div>
-                  <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                  <div className="space-y-1 pr-0.5">
                     {ings.map((item: any, iIdx: number) => (
                       <div key={iIdx} className="flex items-center justify-between bg-white px-2 py-1.5 rounded-lg border border-amber-100 text-[11px] shadow-2xs">
                         <div className="flex items-center gap-1.5 min-w-0 pr-1">
@@ -1445,21 +1640,182 @@ export const ProductCardContent = ({
       )}
 
       {/* Ingredients */}
-      {product.ingredients && product.ingredients.length > 0 ? (
+      {productIngredientsList.length > 0 && (
         <div className="pt-1">
           <button
+            type="button"
             onClick={() => setIsIngredientsExpanded(!isIngredientsExpanded)}
             className="flex items-center gap-1 text-[10px] font-black text-black uppercase underline cursor-pointer"
           >
             Ingredients {isIngredientsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
           {isIngredientsExpanded && (
-            <p className="text-xs text-black/60 mt-1 bg-black/5 p-2 rounded-lg break-words">
-              {Array.isArray(product.ingredients) ? product.ingredients.join(', ') : product.ingredients}
-            </p>
+            <div className="mt-1.5 p-2.5 bg-black/5 rounded-2xl space-y-1.5">
+              <div className="space-y-1.5 pr-1">
+                {productIngredientsList.map((ingItem, iIdx) => {
+                  const pos = ingItem.Position ?? ingItem.position ?? (iIdx + 1);
+                  const ingName = ingItem.ingredient || ingItem['Full name'] || 'Ingredient';
+                  return (
+                    <button
+                      type="button"
+                      key={iIdx}
+                      onClick={() => handleOpenIngredientCard(ingItem)}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-white hover:bg-purple-50 text-black border border-black/10 hover:border-purple-300 text-xs font-bold transition-all cursor-pointer shadow-2xs group text-left"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 pr-1">
+                        <span className="text-[10px] font-mono font-black text-purple-700 bg-purple-50 group-hover:bg-purple-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                          #{pos}
+                        </span>
+                        <span className="truncate text-gray-900 font-medium">
+                          {ingName}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
-      ) : null}
+      )}
+
+      {/* Ingredient Detail Modal (ingredient_card) */}
+      {selectedIngredientModal && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-black/10 relative space-y-4 max-h-[90vh] overflow-y-auto animate-fadeIn">
+            <button
+              type="button"
+              onClick={() => setSelectedIngredientModal(null)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="pr-8">
+              <span className="text-[10px] font-black uppercase tracking-widest text-purple-600 block mb-1">Ingredient Details</span>
+              <h3 className="text-xl font-black text-black uppercase tracking-tight">
+                {enrichedIngrData?.ingr_name || (typeof selectedIngredientModal === 'string' ? selectedIngredientModal : selectedIngredientModal.ingredient || selectedIngredientModal['Full name'] || selectedIngredientModal.ingredient_name)}
+              </h3>
+            </div>
+
+            {isLoadingEnriched ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+                <p className="text-xs font-bold text-black/50">Loading ingredient profile...</p>
+              </div>
+            ) : enrichedIngrData?.needsAuth ? (
+              <div className="py-8 text-center space-y-4">
+                <p className="text-sm font-black text-black">Sign In or Sign Up to see ingredient details</p>
+                <div className="flex flex-col gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedIngredientModal(null);
+                      onClose();
+                      window.dispatchEvent(new CustomEvent('open-login-modal'));
+                    }}
+                    className="w-full bg-black text-white py-3 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/85 transition-colors cursor-pointer"
+                  >
+                    Log In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedIngredientModal(null);
+                      onClose();
+                      window.dispatchEvent(new CustomEvent('open-quiz-or-login'));
+                    }}
+                    className="w-full bg-purple-50 text-purple-900 border border-purple-200 py-3 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-purple-100 transition-colors cursor-pointer"
+                  >
+                    Sign Up / Take Quiz
+                  </button>
+                </div>
+              </div>
+            ) : enrichedIngrData ? (
+              <div className="space-y-3 text-xs">
+                {enrichedIngrData.short_description && (
+                  <div className="bg-purple-50/60 p-3 rounded-xl border border-purple-100">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-purple-900 block mb-1">Overview</span>
+                    <p className="text-black/80 font-medium leading-relaxed">{enrichedIngrData.short_description}</p>
+                  </div>
+                )}
+
+                {enrichedIngrData.benefits && (() => {
+                  const benefitItems = typeof enrichedIngrData.benefits === 'string'
+                    ? enrichedIngrData.benefits
+                        .split(/[,;\n•]+|\.\s+/)
+                        .map(b => b.trim().replace(/\.$/, ''))
+                        .filter(b => b.length > 0)
+                    : Array.isArray(enrichedIngrData.benefits)
+                    ? enrichedIngrData.benefits
+                    : [String(enrichedIngrData.benefits)];
+
+                  return (
+                    <div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Benefits</span>
+                      <div className="space-y-1.5">
+                        {benefitItems.map((benefit: string, idx: number) => (
+                          <div
+                            key={idx}
+                            className="text-emerald-900 font-medium bg-emerald-50/90 px-3 py-2 rounded-xl border border-emerald-200/60 flex items-start gap-2 text-xs shadow-2xs"
+                          >
+                            <span className="text-emerald-600 font-black mt-0.5">✓</span>
+                            <span>{benefit}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {enrichedIngrData.roles_in_formula && (
+                  <div>
+                    <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Role in Formula</span>
+                    <p className="text-black/80 font-semibold bg-gray-50 px-3 py-2 rounded-xl border border-black/5">{enrichedIngrData.roles_in_formula}</p>
+                  </div>
+                )}
+
+                {/* Comedogenic and Irritancy ratings on same row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 p-3 rounded-xl border border-black/5 text-center">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Comedogenic Rating</span>
+                    <span className="text-sm font-black text-black font-mono">
+                      {enrichedIngrData.comedogenic_rating !== undefined && enrichedIngrData.comedogenic_rating !== null ? enrichedIngrData.comedogenic_rating : '0 / 5'}
+                    </span>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded-xl border border-black/5 text-center">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Irritancy Rating</span>
+                    <span className="text-sm font-black text-black font-mono">
+                      {enrichedIngrData.irritancy_rating || 'Low'}
+                    </span>
+                  </div>
+                </div>
+
+                {enrichedIngrData.deep_dive && (
+                  <div>
+                    <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Deep Dive</span>
+                    <div className="bg-slate-900 text-slate-100 p-3.5 rounded-xl text-[11px] leading-relaxed font-sans shadow-inner">
+                      <FormattedDeepDive text={enrichedIngrData.deep_dive} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-black/50 italic py-4">No enriched data available for this ingredient.</p>
+            )}
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedIngredientModal(null)}
+                className="w-full bg-black text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tracker Controls (If trackerItem present) */}
       {trackerItem && (

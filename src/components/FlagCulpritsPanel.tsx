@@ -149,7 +149,7 @@ export const FlagCulpritsPanel: React.FC<FlagCulpritsPanelProps> = ({
               <span className="text-[9px] font-mono text-gray-400">product_id: {productId}</span>
             </div>
 
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            <div className="space-y-1.5 pr-1">
               {matchedCulprits.map((culprit, idx) => (
                 <div
                   key={culprit.id || `${culprit.ingredient_name}-${idx}`}

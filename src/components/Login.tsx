@@ -14,6 +14,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -29,6 +30,10 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
     
     try {
       if (isSignUp) {
+        if (password !== confirmPassword) {
+          throw new Error('Passwords do not match');
+        }
+
         const trimmedUsername = username.trim();
         if (!trimmedUsername) {
           throw new Error('Please enter a username');
@@ -185,6 +190,19 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
               placeholder="••••••••"
             />
           </div>
+          {isSignUp && (
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-black/40 block mb-2">Confirm Password</label>
+              <input 
+                type="password" 
+                required={isSignUp}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full bg-black/5 border-2 border-black/5 rounded-xl px-4 py-3 font-medium outline-none focus:border-black transition-colors"
+                placeholder="••••••••"
+              />
+            </div>
+          )}
 
           {localError && (
             <p className="text-venus-accent text-xs font-bold text-center">{localError}</p>

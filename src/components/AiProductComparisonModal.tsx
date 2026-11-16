@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Check, AlertCircle, Loader2, ArrowRight, Layers, ShieldAlert, CheckCircle2, Search, Sliders } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { searchProducts } from '../utils/TextSearch';
+import { API_BASE } from '../utils/auth';
 
 interface AiProductComparisonModalProps {
   isOpen: boolean;
@@ -108,7 +109,7 @@ export const AiProductComparisonModal: React.FC<AiProductComparisonModalProps> =
     setErrorMessage(null);
 
     try {
-      const res = await fetch('/api/ai-compare', {
+      const res = await fetch(`${API_BASE}/api/ai-compare`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, productIds: selectedProductIds })

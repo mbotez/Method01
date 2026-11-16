@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { API_BASE } from './auth';
 
 // Helper to safely write to sessionStorage and handle QuotaExceededError or SecurityError
 function safeSessionStorageSet(key: string, value: string) {
@@ -85,11 +86,9 @@ export async function productSort(userProfile: any, productType: string, page: n
     }
   }
 
-  let lastError: any = null;
-
-  // 1. Try local Express backend API route
+  // Call Vercel serverless API route with API_BASE
   try {
-    const response = await fetch('/api/product-sort', {
+    const response = await fetch(`${API_BASE}/api/product-sort`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -106,27 +105,7 @@ export async function productSort(userProfile: any, productType: string, page: n
       throw new Error(errJson.error || `Product sort API failed with status ${response.status}`);
     }
   } catch (apiErr: any) {
-    lastError = apiErr;
+    console.error('[ProductSort] API error:', apiErr);
+    throw new Error(apiErr?.message || "Failed to retrieve sorted products from API.");
   }
-
-  // 2. Fallback: Supabase Edge Function
-  try {
-    const { data, error } = await supabase.functions.invoke('product-sort', {
-      body: { userProfile, productType, page, cat3 }
-    });
-
-    if (!error && data) {
-      safeSessionStorageSet(cacheKey, JSON.stringify(data));
-      return data;
-    }
-
-    if (error) {
-      throw new Error(error.message || "Supabase Edge Function error during product sort");
-    }
-  } catch (err: any) {
-    lastError = err;
-  }
-
-  // No silent fallback / mock data — throw exact error so it bubbles up to global error modal
-  throw new Error(lastError?.message || "Failed to retrieve sorted products from all available endpoints.");
 }

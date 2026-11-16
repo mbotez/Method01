@@ -86,7 +86,7 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
       setIsConfirmScanOpen(true);
     } catch (err: any) {
       console.error('[TrackerModal:handlePhotoScan] Error during photo scan:', err);
-      setShowFeatureUnavailable(true);
+      setScanError(err.message || 'Photo scan failed. Please try again.');
     } finally {
       setIsScanning(false);
       if (fileInputRef.current) {
@@ -102,7 +102,7 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
       const watchdog = setTimeout(() => {
         console.warn('[TrackerModal:Watchdog] Scan exceeded 30s. Resetting state.');
         setIsScanning(false);
-        setShowFeatureUnavailable(true);
+        setScanError('Photo scan timed out after 30 seconds. Please try again.');
       }, 30000);
       return () => clearTimeout(watchdog);
     }
@@ -341,6 +341,22 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
                     className="hidden"
                   />
                 </div>
+                
+                {scanError && (
+                  <div className="p-3 bg-red-50 text-red-700 rounded-xl border border-red-100 text-center space-y-2">
+                    <p className="text-xs font-bold">{scanError}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScanError(null);
+                        fileInputRef.current?.click();
+                      }}
+                      className="px-3 py-1 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-700 transition-all cursor-pointer"
+                    >
+                      Retry Scan
+                    </button>
+                  </div>
+                )}
                 
                 {products.length > 0 && (
                     <div className="border border-black/10 rounded-2xl p-2 space-y-1 max-h-[300px] overflow-y-auto">
