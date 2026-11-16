@@ -78,6 +78,13 @@ export const signInWithGoogle = async () => {
  * for PKCE / OAuth redirect callbacks. Parses code, handles error_description, closes Browser,
  * calls supabase.auth.exchangeCodeForSession(code), and guards against handling the same URL twice.
  */
+let lastHandledUrl = '';
+
+/**
+ * Set up deep link token handling for Capacitor (using App.addListener('appUrlOpen', ...))
+ * for PKCE / OAuth redirect callbacks. Parses code, handles error_description, closes Browser,
+ * calls supabase.auth.exchangeCodeForSession(code), and guards against handling the same URL twice.
+ */
 export const setupCapacitorDeepLinkAuth = (
   onSuccess?: () => void,
   onError?: (errorMessage: string) => void
@@ -85,8 +92,6 @@ export const setupCapacitorDeepLinkAuth = (
   if (!isNativePlatform()) {
     return () => {};
   }
-
-  let lastHandledUrl = '';
 
   const handleDeepLinkUrl = async (url: string) => {
     if (!url || url === lastHandledUrl) return;
@@ -156,7 +161,6 @@ export const setupCapacitorDeepLinkAuth = (
   });
 
   return () => {
-    lastHandledUrl = '';
     listenerPromise.then((listener) => listener.remove()).catch(() => {});
   };
 };
