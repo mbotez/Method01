@@ -29,15 +29,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     
     let currentUsageCount = 0;
-    const { data: profileData, error: profileError } = await supabase
+    const { data: profileData } = await supabase
       .from('user_profile')
       .select('skin_type, main_concern, scnd_concern, barrier_status, barrier_health, actives_used, skin_characteristics, comparison_usage')
       .eq('id', userId)
       .maybeSingle();
-
-    if (profileError) {
-      console.warn("[AI Compare] Error fetching user profile for rate limit:", profileError);
-    }
 
     const usageObj = (profileData as any)?.comparison_usage || { date: '', count: 0 };
     if (usageObj.date === todayStr) {
@@ -70,19 +66,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select('*')
       .in('product_id', productIds);
 
-    if (scoresError) {
-      console.warn("[AI Compare] Error fetching product scores:", scoresError);
-    }
-
     // Product ingredients
-    const { data: ingredientsData, error: ingredientsError } = await supabase
+    const { data: ingredientsData } = await supabase
       .from('product_ingredients')
       .select('product_id, "Full name", ingredient, position')
       .in('product_id', productIds);
-
-    if (ingredientsError) {
-      console.warn("[AI Compare] Error fetching product ingredients:", ingredientsError);
-    }
 
     // 3. Assemble context for Gemini 3.1 Flash Lite
     const userProfileContext = profileData || { skin_type: 'normal', main_concern: 'General maintenance' };
@@ -164,7 +152,6 @@ Return ONLY a valid JSON object matching this exact TypeScript structure (no mar
       const cleaned = responseText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/, "").trim();
       analysisResult = JSON.parse(cleaned);
     } catch (parseErr) {
-      console.error("[AI Compare] Failed to parse JSON from Gemini:", responseText);
       throw new Error("Failed to parse AI comparison analysis output.");
     }
 
@@ -188,7 +175,6 @@ Return ONLY a valid JSON object matching this exact TypeScript structure (no mar
 
   } catch (err: any) {
     const errorMsg = extractErrorMessage(err, "Failed to complete AI product comparison.");
-    console.error("[AI Compare] Error:", errorMsg);
     return res.status(500).json({ success: false, error: errorMsg });
   }
 }

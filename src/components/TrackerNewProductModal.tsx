@@ -52,7 +52,6 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
   const handlePhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
-      console.log('[TrackerModal:handlePhotoScan] No file selected.');
       return;
     }
 
@@ -74,18 +73,15 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
       return;
     }
 
-    console.log('[TrackerModal:handlePhotoScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsScanning(true);
     setScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
       recordPhotoScanUsage(userId ? { id: userId } : null);
-      console.log('[TrackerModal:handlePhotoScan] Found matches:', matches.length);
       setScanMatchedProducts(matches);
       setIsConfirmScanOpen(true);
     } catch (err: any) {
-      console.error('[TrackerModal:handlePhotoScan] Error during photo scan:', err);
       setScanError(err.message || 'Photo scan failed. Please try again.');
     } finally {
       setIsScanning(false);
@@ -98,9 +94,7 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
   // Watchdog timer for tracker modal scan
   useEffect(() => {
     if (isScanning) {
-      console.log('[TrackerModal:Watchdog] Scan watchdog armed for 30s.');
       const watchdog = setTimeout(() => {
-        console.warn('[TrackerModal:Watchdog] Scan exceeded 30s. Resetting state.');
         setIsScanning(false);
         setScanError('Photo scan timed out after 30 seconds. Please try again.');
       }, 30000);
@@ -149,16 +143,7 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
 
   useEffect(() => {
     const search = async () => {
-      console.log('[TrackerNewProductModal] User searching for new product to add to tracker, query:', JSON.stringify(searchQuery), 'userId:', userId);
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      console.log('[TrackerNewProductModal] Auth session check during tracker search:', {
-        hasSession: !!sessionData?.session,
-        userEmail: sessionData?.session?.user?.email,
-        provider: sessionData?.session?.user?.app_metadata?.provider,
-        sessionError: sessionError?.message
-      });
       const products = await searchProducts(searchQuery);
-      console.log('[TrackerNewProductModal] Search products returned count:', products?.length, 'results:', products);
       setProducts(products);
     };
     search();
@@ -225,7 +210,6 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
         // Fallback insert without .select() if select policy is restrictive
         const fallback = await supabase.from('tracker').insert(payload);
         if (fallback.error) {
-          console.error('Failed to save product to tracker:', fallback.error);
           return;
         }
         savedRecord = { ...payload, id: `tracker-${Date.now()}` };

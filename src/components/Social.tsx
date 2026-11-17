@@ -412,18 +412,15 @@ export const Social = ({
   async function fetchInitialData(signal?: AbortSignal, checkMounted?: () => boolean) {
     setLoading(true);
     try {
-      console.log('[Supabase Articles] Fetching articles from supabase...');
       let articlesQuery = supabase
         .from('articles')
         .select('*')
         .order('created_at', { ascending: false });
       if (signal) articlesQuery = articlesQuery.abortSignal(signal);
       const { data: articleData, error: articleError } = await articlesQuery;
-      console.log('[Supabase Articles] Result:', { articleData, articleError });
 
       if (checkMounted && !checkMounted()) return;
       if (articleError || !articleData || articleData.length === 0) {
-        console.warn('[Supabase Articles] No articles found or error, using default articles fallback:', articleError);
         setArticles([
           {
             id: 'layering-mastery',
@@ -570,7 +567,6 @@ export const Social = ({
           </button>
           <button 
             onClick={() => {
-              console.log('[The Edit] User clicked Articles tab. Current articles state:', articles);
               setActiveMainTab('articles');
               setSearchQuery('');
             }} 

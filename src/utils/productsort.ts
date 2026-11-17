@@ -118,7 +118,6 @@ export async function productSort(userProfile: any, productType: string, page: n
       throw new Error(errJson.error || `Product sort API failed with status ${response.status}`);
     }
   } catch (apiErr: any) {
-    console.error('[ProductSort] API error:', apiErr);
     throw new Error(apiErr?.message || "Failed to retrieve sorted products from API.");
   }
 }

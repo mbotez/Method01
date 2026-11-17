@@ -485,7 +485,6 @@ export const ProductCardContent = ({
   const [isLoadingEnriched, setIsLoadingEnriched] = useState(false);
 
   const handleOpenIngredientCard = async (ingItem: any) => {
-    console.log('[IngredientCard] Clicked ingredient item:', ingItem);
     setSelectedIngredientModal(ingItem);
     setEnrichedIngrData(null);
     setIsLoadingEnriched(true);
@@ -506,7 +505,6 @@ export const ProductCardContent = ({
       }
 
       const ingId = ingItem.ingr_id ?? ingItem.ingredient_id;
-      console.log('[IngredientCard] Querying ingr_enriched table in Supabase. ingId:', ingId, 'ingName:', ingName);
 
       let queryData: any = null;
       let queryError: any = null;
@@ -519,18 +517,14 @@ export const ProductCardContent = ({
           .maybeSingle();
         queryData = res.data;
         queryError = res.error;
-        console.log('[IngredientCard] Result querying by ID:', { data: queryData, error: queryError });
       }
 
       if (queryError) {
-        console.error('[IngredientCard] Supabase error reaching ingr_enriched table:', queryError);
       }
 
       if (queryData) {
-        console.log('[IngredientCard] Successfully loaded enriched data:', queryData);
         setEnrichedIngrData(queryData);
       } else {
-        console.warn('[IngredientCard] No enriched data found in ingr_enriched table for:', ingName, '. Using fallback.');
         setEnrichedIngrData({
           ingr_name: ingName,
           short_description: 'Active or structural ingredient in formulation.',
@@ -542,7 +536,6 @@ export const ProductCardContent = ({
         });
       }
     } catch (err) {
-      console.error('[IngredientCard] Exception in handleOpenIngredientCard:', err);
     } finally {
       setIsLoadingEnriched(false);
     }
@@ -661,7 +654,6 @@ export const ProductCardContent = ({
       const filtered = (results || []).filter(item => String(item.id) !== String(productId));
       setSearchResults(filtered);
     } catch (err) {
-      console.error('Comparison search error:', err);
     } finally {
       setIsSearching(false);
     }
@@ -777,7 +769,6 @@ export const ProductCardContent = ({
         });
       }
     } catch (err) {
-      console.error('Error updating rating:', err);
     }
   };
 
@@ -785,14 +776,12 @@ export const ProductCardContent = ({
     if (!newCommentText.trim()) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) {
-      console.warn('[Comments] No active session found, showing auth modal');
       setShowAuthModal(true);
       return;
     }
 
     setIsSubmittingComment(true);
     try {
-      console.log('[Comments] Saving comment for product:', productId, 'user:', session.user.id);
       const { data, error } = await supabase
         .from('product_comments')
         .insert({
@@ -804,15 +793,12 @@ export const ProductCardContent = ({
         .select();
 
       if (error) {
-        console.error('[Comments] Supabase insert error:', error);
         alert(`Failed to save comment: ${error.message}`);
       } else if (data) {
-        console.log('[Comments] Successfully saved comment:', data[0]);
         setComments(prev => [data[0], ...prev]);
         setNewCommentText('');
       }
     } catch (err) {
-      console.error('[Comments] Exception saving comment:', err);
     } finally {
       setIsSubmittingComment(false);
     }
@@ -911,7 +897,6 @@ export const ProductCardContent = ({
             })()
           : Promise.resolve({ data: null, error: null });
 
-        console.log('[ProductCard] Fetching ingredients for targetProductId:', targetProductId);
 
         const productIngredientsPromise = targetProductId != null
           ? (async () => {
@@ -922,10 +907,8 @@ export const ProductCardContent = ({
                   .eq('product_id', targetProductId)
                   .order('"Position"', { ascending: true })
                   .abortSignal(signal);
-                console.log('[ProductCard] product_ingredients query result:', res);
                 return res;
               } catch (err) {
-                console.error('[ProductCard] product_ingredients query exception:', err);
                 return { data: [], error: err };
               }
             })()
@@ -967,7 +950,6 @@ export const ProductCardContent = ({
         const rpcData = rpcResult?.data || null;
         const { data, error } = rpcResult;
 
-        console.log('[ProductCard] Final prodIngResult.data:', prodIngResult?.data, 'error:', (prodIngResult as any)?.error);
         setProductIngredientsList(prodIngResult?.data || []);
         if (error) {
           // If the RPC failed but direct product row exists, gracefully display the product

@@ -120,7 +120,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let rpcError: any = null;
     
     const callRpc = async (barrierVal: number, reactionVal: number) => {
-      console.log('PRODUCT-SORT PAYLOAD', JSON.stringify({ p_breakout_type: breakout_type, p_scan_acne_type: scan_breakout_type, p_cat3: cat3 }));
       const { data, error } = await supabase.rpc('get_meli_product_sort', {
         p_skin_type: skin_type ?? null,
         p_main_concern: main_concern ?? null,
@@ -138,12 +137,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
       if (error) {
-        console.error('RPC get_meli_product_sort error:', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        });
         throw error;
       }
 
@@ -164,7 +157,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         rawLockedProducts = [];
       }
     } catch (e: any) {
-      console.error('RPC failed, using fallback:', e);
       rpcError = e;
     }
 

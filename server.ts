@@ -39,7 +39,6 @@ async function startServer() {
     try {
       await identifyProductsHandler(req as any, res as any);
     } catch (err: any) {
-      console.error("[Server:identify-products] Error:", err);
       res.status(500).json({ success: false, error: err.message || "Failed to identify products." });
     }
   });
@@ -94,11 +93,7 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(port, host, () => {
-    console.log(`  VITE v6.2.0  ready in 200 ms`);
-    console.log(`  ➜  Local:   http://localhost:${port}/`);
-    console.log(`  ➜  Network: http://${host}:${port}/`);
-  });
+  const server = app.listen(port, host, () => {});
 
   process.on("SIGTERM", () => {
     server.close();
@@ -110,7 +105,6 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error("Failed to start server:", err);
+startServer().catch(() => {
   process.exit(1);
 });

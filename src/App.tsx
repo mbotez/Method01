@@ -564,14 +564,7 @@ export default function App() {
     const timer = setTimeout(async () => {
       setIsHeaderSearching(true);
       const query = headerSearchQuery.trim();
-      console.log('[HeaderSearch] User using top search bar, query:', JSON.stringify(query));
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      console.log('[HeaderSearch] Auth session check during top search:', {
-        hasSession: !!sessionData?.session,
-        userEmail: sessionData?.session?.user?.email,
-        provider: sessionData?.session?.user?.app_metadata?.provider,
-        sessionError: sessionError?.message
-      });
+
 
       const { data, error } = await supabase
         .from('products')
@@ -579,9 +572,7 @@ export default function App() {
         .or(`name.ilike.%${query}%,brand.ilike.%${query}%,type.ilike.%${query}%`)
         .limit(10);
 
-      console.log('[HeaderSearch] Supabase top search response - data count:', data?.length, 'error:', error);
       if (error) {
-        console.error('[HeaderSearch] Supabase top search error:', error);
       }
 
       if (!error && data) {
@@ -661,7 +652,6 @@ export default function App() {
       setRoutines(liveRoutines);
       setRoutinesVersion(v => v + 1);
     } catch (err) {
-      console.error('Error refreshing routines with live products:', err);
     } finally {
       setIsRefreshingRoutines(false);
     }
@@ -939,7 +929,6 @@ export default function App() {
     }
 
     const username = trimmedUsername;
-    console.log('[Profile] Saving username to Supabase for user.id:', user.id, 'username:', username);
     try {
       const { data, error } = await supabase
         .from('users')
@@ -949,7 +938,6 @@ export default function App() {
       setProfile((prev: any) => prev ? { ...prev, username } : { username });
       setIsEditingUsername(false);
     } catch (err: any) {
-      console.error('[Profile] Failed to update username:', err);
       setUsernameSaveError(err?.message || 'Failed to update username');
     } finally {
       setIsSavingUsername(false);
@@ -1143,7 +1131,6 @@ export default function App() {
   };
 
   const handleSaveGoals = async () => {
-    console.log('[Profile] Save goals clicked, user.id:', user?.id, 'editMainConcern:', editMainConcern, 'editScndConcern:', editScndConcern);
     if (!user?.id) return;
     setIsSavingGoals(true);
     setGoalsSaveError(null);
@@ -1351,14 +1338,12 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
         .eq('user_id', uid)
         .order('created_at', { ascending: false });
       if (error) {
-        console.error('Error fetching tracker data:', error);
         return;
       }
       if (data) {
         setTrackerData(data);
       }
     } catch (err) {
-      console.error('Exception fetching tracker data:', err);
     }
   }, [user]);
 
@@ -1469,7 +1454,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
   const handleDashboardPhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
-      console.log('[App:DashboardScan] No file selected.');
       return;
     }
 
@@ -1489,18 +1473,15 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
       return;
     }
 
-    console.log('[App:DashboardScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsDashboardScanning(true);
     setDashboardScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
       recordPhotoScanUsage(user);
-      console.log('[App:DashboardScan] Photo scan successful. Found matches:', matches.length);
       setDashboardScanMatched(matches);
       setIsDashboardConfirmOpen(true);
     } catch (err: any) {
-      console.error('[App:DashboardScan] Photo scan failed with error:', err);
       setDashboardScanError(err.message || 'Photo scan failed. Please try again.');
     } finally {
       setIsDashboardScanning(false);
@@ -1513,7 +1494,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
   const handleNavPhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
-      console.log('[App:NavScan] No file selected.');
       return;
     }
 
@@ -1533,18 +1513,15 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
       return;
     }
 
-    console.log('[App:NavScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsNavScanning(true);
     setNavScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
       recordPhotoScanUsage(user);
-      console.log('[App:NavScan] Photo scan successful. Found matches:', matches.length);
       setNavScanMatched(matches);
       setIsNavConfirmOpen(true);
     } catch (err: any) {
-      console.error('[App:NavScan] Photo scan failed with error:', err);
       setNavScanError(err.message || 'Photo scan failed. Please try again.');
     } finally {
       setIsNavScanning(false);
@@ -1557,7 +1534,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
   const handleLandingPhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
-      console.log('[App:LandingScan] No file selected.');
       return;
     }
 
@@ -1577,18 +1553,15 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
       return;
     }
 
-    console.log('[App:LandingScan] File selected for scanning:', file.name, 'size:', file.size, 'type:', file.type);
     setIsLandingScanning(true);
     setLandingScanError(null);
 
     try {
       const matches = await searchProductsFromPhoto(file);
       recordPhotoScanUsage(user);
-      console.log('[App:LandingScan] Photo scan successful. Found matches:', matches.length);
       setLandingScanMatched(matches);
       setIsLandingConfirmOpen(true);
     } catch (err: any) {
-      console.error('[App:LandingScan] Photo scan failed with error:', err);
       setLandingScanError(err.message || 'Photo scan failed. Please try again.');
     } finally {
       setIsLandingScanning(false);
@@ -1601,9 +1574,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
   // Failsafe watchdog timer: ensure photo scanning / evaluation loader can never hang indefinitely
   useEffect(() => {
     if (isLandingScanning || isNavScanning || isDashboardScanning || isLandingEvaluating) {
-      console.log('[App:Watchdog] Photo analysis/evaluation loader active. 30s timeout watchdog started.');
       const watchdog = setTimeout(() => {
-        console.warn('[App:Watchdog] Photo analysis exceeded 30s limit. Forcing loading state reset.');
         setIsLandingScanning(false);
         setIsNavScanning(false);
         setIsDashboardScanning(false);
@@ -2394,7 +2365,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
     let mounted = true;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('[Auth] onAuthStateChange event:', event, 'session user:', session?.user?.email || 'none');
       const currentUser = session?.user ?? null;
       if (mounted) setUser(currentUser);
 
@@ -2419,7 +2389,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                 setPendingQuestionnaireAnswers(null);
                 await fetchTrackerData(currentUser.id);
             } catch (e: any) {
-                console.error('Error saving pending questionnaire:', e);
             }
         }
 
@@ -2448,7 +2417,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                   .select();
 
                 if (insertError) {
-                  console.error('Error inserting cached landing products:', insertError);
                 }
 
                 await fetchTrackerData(currentUser.id);
@@ -2461,7 +2429,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
 
                 localStorage.removeItem('cachedLandingProducts');
             } catch (cacheErr) {
-                console.error('Error processing cached landing products:', cacheErr);
             } finally {
                 if (mounted) setIsLandingEvaluating(false);
             }
@@ -2504,7 +2471,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             setUserProfile(uProfile);
           }
         } catch (e) {
-          console.error('Error fetching user profile data:', e);
         } finally {
           if (mounted) setLoading(false);
         }
@@ -3591,38 +3557,38 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
   }, []);
 
   const renderMyRoutinesSection = (hideHeaderActions: boolean = false) => (
-    <div className="space-y-4 md:space-y-6">
+    <div className="space-y-3">
       {!hideHeaderActions && (
-        <div className="flex items-center justify-between md:border-0 md:pb-0">
-          <div className="flex items-center gap-2 text-black">
-            <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>My routines</h3>
-          </div>
-          <div className="flex items-center gap-3 sm:gap-4">
+        <div className="flex items-center justify-between pb-2">
+          <h3 className="font-sans font-bold uppercase tracking-[0.14em] text-[#171717] text-sm md:text-base">
+            My routines
+          </h3>
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => refreshRoutines()}
               disabled={isRefreshingRoutines}
-              className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer bg-black/5 hover:bg-black/10 px-2.5 py-1.5 rounded-lg"
+              className="text-[11px] tracking-[0.1em] uppercase text-[#73716C] hover:text-[#171717] transition-colors flex items-center gap-1.5 cursor-pointer px-2.5 py-1 rounded-lg border border-[#EAE9E5] bg-white"
               title="Re-evaluate live product attributes from database"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingRoutines ? 'animate-spin text-venus-accent' : ''}`} />
+              <RefreshCw className={`w-3 h-3 ${isRefreshingRoutines ? 'animate-spin text-[#7A6332]' : ''}`} />
               <span className="hidden sm:inline">{isRefreshingRoutines ? 'Syncing...' : 'Sync'}</span>
             </button>
             <button 
               onClick={handleAddRoutine}
-              className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2 cursor-pointer"
+              className="text-[11px] tracking-[0.1em] uppercase text-[#73716C] hover:text-[#171717] transition-colors flex items-center gap-1.5 cursor-pointer px-2.5 py-1 rounded-lg border border-[#EAE9E5] bg-white"
             >
-              <Plus className="w-4 h-4" />
-              <span className="hidden md:inline">New Routine</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">+ New Routine</span>
             </button>
             <button 
               onClick={() => triggerPhotoScan(dashboardFileInputRef)}
               disabled={isDashboardScanning}
-              className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-2 cursor-pointer"
+              className="text-[11px] tracking-[0.1em] uppercase text-[#73716C] hover:text-[#171717] transition-colors flex items-center gap-1.5 cursor-pointer px-2.5 py-1 rounded-lg border border-[#EAE9E5] bg-white"
             >
               {isDashboardScanning ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <Camera className="w-4 h-4" />
+                <Camera className="w-3.5 h-3.5" />
               )}
               <span className="hidden md:inline">Scan Product</span>
             </button>
@@ -3651,281 +3617,147 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
           </button>
         </div>
       )}
-      <div className="space-y-8">
+      <div className="space-y-3">
         {routines.length === 0 ? (
-          <div className="py-12 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50 rounded-2xl">
-            <Sun className="w-8 h-8 text-black/20 mb-2" />
-            <p className="text-black/50 text-sm font-black uppercase tracking-widest">No routine added yet</p>
-            <p className="text-black/40 text-xs mt-1">Create your first morning or evening skincare ritual.</p>
+          <div className="py-10 px-5 rounded-xl bg-white border border-[#EAE9E5] text-center space-y-3">
+            <Sun className="w-7 h-7 text-[#73716C] mx-auto opacity-40" />
+            <p className="text-xs font-semibold text-[#171717] uppercase tracking-wider">No routine added yet</p>
+            <p className="text-[11px] text-[#73716C]">Create your first morning or evening skincare ritual.</p>
             <button
               onClick={handleAddRoutine}
-              className="mt-4 px-4 py-2 bg-black text-white text-xs font-black uppercase tracking-wider rounded-xl hover:bg-venus-accent transition-colors cursor-pointer"
+              className="px-4 py-2 bg-[#171717] text-white text-[11px] font-medium uppercase tracking-wider rounded-lg hover:bg-[#73716C] transition-colors cursor-pointer"
             >
               + Create Routine
             </button>
           </div>
         ) : (
-          routines.map((rt: any, rIdx: number) => (
-            <div key={rIdx} className="clean-card p-4 border-2 border-black/5 bg-venus-accent/[0.06] relative group flex flex-col gap-2">
-              {/* Header row: Number, Routine Name + Actions - Clickable to toggle */}
-              <div className="flex items-start gap-4 cursor-pointer" onClick={() => {
-                  toggleRoutineExpansion(rIdx);
-                }}>
-                  {/* Routine Name and Metadata */}
-                  <div className="flex-1 min-w-0">
-                      {rt.routine_name && (
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-black bg-venus-accent/20 text-venus-accent px-1.5 py-0.5 rounded uppercase">{rt.time || 'AM'}</span>
-                            <h4 className="font-black text-black uppercase text-sm md:text-base tracking-tight pt-1 truncate">
-                              {rt.routine_name}
-                            </h4>
-                          </div>
-                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded uppercase shrink-0 ${
-                            (() => {
-                              const score = routineChecks[rt.id || String(rIdx)]?.routine_score;
-                              if (score === undefined) return 'bg-black/5 text-black/50 animate-pulse';
-                              if (score >= 80) return 'bg-green-100 text-green-800 border border-green-200';
-                              if (score >= 50) return 'bg-amber-100 text-amber-800 border border-amber-200';
-                              return 'bg-red-100 text-red-800 border border-red-200';
-                            })()
-                          }`}>
-                            {routineChecks[rt.id || String(rIdx)] !== undefined 
-                              ? `${routineChecks[rt.id || String(rIdx)].routine_score}/100` 
-                              : '...'}
-                          </span>
-                        </div>
+          routines.map((rt: any, rIdx: number) => {
+            const check = routineChecks[rt.id || String(rIdx)];
+            const score = check?.routine_score;
+            const isExpanded = expandedRoutines.includes(rIdx);
+
+            return (
+              <div 
+                key={rIdx} 
+                className="rounded-xl bg-white border border-[#EAE9E5] hover:border-[#CFCBC2] transition-all px-5 py-3.5 flex flex-col gap-2 shadow-none"
+              >
+                <div 
+                  className="flex items-center justify-between cursor-pointer gap-4" 
+                  onClick={() => toggleRoutineExpansion(rIdx)}
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <span className="bg-[#FAF7F0] border border-[#D6C7A9] text-[#7A6332] text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-md uppercase shrink-0">
+                      {rt.time || 'AM'}
+                    </span>
+                    <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                      <h4 className="font-sans font-semibold text-[#171717] uppercase text-xs md:text-sm tracking-tight truncate">
+                        {rt.routine_name || 'Routine'}
+                      </h4>
+                      {rt.days && rt.days.length > 0 && (
+                        <span className="text-[10px] text-[#73716C] uppercase tracking-wider font-medium">
+                          • {(rt.days || []).join(', ')}
+                        </span>
                       )}
-                      {/* Day */}
-                      <div className="mt-0.5">
-                         <span className="text-[9px] uppercase font-bold tracking-widest text-black/40 truncate">{(rt.days || []).join(', ')}</span>
-                      </div>
+                    </div>
                   </div>
-              </div>
 
-              {/* Products - Routine Items */}
-              {expandedRoutines.includes(rIdx) && (
-                <div className="space-y-2 pt-2 border-t border-black/5">
-                    {getActiveRoutineProducts(rt.products, rt.time).map((p: any, i: number) => (
-                        <div key={i} className="flex flex-col gap-0.5 text-xs border-b border-black/5 pb-1">
-                            <div className="flex items-center gap-2">
-                                <span className="uppercase font-black tracking-widest text-venus-accent">{p.type}</span>
-                                <span className="font-bold text-black/80">{p.brand}</span>
-                            </div>
-                            <ProductLink 
-                                 productId={p.id} 
-                                 productName={p.name} 
-                                 className="text-black/60 hover:text-venus-accent transition-colors text-left" 
-                             />
-                        </div>
-                    ))}
-
-                    {/* Routine Check Analysis Section */}
-                    {(() => {
-                      const check = routineChecks[rt.id || String(rIdx)];
-                      if (!check) {
-                        return (
-                          <div className="mt-4 p-4 rounded-2xl bg-black/[0.01] border border-dashed border-black/5 flex items-center justify-center text-xs text-black/40 font-bold uppercase tracking-wider animate-pulse">
-                            Calculating compatibility metrics...
-                          </div>
-                        );
-                      }
-
-                      const amSequence = check.recommendations?.find(r => r.startsWith("Recommended AM Layering Sequence:"));
-                      const pmSequence = check.recommendations?.find(r => r.startsWith("Recommended PM Layering Sequence:"));
-                      const otherRecommendations = (check.recommendations || []).filter(r => 
-                        !r.startsWith("Recommended AM Layering Sequence:") && 
-                        !r.startsWith("Recommended PM Layering Sequence:")
-                      );
-
-                      return (
-                        <div className="mt-4 p-4 rounded-2xl bg-black/[0.02] border border-black/5 space-y-4">
-                          {/* Title / Header */}
-                          <div className="flex items-center justify-between border-b border-black/5 pb-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-black uppercase tracking-wider text-black">Routine Analysis</span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  refreshRoutines();
-                                }}
-                                disabled={isRefreshingRoutines}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold text-black/50 hover:text-venus-accent transition-colors ml-1 cursor-pointer bg-black/5 px-2 py-0.5 rounded-full"
-                                title="Re-evaluate routine with live database product attributes"
-                              >
-                                <RefreshCw className={`w-3 h-3 ${isRefreshingRoutines ? 'animate-spin text-venus-accent' : ''}`} />
-                                <span>{isRefreshingRoutines ? 'Evaluating live DB...' : 'Re-evaluate'}</span>
-                              </button>
-                            </div>
-                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase border ${
-                              check.routine_score >= 80 ? 'bg-green-100 text-green-800 border-green-200' :
-                              check.routine_score >= 50 ? 'bg-amber-100 text-amber-800 border-amber-200' :
-                              'bg-red-100 text-red-800 border-red-200'
-                            }`}>
-                              Score: {check.routine_score}/100
-                            </span>
-                          </div>
-
-                          {/* Mini Dashboard */}
-                          {check.debug && (
-                            <div className="grid grid-cols-2 gap-3 bg-white border border-black/5 p-3 rounded-xl shadow-sm">
-                              <div className="space-y-0.5 text-left">
-                                <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Skin Barrier Risk</span>
-                                <span className={`text-xs font-black uppercase ${
-                                  check.debug.user_irritation_threshold === 'high' ? 'text-red-600' :
-                                  check.debug.user_irritation_threshold === 'medium' ? 'text-amber-600' : 'text-green-600'
-                                }`}>
-                                  {check.debug.user_irritation_threshold} Risk
-                                </span>
-                              </div>
-                              <div className="space-y-0.5 text-left">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Actives Budget</span>
-                                  <div className="relative group inline-flex items-center">
-                                    <button 
-                                      type="button"
-                                      aria-label="Why do I have this actives budget?"
-                                      className="text-black/30 hover:text-black/80 focus:text-black/80 focus:outline-none transition-colors p-0.5 rounded-full cursor-help"
-                                    >
-                                      <HelpCircle className="w-3 h-3" />
-                                    </button>
-                                    <div className="pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 absolute right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 bottom-full mb-1.5 w-64 max-w-[80vw] p-2.5 bg-neutral-900 text-white text-[11px] leading-relaxed rounded-lg shadow-xl z-50 text-left font-normal normal-case">
-                                      <p className="font-bold text-white text-[11px] mb-1">Why this budget?</p>
-                                      <p className="text-white/80 text-[11px] leading-snug">
-                                        {check.debug.active_budget_reason || getActivesBudgetExplanation(userProfile, check.debug.active_budget, check.debug.user_irritation_threshold)}
-                                      </p>
-                                      <div className="hidden sm:block absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-neutral-900" />
-                                      <div className="sm:hidden absolute top-full right-2 -mt-[1px] border-4 border-transparent border-t-neutral-900" />
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-black text-black">
-                                    {check.debug.active_count} / {check.debug.active_budget} limit
-                                  </span>
-                                </div>
-                                <div className="w-full bg-black/5 h-1.5 rounded-full overflow-hidden mt-1">
-                                  <div 
-                                    className={`h-full rounded-full transition-all duration-500 ${check.debug.active_count > check.debug.active_budget ? 'bg-red-500 animate-pulse' : 'bg-venus-accent'}`}
-                                    style={{ width: `${Math.min(100, (check.debug.active_count / (check.debug.active_budget || 1)) * 100)}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* TIMELINE / LAYERING FLOW */}
-                          {amSequence && (
-                            <div className="bg-white border border-black/5 rounded-xl p-3 shadow-sm space-y-2 text-left">
-                              <div className="flex items-center gap-1.5 text-black">
-                                <Sun className="w-3.5 h-3.5 text-amber-500" />
-                                <span className="text-[10px] font-black uppercase tracking-wider">Recommended AM Layering</span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                {amSequence.replace("Recommended AM Layering Sequence:", "").trim().split(" → ").map((step, sIdx) => (
-                                  <React.Fragment key={sIdx}>
-                                    {sIdx > 0 && <span className="text-black/30 text-xs">→</span>}
-                                    <span className="bg-amber-50 text-[10px] font-bold text-amber-900 border border-amber-200/50 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1">
-                                      <span className="w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center font-black text-[8px]">{sIdx + 1}</span>
-                                      {step}
-                                    </span>
-                                  </React.Fragment>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {pmSequence && (
-                            <div className="bg-white border border-black/5 rounded-xl p-3 shadow-sm space-y-2 text-left">
-                              <div className="flex items-center gap-1.5 text-black">
-                                <Moon className="w-3.5 h-3.5 text-indigo-500" />
-                                <span className="text-[10px] font-black uppercase tracking-wider">Recommended PM Layering</span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                {pmSequence.replace("Recommended PM Layering Sequence:", "").trim().split(" → ").map((step, sIdx) => (
-                                  <React.Fragment key={sIdx}>
-                                    {sIdx > 0 && <span className="text-black/30 text-xs">→</span>}
-                                    <span className="bg-indigo-50 text-[10px] font-bold text-indigo-900 border border-indigo-200/50 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1">
-                                      <span className="w-3.5 h-3.5 rounded-full bg-indigo-500 text-white flex items-center justify-center font-black text-[8px]">{sIdx + 1}</span>
-                                      {step}
-                                    </span>
-                                  </React.Fragment>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* INSIGHTS & WARNINGS */}
-                          {otherRecommendations.length > 0 && (
-                            <div className="space-y-1.5 text-left">
-                              <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block px-1">Insights & Warnings</span>
-                              <div className="space-y-1">
-                                {otherRecommendations.map((rec, rIdx) => {
-                                  const isWarning = rec.toLowerCase().includes("warning") || 
-                                                    rec.toLowerCase().includes("alert") || 
-                                                    rec.toLowerCase().includes("gap") || 
-                                                    rec.toLowerCase().includes("shortfall") ||
-                                                    rec.toLowerCase().includes("danger") ||
-                                                    rec.toLowerCase().includes("risk");
-                                  return (
-                                    <div 
-                                      key={rIdx} 
-                                      className={`p-2.5 rounded-xl border flex items-start gap-2.5 text-xs shadow-sm ${
-                                        isWarning 
-                                          ? 'bg-red-50/50 border-red-500/15 text-red-900' 
-                                          : 'bg-white border-black/5 text-black/80'
-                                      }`}
-                                    >
-                                      {isWarning ? (
-                                        <Shield className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                                      ) : (
-                                        <CheckCircle2 className="w-4 h-4 text-venus-accent shrink-0 mt-0.5" />
-                                      )}
-                                      <span className="font-medium leading-relaxed whitespace-pre-wrap">
-                                        {rec
-                                          .replace(/dry_and_flaky_skin/g, 'dry and flaky skin')
-                                          .replace(/breakouts_and_scars/g, 'breakouts and post-breakout marks')
-                                          .replace(/dark_spots/g, 'dark spots')
-                                          .replace(/wrinkles_and_fine_lines/g, 'wrinkles & fine lines')
-                                          .replace(/pores_and_texture/g, 'large pores & texture')
-                                          .replace(/yeast_breakout/g, 'yeast-reactive skin')
-                                          .replace(/not_sure/g, 'not sure')}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="hidden sm:flex items-center gap-2">
+                      <div className="w-12 h-1.5 bg-[#EAE9E5] rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-[#171717] rounded-full" 
+                          style={{ width: `${score !== undefined ? Math.min(Math.max(score, 5), 100) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                      score === undefined ? 'bg-[#FAF7F0] text-[#73716C] animate-pulse border border-[#EAE9E5]' :
+                      score >= 80 ? 'bg-[#FAF7F0] border border-[#D6C7A9] text-[#7A6332]' :
+                      score >= 50 ? 'bg-[#FAF7F0] border border-[#D6C7A9] text-[#7A6332]' :
+                      'bg-red-50 text-red-700 border border-red-200'
+                    }`}>
+                      {score !== undefined ? `${score}/100` : '...'}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-[#73716C] transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                  </div>
                 </div>
-              )}
-              
-              {/* Actions */}
-              {expandedRoutines.includes(rIdx) && (
-                <div className="flex items-center gap-1 shrink-0 pt-2 border-t border-black/5 mt-1 justify-end">
-                    <label className="flex items-center gap-1 p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer text-black/40 hover:text-black text-xs mr-auto">
+
+                {isExpanded && (
+                  <div className="space-y-3 pt-3 border-t border-[#EAE9E5] mt-1">
+                    <div className="space-y-2">
+                      {getActiveRoutineProducts(rt.products, rt.time).map((p: any, i: number) => (
+                        <div key={i} className="flex flex-col gap-0.5 text-xs pb-1.5 border-b border-[#EAE9E5]/50 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase font-semibold tracking-wider text-[#73716C]">{p.type}</span>
+                            <span className="font-medium text-[#171717]">{p.brand}</span>
+                          </div>
+                          <ProductLink 
+                            productId={p.id} 
+                            productName={p.name} 
+                            className="text-[#73716C] hover:text-[#171717] transition-colors text-left font-normal" 
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {check && (
+                      <div className="p-3.5 rounded-xl bg-[#FAFAFA] border border-[#EAE9E5] space-y-3 text-left">
+                        <div className="flex items-center justify-between border-b border-[#EAE9E5] pb-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#171717]">Routine Analysis</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              refreshRoutines();
+                            }}
+                            disabled={isRefreshingRoutines}
+                            className="inline-flex items-center gap-1 text-[10px] font-medium text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isRefreshingRoutines ? 'animate-spin text-[#7A6332]' : ''}`} />
+                            <span>{isRefreshingRoutines ? 'Syncing...' : 'Re-evaluate'}</span>
+                          </button>
+                        </div>
+                        {check.debug && (
+                          <div className="grid grid-cols-2 gap-3 bg-white border border-[#EAE9E5] p-2.5 rounded-lg">
+                            <div>
+                              <span className="text-[9px] font-semibold uppercase text-[#73716C] block tracking-wider">Skin Barrier Risk</span>
+                              <span className="text-[11px] font-semibold uppercase text-[#171717]">
+                                {check.debug.user_irritation_threshold} Risk
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] font-semibold uppercase text-[#73716C] block tracking-wider">Actives Budget</span>
+                              <span className="text-[11px] font-semibold uppercase text-[#171717]">
+                                Balanced
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-1 shrink-0 pt-2 border-t border-[#EAE9E5] mt-1 justify-end">
+                      <label className="flex items-center gap-1 p-2 hover:bg-[#F4F3F0] rounded-full transition-colors cursor-pointer text-[#73716C] hover:text-[#171717] text-xs mr-auto">
                         <input type="checkbox" onChange={(e) => handleToggleTrackerRoutine(rt.products, rt.time, e.target.checked)} className="form-checkbox" />
                         <span>Add to tracker</span>
-                    </label>
-                    <button onClick={() => { setShareRoutine(rt); setIsSharingOpen(true); }} className='p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer' title="Share">
-                        <Share2 className="w-4 h-4 text-black/40 hover:text-black" />
-                    </button>
-                    <button onClick={() => handleEditRoutine(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer' title="Edit">
-                        <Pencil className="w-4 h-4 text-black/40 hover:text-black" />
-                    </button>
-                    <button onClick={() => handleSetReminder(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors cursor-pointer' title="Reminder">
-                        <AlarmClock className="w-4 h-4 text-black/40 hover:text-black" />
-                    </button>
-                    <button onClick={() => setRoutineToDelete(rt)} className='p-2 hover:bg-black/5 rounded-full transition-colors text-red-500/40 hover:text-red-500 cursor-pointer' title="Delete">
+                      </label>
+                      <button onClick={() => { setShareRoutine(rt); setIsSharingOpen(true); }} className='p-2 hover:bg-[#F4F3F0] rounded-full transition-colors cursor-pointer' title="Share">
+                        <Share2 className="w-4 h-4 text-[#73716C] hover:text-[#171717]" />
+                      </button>
+                      <button onClick={() => handleEditRoutine(rt)} className='p-2 hover:bg-[#F4F3F0] rounded-full transition-colors cursor-pointer' title="Edit">
+                        <Pencil className="w-4 h-4 text-[#73716C] hover:text-[#171717]" />
+                      </button>
+                      <button onClick={() => handleSetReminder(rt)} className='p-2 hover:bg-[#F4F3F0] rounded-full transition-colors cursor-pointer' title="Reminder">
+                        <AlarmClock className="w-4 h-4 text-[#73716C] hover:text-[#171717]" />
+                      </button>
+                      <button onClick={() => setRoutineToDelete(rt)} className='p-2 hover:bg-[#F4F3F0] rounded-full transition-colors text-red-500/60 hover:text-red-600 cursor-pointer' title="Delete">
                         <Trash2 className="w-4 h-4" />
-                    </button>
-                </div>
-              )}
-            </div>
-          ))
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
@@ -4143,50 +3975,50 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
       </AnimatePresence>
       
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-black/5 relative">
-        <div className="flex justify-between items-center px-4 py-2 md:py-3.5 gap-3 md:gap-6 max-w-7xl mx-auto">
-          {/* Top Left: Menu button (reinstated for authorised users on desktop website view, and all users on mobile), Canonic brand, and Nav Links */}
-          <div className="flex items-center gap-3 sm:gap-4 md:gap-6 shrink-0">
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#EAE9E5]">
+        <div className="flex justify-between items-center px-4 md:px-6 h-16 gap-4 max-w-7xl mx-auto">
+          {/* Top Left: Canonic brand and Nav Links */}
+          <div className="flex items-center gap-6 shrink-0">
             <button 
               onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} 
-              className={`p-1.5 -ml-1 text-black hover:bg-black/5 rounded-lg cursor-pointer transition-colors ${user ? 'block' : 'block md:hidden'}`}
+              className={`p-1.5 -ml-1 text-[#171717] hover:bg-[#F4F3F0] rounded-lg cursor-pointer transition-colors ${user ? 'block' : 'block md:hidden'}`}
               aria-label="Toggle navigation menu"
               title="Navigation menu"
             >
-              <Menu className="w-5 h-5 text-black" />
+              <Menu className="w-5 h-5 text-[#171717]" />
             </button>
 
             <button 
               onClick={() => { resetHeaderSearchState(); setAppState(user ? AppState.DASHBOARD : AppState.LANDING); }} 
-              className="font-bubble text-2xl md:text-3xl text-black font-medium cursor-pointer tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap hidden md:inline-block"
+              className="font-bubble text-2xl md:text-3xl text-[#171717] cursor-pointer tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap"
             >
               Canonic
             </button>
 
-            <nav className="hidden md:flex items-center gap-3 sm:gap-6">
+            <nav className="hidden md:flex items-center gap-6">
               <button 
                 onClick={() => { resetHeaderSearchState(); setAppState(AppState.RANK); }}
-                className={`text-xs md:text-sm font-black uppercase tracking-widest cursor-pointer transition-colors whitespace-nowrap ${appState === AppState.RANK ? 'text-black underline underline-offset-8 decoration-2 decoration-black' : 'text-black/60 hover:text-black'}`}
+                className={`text-xs font-semibold uppercase tracking-[0.14em] cursor-pointer transition-colors whitespace-nowrap ${appState === AppState.RANK ? 'text-[#171717] underline underline-offset-8 decoration-2 decoration-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
               >
                 Products
               </button>
               <button 
                 onClick={() => { resetHeaderSearchState(); setAppState(AppState.SOCIAL); setSocialActiveMainTab('articles'); setIsFollowsOpen(false); }}
-                className={`text-xs md:text-sm font-black uppercase tracking-widest cursor-pointer transition-colors whitespace-nowrap ${appState === AppState.SOCIAL && socialActiveMainTab === 'articles' ? 'text-black underline underline-offset-8 decoration-2 decoration-black' : 'text-black/60 hover:text-black'}`}
+                className={`text-xs font-semibold uppercase tracking-[0.14em] cursor-pointer transition-colors whitespace-nowrap ${appState === AppState.SOCIAL && socialActiveMainTab === 'articles' ? 'text-[#171717] underline underline-offset-8 decoration-2 decoration-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
               >
                 The Edit
               </button>
             </nav>
           </div>
 
-          {/* Header search bar */}
-          <div ref={headerSearchContainerRef} className="flex-1 max-w-md mx-auto">
+          {/* Header search bar (pill) */}
+          <div ref={headerSearchContainerRef} className="flex-1 max-w-md mx-auto hidden sm:block">
             <div className="relative w-full">
-              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-black/40 pointer-events-none" />
+              <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#73716C] pointer-events-none" />
               <input 
                 type="text" 
-                placeholder="Search products..."
-                className="w-full bg-white border border-black/10 py-1.5 px-3 pl-8 pr-8 md:py-2 md:pl-10 md:pr-8 rounded-lg text-[10px] md:text-xs font-black uppercase text-black placeholder:text-black/40 outline-none focus:border-black/30 transition-colors"
+                placeholder="Search products, ingredients, routines..."
+                className="w-full bg-[#F4F3F0] border border-[#E5E4E0] py-2 px-4 pl-10 pr-9 rounded-full text-xs font-medium uppercase tracking-wider text-[#171717] placeholder:text-[#73716C] outline-none focus:border-[#CFCBC2] transition-colors"
                 value={headerSearchQuery}
                 onChange={(e) => {
                   setHeaderSearchQuery(e.target.value);
@@ -4197,7 +4029,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
               {headerSearchQuery && (
                 <button 
                   onClick={() => resetHeaderSearchState()}
-                  className="absolute right-2.5 top-1/2 transform -translate-y-1/2 p-0.5 rounded-full hover:bg-black/5 text-black/40 hover:text-black transition-colors cursor-pointer"
+                  className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-0.5 rounded-full hover:bg-[#E5E4E0] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer"
                   title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -4206,18 +4038,18 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             </div>
           </div>
 
-          <div className="flex items-center gap-3 md:gap-4 shrink-0">
+          <div className="flex items-center gap-4 shrink-0">
             {!user ? (
               <>
                 <button 
                   onClick={() => { resetHeaderSearchState(); setIsSignUp(false); setAppState(AppState.AUTH); }}
-                  className="text-xs md:text-sm font-black uppercase tracking-widest text-black/60 hover:text-black transition-colors cursor-pointer whitespace-nowrap"
+                  className="text-xs font-semibold uppercase tracking-[0.14em] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap"
                 >
                   Sign In
                 </button>
                 <button 
                   onClick={() => { resetHeaderSearchState(); setIsSignUp(true); setAppState(AppState.AUTH); }}
-                  className="text-xs md:text-sm font-black uppercase tracking-widest text-black/60 hover:text-black transition-colors cursor-pointer whitespace-nowrap"
+                  className="text-xs font-semibold uppercase tracking-[0.14em] text-[#171717] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] px-3.5 py-1.5 rounded-full border border-[#E5E4E0]"
                 >
                   Join
                 </button>
@@ -4225,9 +4057,9 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             ) : (
               <button 
                 onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); }}
-                className="flex items-center gap-2 text-xs md:text-sm font-black uppercase tracking-wider text-black/80 hover:text-black transition-colors cursor-pointer whitespace-nowrap"
+                className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#171717] hover:text-[#73716C] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] px-3.5 py-1.5 rounded-full border border-[#E5E4E0]"
               >
-                <UserIcon className="w-4 h-4 text-black" />
+                <UserIcon className="w-3.5 h-3.5 text-[#171717]" />
                 <span className="hidden sm:inline">{user?.username || 'Profile'}</span>
               </button>
             )}
@@ -5344,10 +5176,10 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                 {/* For you Section */}
                 <div className="space-y-4 text-left mb-10 mt-2">
                   <div>
-                    <h3 className="text-xl md:text-2xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
+                    <h3 className="font-sans font-bold uppercase tracking-[0.14em] text-[#171717] text-sm md:text-base">
                       For you
                     </h3>
-                    <p className="text-xs text-black/50 font-medium mt-1">
+                    <p className="text-xs text-[#73716C] font-medium mt-1">
                       Explore products chosen for your skin type and goals
                     </p>
                   </div>
@@ -5370,11 +5202,21 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                         onClick={() => handleSelectInspiration(cat.key)}
                         className="snap-start shrink-0 flex flex-col items-center cursor-pointer group w-24 sm:w-28 md:w-32"
                       >
-                        <div 
-                          className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full bg-cover bg-center border-2 border-black/10 group-hover:border-black transition-all shadow-sm overflow-hidden"
-                          style={{ backgroundImage: `url('${cat.img}')` }}
-                        />
-                        <span className="text-[10px] md:text-xs font-black text-black uppercase tracking-tight mt-2 text-center whitespace-normal leading-tight px-0.5 w-full">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 rounded-full p-0.5 border border-[#E5E4E0] group-hover:border-[#171717] transition-all bg-[#F4F3F0]">
+                          {cat.img ? (
+                            <img 
+                              src={cat.img} 
+                              alt={cat.title} 
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover rounded-full" 
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-[#F4F3F0] rounded-full flex items-center justify-center text-[10px] text-[#73716C] font-semibold">
+                              Skin
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-[11px] font-medium text-[#262626] uppercase tracking-[0.12em] mt-2 text-center whitespace-normal leading-tight px-0.5 w-full">
                           {cat.title}
                         </span>
                       </motion.div>
@@ -5388,7 +5230,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                 {/* Trending Section */}
                 <div className="space-y-4 mt-12 text-left">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
+                    <h3 className="font-sans font-bold uppercase tracking-[0.14em] text-[#171717] text-sm md:text-base">
                       Trending
                     </h3>
                     <button
@@ -5396,63 +5238,74 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                         setSocialActiveMainTab('videos');
                         setAppState(AppState.SOCIAL);
                       }}
-                      className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer"
+                      className="text-xs uppercase tracking-[0.14em] text-[#171717] font-semibold hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer"
                     >
                       <span>See more</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                   {loadingLatestVideos ? (
-                    <div className="flex md:grid md:grid-cols-3 gap-2 overflow-x-auto no-scrollbar pb-4">
-                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-black/5 rounded-2xl animate-pulse" />
-                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-black/5 rounded-2xl animate-pulse" />
-                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-black/5 rounded-2xl animate-pulse" />
+                    <div className="flex md:grid md:grid-cols-3 gap-3 overflow-x-auto no-scrollbar pb-4">
+                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-[#F4F3F0] rounded-2xl animate-pulse" />
+                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-[#F4F3F0] rounded-2xl animate-pulse" />
+                      <div className="shrink-0 w-[300px] md:w-auto h-48 bg-[#F4F3F0] rounded-2xl animate-pulse" />
                     </div>
                   ) : latestVideos && latestVideos.length > 0 ? (
-                    <div className="flex md:grid md:grid-cols-3 gap-2 w-full overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory pb-4">
+                    <div className="flex md:grid md:grid-cols-3 gap-3 w-full overflow-x-auto no-scrollbar scroll-smooth snap-x snap-mandatory pb-4">
                       {latestVideos.map((video: any) => {
                         const isYoutube = video.type === 'youtube' || video.video_url?.includes('youtube.com') || video.video_url?.includes('youtu.be');
                         return (
                           <div 
                             key={video.id} 
-                            className={`snap-start shrink-0 md:w-auto clean-card p-2 border-2 border-black/5 bg-white space-y-2 flex flex-col justify-center ${
-                              isYoutube ? 'w-[300px]' : 'w-[200px]'
+                            className={`snap-start shrink-0 md:w-auto rounded-2xl bg-white border border-[#EAE9E5] p-3 space-y-3 flex flex-col justify-between shadow-none ${
+                              isYoutube ? 'w-[300px]' : 'w-[220px]'
                             }`}
                           >
                             <div className="space-y-2">
-                              {isYoutube && video.title && (
-                                <h4 className="text-xs font-black uppercase tracking-tight text-black leading-tight line-clamp-2">
-                                  {video.title}
-                                </h4>
-                              )}
                               {isYoutube ? (
-                                <div className="w-full h-[195px] aspect-video relative rounded-xl overflow-hidden border border-black/5 bg-black/5 shadow-inner mx-auto">
+                                <div className="w-full aspect-video relative rounded-xl overflow-hidden border border-[#E5E4E0] bg-[#F4F3F0]">
                                   <iframe
                                     src={video.video_url}
                                     className="absolute inset-0 w-full h-full"
                                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                     allowFullScreen
+                                    onError={(e: any) => {
+                                      e.currentTarget.style.display = 'none';
+                                    }}
                                   />
                                 </div>
                               ) : (
                                 <div className="flex justify-center w-full">
-                                  <div className="w-full max-w-[150px] aspect-[9/16] relative rounded-xl overflow-hidden shadow-lg bg-black">
+                                  <div className="w-full max-w-[180px] aspect-[9/16] relative rounded-xl overflow-hidden bg-[#F4F3F0] border border-[#E5E4E0]">
                                     <iframe
                                       src={video.video_url}
                                       className="absolute inset-0 w-full h-full"
                                       allow="fullscreen"
+                                      onError={(e: any) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
                                     />
                                   </div>
                                 </div>
                               )}
+                            </div>
+                            <div>
+                              {video.title && (
+                                <h4 className="text-xs font-medium text-[#171717] line-clamp-1 leading-snug">
+                                  {video.title}
+                                </h4>
+                              )}
+                              <span className="text-[10px] text-[#73716C] uppercase tracking-wider block mt-1">
+                                {isYoutube ? 'YouTube Expert Review' : 'TikTok Routine'}
+                              </span>
                             </div>
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="py-8 clean-card flex flex-col items-center justify-center border-dashed border-2 border-black/5 bg-white/50">
-                      <p className="text-black/50 text-[10px] font-black uppercase tracking-widest">No updates available</p>
+                    <div className="py-8 rounded-2xl border border-dashed border-[#E5E4E0] bg-[#FAFAFA] flex flex-col items-center justify-center">
+                      <p className="text-[#73716C] text-[11px] font-medium uppercase tracking-widest">No updates available</p>
                     </div>
                   )}
                 </div>
@@ -5460,7 +5313,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                 {/* Guides Section */}
                 <div className="space-y-4 mt-12 text-left">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg md:text-xl uppercase tracking-tight text-black" style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}>
+                    <h3 className="font-sans font-bold uppercase tracking-[0.14em] text-[#171717] text-sm md:text-base">
                       Guides
                     </h3>
                     <button
@@ -5468,7 +5321,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                         setSocialActiveMainTab('guides');
                         setAppState(AppState.SOCIAL);
                       }}
-                      className="text-xs uppercase tracking-widest text-black font-black hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer"
+                      className="text-xs uppercase tracking-[0.14em] text-[#171717] font-semibold hover:opacity-70 transition-opacity flex items-center gap-1.5 cursor-pointer"
                     >
                       <span>See more</span>
                       <ArrowRight className="w-4 h-4" />
@@ -5476,34 +5329,82 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                   </div>
                   
                   {landingGuide && (
-                    <div 
-                      onClick={() => {
-                        setSocialActiveMainTab('guides');
-                        setAppState(AppState.SOCIAL);
-                      }}
-                      className="clean-card p-5 border-2 border-black/5 bg-white hover:border-black/25 hover:shadow-md transition-all max-w-xl space-y-3 cursor-pointer group rounded-2xl"
-                    >
-                      {landingGuide.imageUrl && (
-                        <div className="w-full h-36 rounded-xl overflow-hidden border border-black/5 bg-black/5">
-                          <img src={landingGuide.imageUrl} alt={landingGuide.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    <div className="space-y-4">
+                      {/* Featured Guide Card (Horizontal Split) */}
+                      <div 
+                        onClick={() => {
+                          setSocialActiveMainTab('guides');
+                          setAppState(AppState.SOCIAL);
+                        }}
+                        className="rounded-2xl bg-white border border-[#EAE9E5] hover:border-[#CFCBC2] transition-all overflow-hidden cursor-pointer group flex flex-col md:flex-row shadow-none"
+                      >
+                        {landingGuide.imageUrl && (
+                          <div className="w-full md:w-1/2 h-56 md:h-auto min-h-[220px] bg-[#F4F3F0] relative overflow-hidden">
+                            <img 
+                              src={landingGuide.imageUrl} 
+                              alt={landingGuide.title} 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                            />
+                            <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-md text-[#171717] text-[10px] font-semibold tracking-widest uppercase px-2.5 py-1 rounded-md border border-[#EAE9E5]">
+                              Featured
+                            </span>
+                          </div>
+                        )}
+                        <div className="w-full md:w-1/2 p-6 md:p-8 flex flex-col justify-between space-y-4">
+                          <div className="space-y-3">
+                            <div>
+                              <span className="bg-[#FAF7F0] border border-[#D6C7A9] text-[#7A6332] text-[10px] font-semibold tracking-wider px-2.5 py-1 rounded-md uppercase inline-block">
+                                {landingGuide.category}
+                              </span>
+                              <span className="text-[10px] text-[#73716C] uppercase tracking-wider ml-2">
+                                • {landingGuide.readTime || '4 min read'}
+                              </span>
+                            </div>
+                            <h4 className="font-sans font-semibold text-[#171717] text-base md:text-lg uppercase tracking-tight group-hover:text-[#7A6332] transition-colors">
+                              {landingGuide.title}
+                            </h4>
+                            <p className="text-xs md:text-sm text-[#73716C] leading-relaxed font-normal line-clamp-2">
+                              {landingGuide.summary}
+                            </p>
+                          </div>
+                          <div className="pt-4 border-t border-[#EAE9E5] flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-[#171717]">
+                            <span>Explore full guide</span>
+                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                          </div>
                         </div>
-                      )}
-                      <div className="flex items-center text-xs text-black/50">
-                        <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">
-                          {landingGuide.category}
-                        </span>
                       </div>
-                      <div>
-                        <h4 className="text-sm font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors">
-                          {landingGuide.title}
-                        </h4>
-                        <p className="text-xs text-black/70 leading-relaxed font-medium mt-1">
-                          {landingGuide.summary}
-                        </p>
-                      </div>
-                      <div className="pt-2 border-t border-black/5 flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-black">
-                        <span>Explore full guide</span>
-                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+
+                      {/* 2-Column Secondary Guides Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {SKINCARE_GUIDES.slice(1, 3).map((guide) => (
+                          <div 
+                            key={guide.id}
+                            onClick={() => {
+                              setSocialActiveMainTab('guides');
+                              setAppState(AppState.SOCIAL);
+                            }}
+                            className="rounded-xl bg-white border border-[#EAE9E5] hover:border-[#CFCBC2] transition-all p-5 cursor-pointer group flex flex-col justify-between space-y-3 shadow-none"
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="bg-[#FAF7F0] border border-[#D6C7A9] text-[#7A6332] text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-md uppercase">
+                                  {guide.category}
+                                </span>
+                                <span className="text-[10px] text-[#73716C] uppercase tracking-wider">{guide.readTime}</span>
+                              </div>
+                              <h5 className="font-sans font-semibold text-[#171717] text-xs uppercase tracking-tight group-hover:text-[#7A6332] transition-colors line-clamp-1">
+                                {guide.title}
+                              </h5>
+                              <p className="text-xs text-[#73716C] line-clamp-2 leading-relaxed">
+                                {guide.summary}
+                              </p>
+                            </div>
+                            <div className="pt-2 border-t border-[#EAE9E5] flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[#171717]">
+                              <span>Read guide</span>
+                              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -5820,6 +5721,39 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                 </div>
               ) : (
                 <div>
+                  {selectedBrandItem && (() => {
+                    const shopLogosConfig = [
+                      { key: 'boots', file: 'boots_logo.png', label: 'Boots' },
+                      { key: 'harrods', file: 'harrods_logo.png', label: 'Harrods' },
+                      { key: 'harvey', file: 'harveynichols_logo.png', label: 'Harvey Nichols' },
+                      { key: 'liberty', file: 'liberty_logo.png', label: 'Liberty' },
+                      { key: 'selfridges', file: 'selfridges_london.png', label: 'Selfridges' },
+                      { key: 'sephora', file: 'sephora_logo.png', label: 'Sephora' },
+                      { key: 'spacenk', file: 'spacenk_logo.png', label: 'Space NK' },
+                    ];
+                    const activeShops = shopLogosConfig.filter(s => selectedBrandItem[s.key] === true);
+                    if (activeShops.length === 0) return null;
+                    return (
+                      <div className="bg-white border border-black/10 rounded-2xl p-4 sm:p-5 mb-4 shadow-sm">
+                        <h3 className="text-xs font-black uppercase tracking-widest text-black/50 mb-3">Available at Retailers & Stockists</h3>
+                        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                          {activeShops.map(shop => {
+                            const { data: { publicUrl } } = supabase.storage.from('web_art').getPublicUrl(`shop_logos/${shop.file}`);
+                            return (
+                              <div key={shop.key} className="bg-neutral-50 border border-black/5 rounded-xl p-2.5 flex items-center justify-center h-12 px-4 shadow-xs" title={shop.label}>
+                                <img 
+                                  src={publicUrl} 
+                                  alt={shop.label} 
+                                  className="max-h-7 max-w-[100px] object-contain"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {loadingBrandProducts ? (
                     <div className="flex items-center justify-center py-20">
                       <Loader2 className="w-8 h-8 animate-spin text-black" />
@@ -6887,7 +6821,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                       {!isEditingGoals && (
                         <button
                           onClick={() => {
-                            console.log('[Profile] Target Skin Goals clicked, user.id:', user?.id, 'current userProfile:', userProfile);
                             setEditMainConcern(userProfile?.main_concern ? Number(userProfile.main_concern) : 12);
                             setEditScndConcern(userProfile?.scnd_concern ? Number(userProfile.scnd_concern) : 12);
                             setGoalsSaveError(null);
@@ -7975,31 +7908,66 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
 
       {/* Bottom Nav Hint */}
       {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL || appState === AppState.BRANDS) && (
-        <div className="fixed bottom-0 left-0 right-0 flex justify-center bg-gradient-to-t from-white to-transparent z-40">
-          <div className="clean-card py-3 px-6 flex justify-between md:justify-center gap-6 md:gap-8 items-center w-full md:w-auto bg-white border-t-2 md:border-2 border-black/5 shadow-2xl md:rounded-3xl">
+        <div className="fixed bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none px-4">
+          <div className="pointer-events-auto bg-white/90 backdrop-blur-md border border-[#E5E4E0] shadow-sm rounded-full px-6 py-2.5 flex items-center gap-6 md:gap-8">
             {user && (
-              <>
-                <Home className={`w-6 h-6 text-black cursor-pointer ${appState === AppState.DASHBOARD ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.DASHBOARD)} />
-                <div className="w-px h-4 bg-black/10 hidden md:block" />
-              </>
+              <button 
+                onClick={() => setAppState(AppState.DASHBOARD)}
+                className={`p-1.5 transition-colors cursor-pointer relative ${appState === AppState.DASHBOARD ? 'text-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
+                title="Dashboard"
+              >
+                <Home className="w-5 h-5 stroke-[1.5]" />
+                {appState === AppState.DASHBOARD && (
+                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#171717] rounded-full" />
+                )}
+              </button>
             )}
-            <ShoppingBag className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.RANK ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.RANK)} />
-            <div className="w-px h-4 bg-black/10 hidden md:block" />
+            
+            <button 
+              onClick={() => setAppState(AppState.RANK)}
+              className={`p-1.5 transition-colors cursor-pointer relative ${appState === AppState.RANK ? 'text-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
+              title="Products"
+            >
+              <ShoppingBag className="w-5 h-5 stroke-[1.5]" />
+              {appState === AppState.RANK && (
+                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#171717] rounded-full" />
+              )}
+            </button>
+
             <button
               onClick={() => triggerPhotoScan(navFileInputRef)}
               disabled={isNavScanning}
-              className="cursor-pointer"
+              className="p-1.5 text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer"
+              title="Scan Product"
             >
               {isNavScanning ? (
-                <Loader2 className="w-6 h-6 animate-spin text-black" />
+                <Loader2 className="w-5 h-5 animate-spin text-[#171717]" />
               ) : (
-                <Camera className="w-6 h-6 opacity-30 hover:opacity-100 text-black" />
+                <Camera className="w-5 h-5 stroke-[1.5]" />
               )}
             </button>
-            <div className="w-px h-4 bg-black/10 hidden md:block" />
-            <CheckSquare className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.TRACKER ? '' : 'opacity-30'}`} onClick={() => setAppState(AppState.TRACKER)} />
-            <div className="w-px h-4 bg-black/10 hidden md:block" />
-            <Heart className={`w-6 h-6 hover:opacity-100 cursor-pointer text-black ${appState === AppState.SOCIAL ? '' : 'opacity-30'}`} onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); }} />
+
+            <button 
+              onClick={() => setAppState(AppState.TRACKER)}
+              className={`p-1.5 transition-colors cursor-pointer relative ${appState === AppState.TRACKER ? 'text-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
+              title="Tracker"
+            >
+              <CheckSquare className="w-5 h-5 stroke-[1.5]" />
+              {appState === AppState.TRACKER && (
+                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#171717] rounded-full" />
+              )}
+            </button>
+
+            <button 
+              onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); }}
+              className={`p-1.5 transition-colors cursor-pointer relative ${appState === AppState.SOCIAL ? 'text-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
+              title="The Edit & Social"
+            >
+              <Heart className="w-5 h-5 stroke-[1.5]" />
+              {appState === AppState.SOCIAL && (
+                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#171717] rounded-full" />
+              )}
+            </button>
           </div>
         </div>
       )}
@@ -8168,7 +8136,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             <button
               type="button"
               onClick={() => {
-                console.log('[PhotoScan] User clicked cancel button on scan backdrop.');
                 setIsLandingScanning(false);
                 setIsNavScanning(false);
                 setIsDashboardScanning(false);

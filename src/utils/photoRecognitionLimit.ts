@@ -29,8 +29,7 @@ export function recordUnauthenticatedScan(): void {
   try {
     const current = getUnauthenticatedScanCount();
     localStorage.setItem(UNAUTH_KEY, String(current + 1));
-  } catch (e) {
-    console.warn('[Limit] Failed to update unauthenticated scan count:', e);
+  } catch {
   }
 }
 
@@ -64,8 +63,7 @@ export function recordAuthenticatedScan(userId: string): void {
         count: current + 1,
       })
     );
-  } catch (e) {
-    console.warn('[Limit] Failed to update authenticated scan count:', e);
+  } catch {
   }
 }
 

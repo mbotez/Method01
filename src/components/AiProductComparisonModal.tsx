@@ -80,7 +80,6 @@ export const AiProductComparisonModal: React.FC<AiProductComparisonModalProps> =
       const results = await searchProducts(query, 'All');
       setProducts(results || []);
     } catch (err: any) {
-      console.error('Error searching products for comparison:', err);
       setErrorMessage('Failed to search product database.');
     } finally {
       setLoadingProducts(false);
@@ -131,7 +130,6 @@ export const AiProductComparisonModal: React.FC<AiProductComparisonModalProps> =
       setRemainingComps(data.remaining ?? 2);
       setStep('results');
     } catch (err: any) {
-      console.error('AI Comparison error:', err);
       setErrorMessage(err.message || 'An error occurred during comparison.');
       setStep('select');
     }

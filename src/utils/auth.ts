@@ -42,7 +42,6 @@ export const getApiEndpoint = (endpointPath: string): string => {
  */
 export const signInWithGoogle = async () => {
   const redirectTo = getOAuthRedirectUrl();
-  console.log('[Auth] Initiating Google sign in with redirectTo:', redirectTo);
   
   const options: any = {
     provider: 'google',
@@ -62,7 +61,6 @@ export const signInWithGoogle = async () => {
   const { data, error } = await supabase.auth.signInWithOAuth(options);
 
   if (error) {
-    console.error("Supabase OAuth Error:", error);
     throw error;
   }
 
@@ -101,7 +99,6 @@ export const setupCapacitorDeepLinkAuth = (
 
     if (isAuthCallback) {
       lastHandledUrl = url;
-      console.log('[Auth] Capacitor deep link auth callback received:', url);
 
       try {
         const parsedUrl = new URL(url);
@@ -111,7 +108,6 @@ export const setupCapacitorDeepLinkAuth = (
         const errorDesc = searchParams.get('error_description') || hashParams.get('error_description') || searchParams.get('error') || hashParams.get('error');
         if (errorDesc) {
           const decoded = decodeURIComponent(errorDesc.replace(/\+/g, ' '));
-          console.error('[Auth] OAuth error in deep link:', decoded);
           try { await Browser.close(); } catch {}
           onError?.(decoded);
           return;
@@ -120,13 +116,10 @@ export const setupCapacitorDeepLinkAuth = (
         const code = searchParams.get('code') || hashParams.get('code');
         if (code) {
           try { await Browser.close(); } catch {}
-          console.log('[Auth] Exchanging code for session...');
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) {
-            console.error('[Auth] exchangeCodeForSession error:', error);
             onError?.(error.message);
           } else if (data?.session) {
-            console.log('[Auth] Session established successfully via code exchange for:', data.session.user.email);
             onSuccess?.();
           } else {
             onError?.('Failed to establish session from code');
@@ -142,7 +135,6 @@ export const setupCapacitorDeepLinkAuth = (
         }
       } catch (err: any) {
         try { await Browser.close(); } catch {}
-        console.error('[Auth] Error handling deep link:', err);
         onError?.(err?.message || 'Authentication error');
       }
     }
@@ -181,7 +173,6 @@ export const handleWebAuthCallback = async (
   const errorDescription = urlParams.get('error_description') || hashParams.get('error_description') || urlParams.get('error') || hashParams.get('error');
   if (errorDescription) {
     const decodedError = decodeURIComponent(errorDescription.replace(/\+/g, ' '));
-    console.error('[Auth] OAuth error in URL:', decodedError);
     onError?.(decodedError);
     return false;
   }
@@ -190,12 +181,10 @@ export const handleWebAuthCallback = async (
   const hasAuthParams = currentUrl.includes('code=') || currentUrl.includes('access_token=');
 
   if (hasAuthCallbackPath || hasAuthParams) {
-    console.log('[Auth] Handling web auth callback/params via onAuthStateChange');
     
     return new Promise((resolve) => {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' && session) {
-          console.log('[Auth] Web auth callback SIGNED_IN event received for:', session.user.email);
           subscription.unsubscribe();
           window.history.replaceState(null, '', '/dashboard');
           onSuccess?.();

@@ -102,11 +102,9 @@ serve(async (req) => {
           const filesToRemove = listData.map((file) => `${userId}/${file.name}`);
           const { error: removeError } = await supabaseAdmin.storage.from(bucket).remove(filesToRemove);
           if (removeError) {
-            console.warn(`Warning: failed to remove storage files in bucket ${bucket}: ${removeError.message}`);
           }
         }
       } catch (err) {
-        console.warn(`Warning: bucket ${bucket} operation failed:`, err);
       }
     }
 

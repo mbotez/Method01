@@ -27,7 +27,6 @@ const customFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (err: any) {
     if (err.name === 'AbortError') {
-      console.warn('[Supabase Network] Request aborted due to 25s timeout:', input);
       throw new Error('Supabase network request timed out. Please check your internet connection.');
     }
     throw err;
@@ -73,18 +72,15 @@ export async function recoverSupabaseSession(forceRefresh: boolean = false): Pro
   isRecoveringSession = true;
   lastRecoveryTimestamp = now;
 
-  console.log('[Supabase Session] Initiating session and socket health check...');
 
   try {
     try {
       supabase.auth.startAutoRefresh();
     } catch (e) {
-      console.warn('[Supabase Session] Could not start auto refresh:', e);
     }
 
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     if (sessionError) {
-      console.warn('[Supabase Session] getSession reported error:', sessionError.message);
     }
 
     const session = sessionData?.session;
@@ -94,18 +90,14 @@ export async function recoverSupabaseSession(forceRefresh: boolean = false): Pro
       const isExpiredOrClose = expiresAt - nowSec < 180;
 
       if (isExpiredOrClose || forceRefresh) {
-        console.log(`[Supabase Session] Token is ${isExpiredOrClose ? 'stale/expiring' : 'force-refreshing'}. Refreshing now...`);
         const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
         if (refreshError) {
-          console.error('[Supabase Session] Failed to refresh token:', refreshError.message);
           const msg = (refreshError.message || '').toLowerCase();
           if (msg.includes('refresh token') || msg.includes('invalid') || (refreshError as any).status === 400) {
-            console.warn('[Supabase Session] Clearing invalid local session.');
             await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
           }
           return false;
         }
-        console.log('[Supabase Session] Token refreshed successfully.');
       }
     }
 
@@ -117,12 +109,10 @@ export async function recoverSupabaseSession(forceRefresh: boolean = false): Pro
         }
       }
     } catch (rtErr) {
-      console.warn('[Supabase Realtime] Error checking or reconnecting realtime socket:', rtErr);
     }
 
     return true;
   } catch (err: any) {
-    console.error('[Supabase Session] Exception during recoverSupabaseSession:', err.message || err);
     return false;
   } finally {
     isRecoveringSession = false;
