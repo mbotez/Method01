@@ -65,11 +65,18 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id || !productId) return;
 
+    const numericId = Number(productId);
+    const isValidNumeric = !isNaN(numericId) && numericId > 0;
+    const targetProductId = isValidNumeric
+      ? numericId
+      : (trackerItem?.product_id && !isNaN(Number(trackerItem.product_id)) ? Number(trackerItem.product_id) : null);
+    const effectiveProductId = targetProductId != null ? targetProductId : productId;
+
     try {
       await supabase
         .from('product_user_ratings')
         .upsert({
-          product_id: String(productId),
+          product_id: effectiveProductId,
           user_id: session.user.id,
           dwis: field === 'dwis' ? value : ratings.dwis || null,
           price_value: field === 'price_value' ? value : ratings.price_value || null,
@@ -114,6 +121,7 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
         const targetProductId = isValidNumeric
           ? numericId
           : (trackerItem?.product_id && !isNaN(Number(trackerItem.product_id)) ? Number(trackerItem.product_id) : null);
+        const effectiveProductId = targetProductId != null ? targetProductId : productId;
 
         const culpritsPromise = targetProductId != null
           ? (async () => {
@@ -165,7 +173,7 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
             return await supabase
               .rpc('evaluate_product_compatibility', {
                 p_user_id: targetUserId,
-                p_product_id: String(productId)
+                p_product_id: effectiveProductId
               })
               .abortSignal(signal);
           } catch (err: any) {
@@ -323,7 +331,7 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
               return await supabase
                 .from('product_user_ratings')
                 .select('*')
-                .eq('product_id', String(productId))
+                .eq('product_id', effectiveProductId)
                 .eq('user_id', session.user.id)
                 .abortSignal(signal)
                 .maybeSingle();
@@ -575,31 +583,22 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
       onClick={(e) => e.stopPropagation()}
     >
       {/* Top Header Bar */}
-      <div className="flex items-center justify-between bg-black text-white px-3 sm:px-5 py-2.5 sm:py-3 border-b border-white/10 flex-shrink-0">
+      <div className="flex items-center justify-between bg-[#B0D8FA] text-black px-3 sm:px-5 py-2.5 sm:py-3 border-b border-black/10 flex-shrink-0">
         <div className="flex items-center gap-2 sm:gap-2.5">
-          <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+          <div className="w-6 h-6 rounded-lg bg-black/10 text-black flex items-center justify-center shrink-0">
             <ArrowLeftRight className="w-3.5 h-3.5" />
           </div>
           <div>
-            <h2 className="text-xs font-black uppercase tracking-wider text-white">Side-by-Side Comparison</h2>
-            <p className="text-[10px] text-white/50 hidden sm:block">Rows display respective formula sections for direct side-by-side analysis</p>
+            <h2 className="text-xs font-black uppercase tracking-wider text-black">Side-by-Side Comparison</h2>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             type="button"
-            onClick={onCloseProduct2}
-            className="text-[10px] sm:text-[11px] font-bold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-xl transition-colors cursor-pointer"
-            title="Keep Product A only"
-          >
-            Exit Comparison
-          </button>
-          <button
-            type="button"
             aria-label="Close comparison modal"
             onClick={onClose}
-            className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/80 hover:text-white transition-colors cursor-pointer"
+            className="w-7 h-7 rounded-full bg-black/10 hover:bg-black/20 flex items-center justify-center text-black transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -1357,35 +1356,23 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
               </td>
               {/* Product 1 Ratings */}
               <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                <div className="space-y-1">
-                  <RatingSlider 
-                    label="Does what it says" 
-                    value={p1.ratings.dwis} 
-                    onChange={(v) => p1.handleUpdateRating('dwis', v)} 
-                    tooltipText="Rate how well the product lives up to its formula claims"
-                    disabled={!p1.isAuthenticated}
-                  />
-                  <RatingSlider 
-                    label="Price / Value" 
-                    value={p1.ratings.price_value} 
-                    onChange={(v) => p1.handleUpdateRating('price_value', v)} 
-                    tooltipText="Rate formula value for its cost"
-                    disabled={!p1.isAuthenticated}
-                  />
-                  <RatingSlider 
-                    label="Sensory Feel" 
-                    value={p1.ratings.feel} 
-                    onChange={(v) => p1.handleUpdateRating('feel', v)} 
-                    tooltipText="Rate skin texture, absorption, and finish"
-                    disabled={!p1.isAuthenticated}
-                  />
-                  <RatingSlider 
-                    label="Layers Well" 
-                    value={p1.ratings.layer} 
-                    onChange={(v) => p1.handleUpdateRating('layer', v)} 
-                    tooltipText="Rate whether it pills or layers well with other products"
-                    disabled={!p1.isAuthenticated}
-                  />
+                <div className="space-y-1.5 bg-gray-50/80 p-2.5 rounded-xl border border-gray-100">
+                  {[
+                    { key: 'dwis', label: 'Does what it says' },
+                    { key: 'price_value', label: 'Price / Value' },
+                    { key: 'feel', label: 'Sensory Feel' },
+                    { key: 'layer', label: 'Layers Well' },
+                  ].map(metric => {
+                    const val = p1.ratings[metric.key as keyof typeof p1.ratings] || 0;
+                    return (
+                      <div key={metric.key} className="flex items-center justify-between text-[11px] bg-white px-2.5 py-1.5 rounded-xl border border-gray-200/60 shadow-2xs">
+                        <span className="text-black/70 font-bold">{metric.label}:</span>
+                        <span className="font-mono font-black text-black">
+                          {val > 0 ? `${val} / 5` : 'None'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
                 {trackerItem1 && (
                   <div className="mt-2 pt-2 border-t border-black/5 flex items-center gap-1.5 text-[9px] font-bold text-gray-500 uppercase flex-wrap">
@@ -1398,35 +1385,23 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
 
               {/* Product 2 Ratings */}
               <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                <div className="space-y-1">
-                  <RatingSlider 
-                    label="Does what it says" 
-                    value={p2.ratings.dwis} 
-                    onChange={(v) => p2.handleUpdateRating('dwis', v)} 
-                    tooltipText="Rate how well the product lives up to its formula claims"
-                    disabled={!p2.isAuthenticated}
-                  />
-                  <RatingSlider 
-                    label="Price / Value" 
-                    value={p2.ratings.price_value} 
-                    onChange={(v) => p2.handleUpdateRating('price_value', v)} 
-                    tooltipText="Rate formula value for its cost"
-                    disabled={!p2.isAuthenticated}
-                  />
-                  <RatingSlider 
-                    label="Sensory Feel" 
-                    value={p2.ratings.feel} 
-                    onChange={(v) => p2.handleUpdateRating('feel', v)} 
-                    tooltipText="Rate skin texture, absorption, and finish"
-                    disabled={!p2.isAuthenticated}
-                  />
-                  <RatingSlider 
-                    label="Layers Well" 
-                    value={p2.ratings.layer} 
-                    onChange={(v) => p2.handleUpdateRating('layer', v)} 
-                    tooltipText="Rate whether it pills or layers well with other products"
-                    disabled={!p2.isAuthenticated}
-                  />
+                <div className="space-y-1.5 bg-gray-50/80 p-2.5 rounded-xl border border-gray-100">
+                  {[
+                    { key: 'dwis', label: 'Does what it says' },
+                    { key: 'price_value', label: 'Price / Value' },
+                    { key: 'feel', label: 'Sensory Feel' },
+                    { key: 'layer', label: 'Layers Well' },
+                  ].map(metric => {
+                    const val = p2.ratings[metric.key as keyof typeof p2.ratings] || 0;
+                    return (
+                      <div key={metric.key} className="flex items-center justify-between text-[11px] bg-white px-2.5 py-1.5 rounded-xl border border-gray-200/60 shadow-2xs">
+                        <span className="text-black/70 font-bold">{metric.label}:</span>
+                        <span className="font-mono font-black text-black">
+                          {val > 0 ? `${val} / 5` : 'None'}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
                 {trackerItem2 && (
                   <div className="mt-2 pt-2 border-t border-black/5 flex items-center gap-1.5 text-[9px] font-bold text-gray-500 uppercase flex-wrap">

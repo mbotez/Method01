@@ -198,9 +198,8 @@ export async function hydrateRoutineProducts(routines: any[]): Promise<any[]> {
 
 /**
  * Fetches user routines with live joined product attributes.
- * Attempts the database RPC function first (if provisioned), and seamlessly
- * falls back to a live relational join across `routines`, `products`,
- * `product_scores`, and `products_filter`.
+ * Performs a relational query on `routines` and live joins product attributes
+ * across `products`, `product_scores`, and `products_filter`.
  */
 export async function fetchRoutinesWithLiveProducts(
   userId: string,
@@ -208,23 +207,7 @@ export async function fetchRoutinesWithLiveProducts(
 ): Promise<any[]> {
   if (!userId) return [];
 
-  // 1. Attempt database RPC function if available in Supabase
-  try {
-    let rpcQuery = supabase.rpc('get_routines_with_live_products', {
-      p_user_id: userId
-    });
-    if (signal) {
-      rpcQuery = rpcQuery.abortSignal(signal);
-    }
-    const { data: rpcData, error: rpcError } = await rpcQuery;
-    if (!rpcError && Array.isArray(rpcData) && rpcData.length > 0) {
-      return rpcData;
-    }
-  } catch {
-    // Graceful fallback to client-side live join
-  }
-
-  // 2. Query routines directly
+  // Query routines directly
   let query = supabase
     .from('routines')
     .select('*')
@@ -240,6 +223,6 @@ export async function fetchRoutinesWithLiveProducts(
     return [];
   }
 
-  // 3. Live join and hydrate product attributes
+  // Live join and hydrate product attributes
   return await hydrateRoutineProducts(rawRoutines);
 }

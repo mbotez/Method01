@@ -262,12 +262,17 @@ export const ChatQuestionnaire = ({
       const fetchIngredients = async () => {
         const { data } = await supabase
           .from('ingredient_scores')
-          .select('ingredient')
+          .select('id, ingredient')
           .ilike('ingredient', `%${debouncedIngredientSearchQuery}%`)
           .limit(10);
         if (data) {
-          const unique = Array.from(new Set(data.map((d: any) => d.ingredient).filter(Boolean)));
-          setIngredientSearchResults(unique);
+          const map = new Map<string, { id: number; name: string }>();
+          data.forEach((d: any) => {
+            if (d.ingredient && !map.has(d.ingredient.toLowerCase())) {
+              map.set(d.ingredient.toLowerCase(), { id: d.id, name: d.ingredient });
+            }
+          });
+          setIngredientSearchResults(Array.from(map.values()));
           setIsIngredientDropdownOpen(true);
         }
       };
@@ -1408,34 +1413,44 @@ export const ChatQuestionnaire = ({
                 <div className="relative w-full max-w-md">
                   {(answers[currentStep.key] || []).length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-3">
-                      {(answers[currentStep.key] || []).map((ing: string, i: number) => (
-                        <div key={i} className="flex items-center gap-1.5 bg-amber-100 text-neutral-900 px-3.5 py-1.5 rounded-full text-[15px] md:text-lg font-medium shadow-xs">
-                          <span>{ing}</span>
-                          <button onClick={() => updateAnswer(currentStep.key, (answers[currentStep.key] || []).filter((_: any, index: number) => index !== i))}>
-                            <X className="w-3.5 h-3.5 text-neutral-600 hover:text-neutral-900" />
-                          </button>
-                        </div>
-                      ))}
+                      {(answers[currentStep.key] || []).map((ing: any, i: number) => {
+                        const name = typeof ing === 'object' && ing?.name ? ing.name : String(ing);
+                        return (
+                          <div key={i} className="flex items-center gap-1.5 bg-amber-100 text-neutral-900 px-3.5 py-1.5 rounded-full text-[15px] md:text-lg font-medium shadow-xs">
+                            <span>{name}</span>
+                            <button onClick={() => updateAnswer(currentStep.key, (answers[currentStep.key] || []).filter((_: any, index: number) => index !== i))}>
+                              <X className="w-3.5 h-3.5 text-neutral-600 hover:text-neutral-900" />
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   {isIngredientDropdownOpen && ingredientSearchResults.length > 0 && (
                     <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-neutral-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-50">
-                      {ingredientSearchResults.map((ingName: string, idx: number) => (
-                        <button
-                          key={idx}
-                          onClick={() => {
-                            const currentList = answers[currentStep.key] || [];
-                            if (!currentList.includes(ingName)) {
-                              updateAnswer(currentStep.key, [...currentList, ingName]);
-                            }
-                            setIngredientSearchQuery('');
-                            setIsIngredientDropdownOpen(false);
-                          }}
-                          className="block w-full text-left p-3.5 hover:bg-neutral-100 text-[15px] md:text-lg text-neutral-800 border-b border-neutral-100 last:border-b-0 font-medium cursor-pointer"
-                        >
-                          {ingName}
-                        </button>
-                      ))}
+                      {ingredientSearchResults.map((ingItem: any, idx: number) => {
+                        const ingObj = typeof ingItem === 'object' && ingItem !== null ? ingItem : { id: null, name: String(ingItem) };
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              const currentList = answers[currentStep.key] || [];
+                              const alreadyExists = currentList.some((item: any) => 
+                                (typeof item === 'object' && item.id !== null && item.id === ingObj.id) ||
+                                (typeof item === 'object' && item.name ? item.name.toLowerCase() : String(item).toLowerCase()) === ingObj.name.toLowerCase()
+                              );
+                              if (!alreadyExists) {
+                                updateAnswer(currentStep.key, [...currentList, ingObj]);
+                              }
+                              setIngredientSearchQuery('');
+                              setIsIngredientDropdownOpen(false);
+                            }}
+                            className="w-full text-left p-3.5 hover:bg-neutral-100 text-[15px] md:text-lg text-neutral-800 border-b border-neutral-100 last:border-b-0 font-medium cursor-pointer flex items-center justify-between"
+                          >
+                            <span>{ingObj.name}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                   <div className="flex flex-col gap-2">
@@ -1451,7 +1466,8 @@ export const ChatQuestionnaire = ({
                       <button 
                         onClick={() => {
                           const ans = answersRef.current[currentStep.key] || [];
-                          addUserMessage(ans.length > 0 ? ans.join(", ") : "None");
+                          const names = ans.map((a: any) => typeof a === 'object' && a?.name ? a.name : String(a));
+                          addUserMessage(names.length > 0 ? names.join(", ") : "None");
                           handleNext(answersRef.current);
                         }} 
                         className="bg-amber-300 text-neutral-900 px-5 py-3.5 rounded-2xl text-[15px] md:text-lg font-bold hover:bg-amber-400 transition-colors cursor-pointer shadow-xs"

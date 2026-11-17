@@ -69,8 +69,21 @@ export async function productSort(userProfile: any, productType: string, page: n
   const activesUsed = Array.isArray(userProfile?.actives_used) 
     ? [...userProfile.actives_used].sort().join(',') 
     : '';
+  const pastProblems = Array.isArray(userProfile?.past_problems)
+    ? [...userProfile.past_problems].sort().join(',')
+    : '';
 
-  const cacheKey = `productsort_${productType}_pg-${page}_cat3-${cat3}_${userProfile?.id || 'anonymous'}_st-${skinType}_bs-${barrierStatus}_pr-${pregnant}_mc-${mainConcern}_sc-${scndConcern}_act-${activesUsed}`;
+  const serializeVal = (val: any) => {
+    if (val === undefined || val === null) return '';
+    if (Array.isArray(val)) return [...val].sort().join(',');
+    return String(val);
+  };
+  const breakoutType = serializeVal(userProfile?.breakout_type);
+  const scanBreakoutType = serializeVal(userProfile?.scan_breakout_type);
+  const blemishAssessment = serializeVal(userProfile?.blemish_assessment);
+  const newProductReaction = serializeVal(userProfile?.new_product_reaction);
+
+  const cacheKey = `productsort_${productType}_pg-${page}_cat3-${cat3}_${userProfile?.id || 'anonymous'}_st-${skinType}_bs-${barrierStatus}_pr-${pregnant}_mc-${mainConcern}_sc-${scndConcern}_act-${activesUsed}_pp-${pastProblems}_bt-${breakoutType}_sbt-${scanBreakoutType}_ba-${blemishAssessment}_npr-${newProductReaction}`;
   
   if (forceRefresh) {
     safeSessionStorageRemove(cacheKey);

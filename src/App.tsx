@@ -41,7 +41,8 @@ import {
   Sparkles,
   Sliders,
   Check,
-  MessageSquare
+  MessageSquare,
+  HelpCircle
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase, recoverSupabaseSession } from './lib/supabase';
@@ -61,7 +62,7 @@ import { searchProductsFromPhoto, ProductConfirmationModal, MatchedProduct } fro
 import { productSort } from './utils/productsort';
 import { searchProducts } from "./utils/TextSearch";
 import { TrackerSpreadsheetRow } from './components/TrackerSpreadsheetRow';
-import { checkRoutine, RoutineCheckResult, UserProfile } from './utils/RoutineCheck';
+import { checkRoutine, RoutineCheckResult, UserProfile, getActivesBudgetExplanation } from './utils/RoutineCheck';
 import { fetchRoutinesWithLiveProducts } from './utils/routineFetcher';
 import { BREAKOUT_PHOTO_OPTIONS, getBreakoutTitle, breakoutTypeStringToId } from './data/breakoutOptions';
 import { setupCapacitorDeepLinkAuth, handleWebAuthCallback, isNativePlatform } from './utils/auth';
@@ -131,7 +132,8 @@ enum AppState {
   ROUTINES,
   PRIVACY_POLICY,
   DELETE_ACCOUNT,
-  FEEDBACK
+  FEEDBACK,
+  BRANDS
 }
 
 const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
@@ -183,6 +185,163 @@ const ACTIVES_TEXT_MAP: Record<number | string, string> = {
   2: 'Over-the-counter retinols',
   3: 'Exfoliating acids (salicylic, glycolic etc)',
   4: "None/ I'm not sure"
+};
+
+export const ACTIVE_SKINCARE_OPTIONS = [
+  { id: 1, label: 'Prescription retinoids (tretinoin, adapalene etc)' },
+  { id: 2, label: 'Over-the-counter retinols' },
+  { id: 3, label: 'Exfoliating acids (salicylic, glycolic etc)' },
+  { id: 4, label: "None/ I'm not sure" }
+] as const;
+
+export const getActivesSelectedIds = (raw: any): number[] => {
+  if (raw === null || raw === undefined) return [];
+  let items: any[] = [];
+  if (Array.isArray(raw)) {
+    items = raw;
+  } else if (typeof raw === 'number') {
+    items = [raw];
+  } else if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      items = trimmed.slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim());
+    } else if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        items = JSON.parse(trimmed);
+      } catch {
+        items = trimmed.split(',').map(s => s.trim());
+      }
+    } else if (trimmed.includes(',')) {
+      items = trimmed.split(',').map(s => s.trim());
+    } else if (trimmed !== '') {
+      items = [trimmed];
+    }
+  }
+
+  const selected = new Set<number>();
+  for (const item of items) {
+    if (item === null || item === undefined) continue;
+    const s = String(item).trim();
+    const num = Number(s);
+    if (!isNaN(num) && num >= 1 && num <= 4) {
+      selected.add(num);
+    } else {
+      const lower = s.toLowerCase();
+      if (lower.includes('prescription') || lower.includes('tretinoin') || lower.includes('adapalene')) {
+        selected.add(1);
+      } else if (lower.includes('over-the-counter') || lower.includes('retinol') || lower.includes('otc')) {
+        selected.add(2);
+      } else if (lower.includes('acid') || lower.includes('exfoliat') || lower.includes('salicylic') || lower.includes('glycolic')) {
+        selected.add(3);
+      } else if (lower.includes('none') || lower.includes('not sure')) {
+        selected.add(4);
+      }
+    }
+  }
+  return Array.from(selected);
+};
+
+export interface AvoidedIngredient {
+  id: number | null;
+  name: string;
+}
+
+export const extractAvoidedIngredientIds = (raw: any): number[] => {
+  if (raw === null || raw === undefined) return [];
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        parsed = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    } else if (trimmed.includes(',')) {
+      parsed = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (trimmed !== '') {
+      parsed = [trimmed];
+    } else {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    if (typeof parsed === 'number' && !isNaN(parsed)) return [parsed];
+    if (typeof parsed === 'string') {
+      const num = parseInt(parsed.trim(), 10);
+      if (!isNaN(num) && String(num) === parsed.trim()) return [num];
+    }
+    if (typeof parsed === 'object' && parsed !== null) {
+      if (parsed.id !== undefined && parsed.id !== null) {
+        const num = Number(parsed.id);
+        return !isNaN(num) ? [num] : [];
+      }
+    }
+    return [];
+  }
+
+  const ids: number[] = [];
+  for (const item of parsed) {
+    if (item === null || item === undefined) continue;
+    if (typeof item === 'number' && !isNaN(item)) {
+      if (!ids.includes(item)) ids.push(item);
+    } else if (typeof item === 'string') {
+      const num = parseInt(item.trim(), 10);
+      if (!isNaN(num) && String(num) === item.trim()) {
+        if (!ids.includes(num)) ids.push(num);
+      }
+    } else if (typeof item === 'object' && item !== null) {
+      if (item.id !== undefined && item.id !== null) {
+        const num = Number(item.id);
+        if (!isNaN(num) && !ids.includes(num)) ids.push(num);
+      }
+    }
+  }
+  return ids;
+};
+
+export const parseAvoidedIngredients = (raw: any): AvoidedIngredient[] => {
+  if (!raw) return [];
+
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        parsed = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    } else if (trimmed.includes(',')) {
+      parsed = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (trimmed !== '') {
+      parsed = [trimmed];
+    } else {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    if (typeof parsed === 'object' && parsed !== null) {
+      parsed = [parsed];
+    } else {
+      return [];
+    }
+  }
+
+  return parsed.map((item: any) => {
+    if (typeof item === 'object' && item !== null) {
+      const id = typeof item.id === 'number' ? item.id : (item.id ? parseInt(String(item.id), 10) || null : null);
+      const name = item.name || item.ingredient || item.label || item.title || (id ? `Ingredient #${id}` : '');
+      return { id, name: String(name).trim() };
+    }
+    if (typeof item === 'number') {
+      return { id: item, name: `Ingredient #${item}` };
+    }
+    const str = String(item).trim();
+    return { id: null, name: str };
+  }).filter(ing => ing.name.length > 0 || ing.id !== null);
 };
 
 const DEFAULT_LANDING_ARTICLES = [
@@ -617,17 +776,49 @@ export default function App() {
   const [pregnantSaveError, setPregnantSaveError] = useState<string | null>(null);
 
   const [isEditingActives, setIsEditingActives] = useState(false);
-  const [editActivesVal, setEditActivesVal] = useState<string[]>([]);
+  const [editActivesVal, setEditActivesVal] = useState<number[]>([]);
   const [isSavingActives, setIsSavingActives] = useState(false);
   const [activesSaveError, setActivesSaveError] = useState<string | null>(null);
 
   const [isEditingPastProblems, setIsEditingPastProblems] = useState(false);
-  const [editPastProblemsVal, setEditPastProblemsVal] = useState<string[]>([]);
+  const [editPastProblemsVal, setEditPastProblemsVal] = useState<AvoidedIngredient[]>([]);
   const [newProblemInput, setNewProblemInput] = useState('');
-  const [ingredientSuggestions, setIngredientSuggestions] = useState<string[]>([]);
+  const [ingredientSuggestions, setIngredientSuggestions] = useState<AvoidedIngredient[]>([]);
   const [isIngredientSuggestionsOpen, setIsIngredientSuggestionsOpen] = useState(false);
   const [isSavingPastProblems, setIsSavingPastProblems] = useState(false);
   const [pastProblemsSaveError, setPastProblemsSaveError] = useState<string | null>(null);
+  const [avoidedIngredientNames, setAvoidedIngredientNames] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    const ids = extractAvoidedIngredientIds(userProfile?.past_problems);
+    if (ids.length === 0) return;
+
+    const needed = ids.filter(id => !avoidedIngredientNames[id]);
+    if (needed.length === 0) return;
+
+    let isMounted = true;
+    supabase
+      .from('ingredient_scores')
+      .select('id, ingredient')
+      .in('id', needed)
+      .then(({ data, error }) => {
+        if (!error && data && isMounted) {
+          setAvoidedIngredientNames(prev => {
+            const next = { ...prev };
+            data.forEach((d: any) => {
+              if (d.id && d.ingredient) {
+                next[d.id] = d.ingredient;
+              }
+            });
+            return next;
+          });
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userProfile?.past_problems]);
 
   useEffect(() => {
     const q = newProblemInput.trim();
@@ -640,11 +831,20 @@ export default function App() {
       try {
         const { data, error } = await supabase
           .from('ingredient_scores')
-          .select('ingredient')
+          .select('id, ingredient')
           .ilike('ingredient', `%${q}%`)
           .limit(10);
         if (!error && data) {
-          const unique = Array.from(new Set(data.map((d: any) => d.ingredient).filter(Boolean)));
+          const map = new Map<string, AvoidedIngredient>();
+          data.forEach((d: any) => {
+            if (d.ingredient && !map.has(d.ingredient.toLowerCase())) {
+              map.set(d.ingredient.toLowerCase(), {
+                id: d.id,
+                name: d.ingredient
+              });
+            }
+          });
+          const unique = Array.from(map.values());
           setIngredientSuggestions(unique);
           setIsIngredientSuggestionsOpen(unique.length > 0);
         }
@@ -654,6 +854,60 @@ export default function App() {
     }, 250);
     return () => clearTimeout(timer);
   }, [newProblemInput, isEditingPastProblems]);
+
+  const handleAddProblemIngredient = async () => {
+    const trimmed = newProblemInput.trim();
+    if (!trimmed) return;
+
+    if (editPastProblemsVal.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
+      setNewProblemInput('');
+      setIsIngredientSuggestionsOpen(false);
+      return;
+    }
+
+    const matchedSug = ingredientSuggestions.find(s => s.name.toLowerCase() === trimmed.toLowerCase());
+    if (matchedSug && matchedSug.id !== null) {
+      setEditPastProblemsVal(prev => [...prev, matchedSug]);
+      setAvoidedIngredientNames(prev => ({ ...prev, [matchedSug.id!]: matchedSug.name }));
+      setNewProblemInput('');
+      setIsIngredientSuggestionsOpen(false);
+      return;
+    }
+
+    try {
+      const { data } = await supabase
+        .from('ingredient_scores')
+        .select('id, ingredient')
+        .ilike('ingredient', trimmed)
+        .limit(1);
+      if (data && data.length > 0) {
+        const item: AvoidedIngredient = { id: data[0].id, name: data[0].ingredient };
+        setEditPastProblemsVal(prev => [...prev, item]);
+        setAvoidedIngredientNames(prev => ({ ...prev, [item.id!]: item.name }));
+      } else {
+        const { data: partial } = await supabase
+          .from('ingredient_scores')
+          .select('id, ingredient')
+          .ilike('ingredient', `%${trimmed}%`)
+          .limit(1);
+        if (partial && partial.length > 0) {
+          const item: AvoidedIngredient = { id: partial[0].id, name: partial[0].ingredient };
+          setEditPastProblemsVal(prev => [...prev, item]);
+          setAvoidedIngredientNames(prev => ({ ...prev, [item.id!]: item.name }));
+        } else {
+          setPastProblemsSaveError(`Could not find "${trimmed}" in the ingredient database. Please select an ingredient from the list.`);
+          return;
+        }
+      }
+    } catch {
+      setPastProblemsSaveError('Error searching ingredient database');
+      return;
+    }
+
+    setNewProblemInput('');
+    setIngredientSuggestions([]);
+    setIsIngredientSuggestionsOpen(false);
+  };
 
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [editUsernameVal, setEditUsernameVal] = useState('');
@@ -781,11 +1035,18 @@ export default function App() {
     setIsSavingBreakout(true);
     setBreakoutSaveError(null);
     try {
+      const isBreakoutActive = Boolean(
+        userProfile?.main_concern === 1 ||
+        userProfile?.scnd_concern === 1 ||
+        editMainConcern === 1 ||
+        editScndConcern === 1
+      );
+      const breakoutPayload = isBreakoutActive ? editBreakoutTypes.slice(0, 1) : editBreakoutTypes;
       const { error } = await supabase
         .from('user_profile')
-        .upsert({ id: user.id, breakout_type: editBreakoutTypes });
+        .upsert({ id: user.id, breakout_type: breakoutPayload });
       if (error) throw error;
-      setUserProfile((prev: any) => prev ? { ...prev, breakout_type: editBreakoutTypes } : { breakout_type: editBreakoutTypes });
+      setUserProfile((prev: any) => prev ? { ...prev, breakout_type: breakoutPayload } : { breakout_type: breakoutPayload });
       setIsEditingBreakout(false);
     } catch (err: any) {
       setBreakoutSaveError(err?.message || 'Failed to update breakout types');
@@ -820,7 +1081,12 @@ export default function App() {
       const { error } = await supabase
         .from('user_profile')
         .upsert({ id: user.id, actives_used: editActivesVal });
-      if (error) throw error;
+      if (error) {
+        const { error: retryErr } = await supabase
+          .from('user_profile')
+          .upsert({ id: user.id, actives_used: editActivesVal.map(String) });
+        if (retryErr) throw retryErr;
+      }
       setUserProfile((prev: any) => prev ? { ...prev, actives_used: editActivesVal } : { actives_used: editActivesVal });
       setIsEditingActives(false);
     } catch (err: any) {
@@ -835,15 +1101,42 @@ export default function App() {
     setIsSavingPastProblems(true);
     setPastProblemsSaveError(null);
     try {
-      const pastProblemsStr = editPastProblemsVal.join(', ');
+      const rawIds: number[] = [];
+      for (const item of editPastProblemsVal) {
+        if (typeof item.id === 'number' && !isNaN(item.id) && item.id > 0) {
+          rawIds.push(item.id);
+        } else if (item.id) {
+          const parsed = parseInt(String(item.id), 10);
+          if (!isNaN(parsed) && parsed > 0) rawIds.push(parsed);
+        } else if (item.name) {
+          const match = item.name.match(/^Ingredient\s*#(\d+)$/i);
+          if (match) {
+            const parsed = parseInt(match[1], 10);
+            if (!isNaN(parsed) && parsed > 0) rawIds.push(parsed);
+          }
+        }
+      }
+      const uniqueIds = Array.from(new Set(rawIds));
+
       const { error } = await supabase
         .from('user_profile')
-        .upsert({ id: user.id, past_problems: pastProblemsStr });
-      if (error) throw error;
-      setUserProfile((prev: any) => prev ? { ...prev, past_problems: pastProblemsStr } : { past_problems: pastProblemsStr });
+        .upsert({ id: user.id, past_problems: uniqueIds });
+
+      if (error) {
+        if (error.message?.toLowerCase().includes('text') || error.code === '42804') {
+          const { error: stringifyErr } = await supabase
+            .from('user_profile')
+            .upsert({ id: user.id, past_problems: JSON.stringify(uniqueIds) });
+          if (stringifyErr) throw stringifyErr;
+        } else {
+          throw error;
+        }
+      }
+
+      setUserProfile((prev: any) => prev ? { ...prev, past_problems: uniqueIds } : { past_problems: uniqueIds });
       setIsEditingPastProblems(false);
     } catch (err: any) {
-      setPastProblemsSaveError(err?.message || 'Failed to update past problems');
+      setPastProblemsSaveError(err?.message || 'Failed to update ingredients to avoid');
     } finally {
       setIsSavingPastProblems(false);
     }
@@ -878,9 +1171,15 @@ export default function App() {
 
       setIsEditingGoals(false);
 
-      // If user edits target skin goals to choose 'Breakouts & post-breakout marks' (id 1), open up breakout type choices
+      // If user edits target skin goals to choose 'Breakouts & post-breakout marks' (id 1), open up breakout type choices restricted to 1
       if (editMainConcern === 1 || editScndConcern === 1) {
-        setEditBreakoutTypes(Array.isArray(userProfile?.breakout_type) ? userProfile.breakout_type : (userProfile?.breakout_type ? [userProfile.breakout_type] : []));
+        const currentBreakout = Array.isArray(userProfile?.breakout_type) 
+          ? userProfile.breakout_type 
+          : (userProfile?.breakout_type ? [userProfile.breakout_type] : []);
+        const normalized = currentBreakout
+          .map((b: any) => typeof b === 'number' ? b : parseInt(String(b), 10))
+          .filter((n: number) => !isNaN(n));
+        setEditBreakoutTypes(normalized.slice(0, 1));
         setIsEditingBreakout(true);
       }
     } catch (err: any) {
@@ -894,6 +1193,94 @@ export default function App() {
   const [lastPost, setLastPost] = useState<any>(null);
   const [loadingLatestVideos, setLoadingLatestVideos] = useState(true);
   const [loadingLastPost, setLoadingLastPost] = useState(true);
+
+const MOBILE_ROW_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+const MOBILE_DROPDOWN_LETTERS = ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+const WEB_ROW_1_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'];
+const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+
+  // Brands page states & effects
+  const [selectedBrandsLetter, setSelectedBrandsLetter] = useState<string | null>(null);
+  const [brandsList, setBrandsList] = useState<any[]>([]);
+  const [selectedBrandItem, setSelectedBrandItem] = useState<any | null>(null);
+  const [brandProducts, setBrandProducts] = useState<any[]>([]);
+  const [loadingBrands, setLoadingBrands] = useState<boolean>(false);
+  const [loadingBrandProducts, setLoadingBrandProducts] = useState<boolean>(false);
+  const [isMobileBrandsDropdownOpen, setIsMobileBrandsDropdownOpen] = useState<boolean>(false);
+  const mobileBrandsDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (mobileBrandsDropdownRef.current && !mobileBrandsDropdownRef.current.contains(e.target as Node)) {
+        setIsMobileBrandsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (appState === AppState.BRANDS) {
+      const fetchBrands = async () => {
+        setLoadingBrands(true);
+        if (!selectedBrandsLetter) {
+          const { data } = await supabase
+            .from('brands')
+            .select('*')
+            .order('brand_name', { ascending: true });
+          setBrandsList(data || []);
+          setLoadingBrands(false);
+          return;
+        }
+
+        let { data, error } = await supabase
+          .from('brands')
+          .select('*')
+          .eq('letter', selectedBrandsLetter)
+          .order('brand_name', { ascending: true });
+
+        if (error || !data || data.length === 0) {
+          const { data: allBrands } = await supabase.from('brands').select('*').order('brand_name', { ascending: true });
+          if (allBrands) {
+            data = allBrands.filter((b: any) => {
+              const bLetter = b.letter || (b.brand_name ? b.brand_name.charAt(0).toUpperCase() : '');
+              return bLetter === selectedBrandsLetter;
+            });
+          }
+        }
+        setBrandsList(data || []);
+        setLoadingBrands(false);
+      };
+      fetchBrands();
+    }
+  }, [appState, selectedBrandsLetter]);
+
+  useEffect(() => {
+    if (selectedBrandItem) {
+      const fetchBrandProducts = async () => {
+        setLoadingBrandProducts(true);
+        let { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .eq('brand_id', selectedBrandItem.brand_id);
+
+        if (error || !data || data.length === 0) {
+          const { data: nameData } = await supabase
+            .from('products')
+            .select('*')
+            .ilike('brand', selectedBrandItem.brand_name);
+          if (nameData) {
+            data = nameData;
+          }
+        }
+        setBrandProducts(data || []);
+        setLoadingBrandProducts(false);
+      };
+      fetchBrandProducts();
+    } else {
+      setBrandProducts([]);
+    }
+  }, [selectedBrandItem]);
 
   // Dashboard Product Scan States
   const dashboardFileInputRef = useRef<HTMLInputElement>(null);
@@ -1549,7 +1936,7 @@ export default function App() {
             makeup: answers.makeup || null,
             makeup_remove: answers.makeupRemove || null,
             current_products: answers.currentProducts || [],
-            past_problems: Array.isArray(answers.pastProblems) ? answers.pastProblems.join(', ') : (answers.pastProblems || null),
+            past_problems: extractAvoidedIngredientIds(answers.pastProblems),
             redness: rednessScore,
             redness_score: answers.redness_score !== undefined ? Number(answers.redness_score) : null,
             wrinkles_score: answers.wrinkles_score !== undefined ? Number(answers.wrinkles_score) : null,
@@ -1565,6 +1952,18 @@ export default function App() {
             .from('user_profile')
             .upsert(profilePayload);
         
+        // Graceful retry fallback if past_problems is still a text column
+        if (profileError && (profileError.message?.toLowerCase().includes('text') || profileError.code === '42804')) {
+            const retryWithTextPastProblems = {
+              ...profilePayload,
+              past_problems: JSON.stringify(profilePayload.past_problems)
+            };
+            const { error: retryError } = await supabase
+              .from('user_profile')
+              .upsert(retryWithTextPastProblems);
+            profileError = retryError;
+        }
+
         // Graceful retry fallback if the new face scan columns or sex/pregnant/actives_used columns do not exist in the backend database yet
         if (profileError && (profileError.message.toLowerCase().includes('column') || profileError.code === '42703')) {
             const { 
@@ -3380,7 +3779,26 @@ export default function App() {
                                 </span>
                               </div>
                               <div className="space-y-0.5 text-left">
-                                <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Actives Budget</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[9px] font-black uppercase text-black/30 block tracking-wider">Actives Budget</span>
+                                  <div className="relative group inline-flex items-center">
+                                    <button 
+                                      type="button"
+                                      aria-label="Why do I have this actives budget?"
+                                      className="text-black/30 hover:text-black/80 focus:text-black/80 focus:outline-none transition-colors p-0.5 rounded-full cursor-help"
+                                    >
+                                      <HelpCircle className="w-3 h-3" />
+                                    </button>
+                                    <div className="pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 absolute right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 bottom-full mb-1.5 w-64 max-w-[80vw] p-2.5 bg-neutral-900 text-white text-[11px] leading-relaxed rounded-lg shadow-xl z-50 text-left font-normal normal-case">
+                                      <p className="font-bold text-white text-[11px] mb-1">Why this budget?</p>
+                                      <p className="text-white/80 text-[11px] leading-snug">
+                                        {check.debug.active_budget_reason || getActivesBudgetExplanation(userProfile, check.debug.active_budget, check.debug.user_irritation_threshold)}
+                                      </p>
+                                      <div className="hidden sm:block absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-neutral-900" />
+                                      <div className="sm:hidden absolute top-full right-2 -mt-[1px] border-4 border-transparent border-t-neutral-900" />
+                                    </div>
+                                  </div>
+                                </div>
                                 <div className="flex items-center justify-between">
                                   <span className="text-xs font-black text-black">
                                     {check.debug.active_count} / {check.debug.active_budget} limit
@@ -3463,7 +3881,16 @@ export default function App() {
                                       ) : (
                                         <CheckCircle2 className="w-4 h-4 text-venus-accent shrink-0 mt-0.5" />
                                       )}
-                                      <span className="font-medium leading-relaxed whitespace-pre-wrap">{rec}</span>
+                                      <span className="font-medium leading-relaxed whitespace-pre-wrap">
+                                        {rec
+                                          .replace(/dry_and_flaky_skin/g, 'dry and flaky skin')
+                                          .replace(/breakouts_and_scars/g, 'breakouts and post-breakout marks')
+                                          .replace(/dark_spots/g, 'dark spots')
+                                          .replace(/wrinkles_and_fine_lines/g, 'wrinkles & fine lines')
+                                          .replace(/pores_and_texture/g, 'large pores & texture')
+                                          .replace(/yeast_breakout/g, 'yeast-reactive skin')
+                                          .replace(/not_sure/g, 'not sure')}
+                                      </span>
                                     </div>
                                   );
                                 })}
@@ -3614,6 +4041,14 @@ export default function App() {
                   >
                     <ShoppingBag className="w-5 h-5 shrink-0" />
                     <span className="text-xs uppercase tracking-widest font-black">Products</span>
+                  </button>
+
+                  <button 
+                    onClick={() => { resetHeaderSearchState(); setAppState(AppState.BRANDS); setSelectedBrandItem(null); setSelectedBrandsLetter(null); setIsMobileNavOpen(false); }} 
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.BRANDS ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                  >
+                    <Award className="w-5 h-5 shrink-0" />
+                    <span className="text-xs uppercase tracking-widest font-black">Brands</span>
                   </button>
 
                   <button 
@@ -4126,7 +4561,7 @@ export default function App() {
             >
               <ProductCardContent 
                 productId={String(selectedProductForPage.id)}
-                onClose={() => setAppState(user ? AppState.DASHBOARD : AppState.RANK)} 
+                onClose={() => setAppState(selectedBrandItem ? AppState.BRANDS : (user ? AppState.DASHBOARD : AppState.RANK))} 
               />
             </motion.div>
           )}
@@ -5136,6 +5571,313 @@ export default function App() {
               </div>
 
               {renderMyRoutinesSection(true)}
+            </motion.div>
+          )}
+
+          {/* BRANDS PAGE */}
+          {appState === AppState.BRANDS && (
+            <motion.div 
+              key="brands-page"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-3 md:space-y-4 max-w-6xl mx-auto w-full pb-16"
+            >
+              <div className="border-b border-black/5 pb-2.5 md:pb-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  {(selectedBrandItem || selectedBrandsLetter) && (
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        if (selectedBrandItem) {
+                          setSelectedBrandItem(null);
+                        } else {
+                          setSelectedBrandsLetter(null);
+                        }
+                      }}
+                      className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-black/70 hover:text-black transition-colors cursor-pointer shrink-0 -ml-1"
+                      aria-label="Back"
+                      title="Back"
+                    >
+                      <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
+                    </button>
+                  )}
+                  <div>
+                    <h2 className="text-2xl md:text-3xl font-sans font-black text-black uppercase tracking-tight leading-tight">
+                      {selectedBrandItem ? selectedBrandItem.brand_name : 'Brands'}
+                    </h2>
+                    {selectedBrandItem && (
+                      <p className="text-xs font-bold text-black/50 mt-0.5">
+                        {loadingBrandProducts ? 'Loading...' : `${brandProducts.length} products in catalog`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Alphabet A to Z Bar */}
+              <div className="bg-white border border-black/10 rounded-2xl p-2.5 md:p-3 shadow-sm">
+                {/* Mobile View: A to G then little dropdown arrow for H-Z */}
+                <div className="flex md:hidden items-center justify-center gap-1 sm:gap-1.5 w-full">
+                  {MOBILE_ROW_LETTERS.map((letter) => {
+                    const isSelected = selectedBrandsLetter === letter;
+                    return (
+                      <button
+                        key={letter}
+                        type="button"
+                        onClick={() => {
+                          setSelectedBrandsLetter(isSelected ? null : letter);
+                          setSelectedBrandItem(null);
+                        }}
+                        className={`w-8 h-8 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center justify-center shrink-0 ${
+                          isSelected 
+                            ? 'bg-black text-white shadow-md scale-105' 
+                            : 'bg-white text-black/80 border border-black/10 hover:bg-black/5 hover:border-black/30'
+                        }`}
+                      >
+                        {letter}
+                      </button>
+                    );
+                  })}
+
+                  {/* Little dropdown arrow for rest of letters (H to Z) */}
+                  <div className="relative shrink-0" ref={mobileBrandsDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsMobileBrandsDropdownOpen(!isMobileBrandsDropdownOpen)}
+                      className={`w-8 h-8 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center justify-center shrink-0 ${
+                        Boolean(selectedBrandsLetter && MOBILE_DROPDOWN_LETTERS.includes(selectedBrandsLetter))
+                          ? 'bg-black text-white shadow-md scale-105'
+                          : 'bg-white text-black/80 border border-black/10 hover:bg-black/5 hover:border-black/30'
+                      }`}
+                      aria-label="More letters"
+                      aria-expanded={isMobileBrandsDropdownOpen}
+                      title="More letters (H–Z)"
+                    >
+                      {selectedBrandsLetter && MOBILE_DROPDOWN_LETTERS.includes(selectedBrandsLetter) ? (
+                        <span className="flex items-center gap-0.5 text-[11px]">
+                          {selectedBrandsLetter}
+                          <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isMobileBrandsDropdownOpen ? 'rotate-180' : ''}`} />
+                        </span>
+                      ) : (
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMobileBrandsDropdownOpen ? 'rotate-180' : ''}`} />
+                      )}
+                    </button>
+
+                    {isMobileBrandsDropdownOpen && (
+                      <div className="absolute right-0 top-full mt-2 bg-white border border-black/10 rounded-2xl shadow-xl p-3 z-50 w-64 max-w-[90vw]">
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-black/5">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-black/40">
+                            Letters (H–Z)
+                          </span>
+                          {selectedBrandsLetter && MOBILE_DROPDOWN_LETTERS.includes(selectedBrandsLetter) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedBrandsLetter(null);
+                                setIsMobileBrandsDropdownOpen(false);
+                              }}
+                              className="text-[10px] font-bold text-black/50 hover:text-black underline cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {MOBILE_DROPDOWN_LETTERS.map((letter) => {
+                            const isSelected = selectedBrandsLetter === letter;
+                            return (
+                              <button
+                                key={letter}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedBrandsLetter(isSelected ? null : letter);
+                                  setSelectedBrandItem(null);
+                                  setIsMobileBrandsDropdownOpen(false);
+                                }}
+                                className={`h-9 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center justify-center ${
+                                  isSelected
+                                    ? 'bg-black text-white shadow-sm'
+                                    : 'bg-black/5 text-black hover:bg-black/10'
+                                }`}
+                              >
+                                {letter}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Web View: Two rows (A to M, and below that N to Z) */}
+                <div className="hidden md:flex flex-col gap-2 items-center w-full">
+                  <div className="flex items-center justify-center gap-1.5 lg:gap-2">
+                    {WEB_ROW_1_LETTERS.map((letter) => {
+                      const isSelected = selectedBrandsLetter === letter;
+                      return (
+                        <button
+                          key={letter}
+                          type="button"
+                          onClick={() => {
+                            setSelectedBrandsLetter(isSelected ? null : letter);
+                            setSelectedBrandItem(null);
+                          }}
+                          className={`w-9 h-9 lg:w-10 lg:h-10 rounded-xl font-black text-xs lg:text-sm transition-all cursor-pointer flex items-center justify-center ${
+                            isSelected 
+                              ? 'bg-black text-white shadow-md scale-105' 
+                              : 'bg-white text-black/80 border border-black/10 hover:bg-black/5 hover:border-black/30'
+                          }`}
+                        >
+                          {letter}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-center gap-1.5 lg:gap-2">
+                    {WEB_ROW_2_LETTERS.map((letter) => {
+                      const isSelected = selectedBrandsLetter === letter;
+                      return (
+                        <button
+                          key={letter}
+                          type="button"
+                          onClick={() => {
+                            setSelectedBrandsLetter(isSelected ? null : letter);
+                            setSelectedBrandItem(null);
+                          }}
+                          className={`w-9 h-9 lg:w-10 lg:h-10 rounded-xl font-black text-xs lg:text-sm transition-all cursor-pointer flex items-center justify-center ${
+                            isSelected 
+                              ? 'bg-black text-white shadow-md scale-105' 
+                              : 'bg-white text-black/80 border border-black/10 hover:bg-black/5 hover:border-black/30'
+                          }`}
+                        >
+                          {letter}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Content: Brands List or Brand Products */}
+              {!selectedBrandItem ? (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      {selectedBrandsLetter && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBrandsLetter(null)}
+                          className="w-7 h-7 rounded-full hover:bg-black/5 flex items-center justify-center text-black/60 hover:text-black transition-colors cursor-pointer -ml-1"
+                          aria-label="Back to all brands"
+                          title="Back to all brands"
+                        >
+                          <ArrowLeft className="w-4 h-4" />
+                        </button>
+                      )}
+                      <h3 className="text-lg font-black uppercase tracking-tight text-black">
+                        {selectedBrandsLetter ? (
+                          <>
+                            Brands starting with <span className="underline decoration-venus-accent">{selectedBrandsLetter}</span>
+                          </>
+                        ) : (
+                          'All Brands'
+                        )}
+                      </h3>
+                    </div>
+                    <span className="text-xs font-bold text-black/50">{brandsList.length} brands found</span>
+                  </div>
+
+                  {loadingBrands ? (
+                    <div className="flex items-center justify-center py-20">
+                      <Loader2 className="w-8 h-8 animate-spin text-black" />
+                    </div>
+                  ) : brandsList.length === 0 ? (
+                    <div className="bg-white border border-black/10 rounded-2xl p-12 text-center shadow-sm">
+                      <p className="text-sm font-bold text-black/60">No brands found starting with letter {selectedBrandsLetter}.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {brandsList.map((brand) => (
+                        <div
+                          key={brand.brand_id || brand.brand_name}
+                          onClick={() => setSelectedBrandItem(brand)}
+                          className="bg-white border border-black/10 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-black/30 transition-all cursor-pointer flex items-center justify-between group"
+                        >
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent block mb-1">Brand</span>
+                            <h4 className="text-base font-bold text-black group-hover:underline">{brand.brand_name}</h4>
+                            {brand.country && <p className="text-xs text-black/50 mt-1">{brand.country}</p>}
+                          </div>
+                          <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-colors">
+                            <ChevronRight className="w-4 h-4" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {loadingBrandProducts ? (
+                    <div className="flex items-center justify-center py-20">
+                      <Loader2 className="w-8 h-8 animate-spin text-black" />
+                    </div>
+                  ) : brandProducts.length === 0 ? (
+                    <div className="bg-white border border-black/10 rounded-2xl p-12 text-center shadow-sm">
+                      <p className="text-sm font-bold text-black/60">No products found for {selectedBrandItem.brand_name}.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
+                      {brandProducts.map((prod) => (
+                        <div 
+                          key={prod.id}
+                          onClick={() => {
+                            setSelectedProductForPage(prod);
+                            setAppState(AppState.PRODUCT_PAGE);
+                          }}
+                          className="bg-white border border-black/10 rounded-2xl p-2.5 sm:p-4 shadow-sm hover:shadow-md hover:border-black/20 transition-all cursor-pointer flex flex-col justify-between group"
+                        >
+                          <div>
+                            <div className="w-full h-32 sm:h-36 md:h-40 rounded-xl overflow-hidden mb-2 sm:mb-3 bg-neutral-50/80 border border-black/5 flex items-center justify-center p-2 sm:p-2.5">
+                              {prod.photo_url ? (
+                                <img 
+                                  src={prod.photo_url} 
+                                  alt={prod.name || prod.full_name || 'Product'} 
+                                  referrerPolicy="no-referrer" 
+                                  className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200" 
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="flex flex-col items-center justify-center text-black/25">
+                                  <ShoppingBag className="w-6 h-6 sm:w-8 sm:h-8 mb-1 stroke-1" />
+                                  <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider">No Image</span>
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-[9px] sm:text-[10px] uppercase font-black tracking-widest text-venus-accent mb-0.5 sm:mb-1 truncate">
+                              {prod.brand || selectedBrandItem.brand_name}
+                            </p>
+                            <h4 className="text-xs sm:text-sm font-bold text-black line-clamp-2 mb-1 group-hover:underline leading-tight min-h-[2rem]">
+                              {prod.name || prod.full_name}
+                            </h4>
+                            {prod.type && (
+                              <span className="inline-block px-1.5 py-0.5 bg-black/5 rounded text-[9px] sm:text-[10px] font-semibold text-black/70 mb-2 sm:mb-3 truncate max-w-full">
+                                {prod.type}
+                              </span>
+                            )}
+                          </div>
+                          <div className="pt-2 border-t border-black/5 flex items-center justify-between text-[10px] sm:text-xs font-black uppercase text-black">
+                            <span>View Details</span>
+                            <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -6168,7 +6910,13 @@ export default function App() {
                           </label>
                           <select
                             value={editMainConcern}
-                            onChange={(e) => setEditMainConcern(Number(e.target.value))}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setEditMainConcern(val);
+                              if (val === 1 || editScndConcern === 1) {
+                                setEditBreakoutTypes(prev => prev.slice(0, 1));
+                              }
+                            }}
                             className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
                           >
                             {SKIN_CONCERN_OPTIONS.map((c) => (
@@ -6185,7 +6933,13 @@ export default function App() {
                           </label>
                           <select
                             value={editScndConcern}
-                            onChange={(e) => setEditScndConcern(Number(e.target.value))}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setEditScndConcern(val);
+                              if (val === 1 || editMainConcern === 1) {
+                                setEditBreakoutTypes(prev => prev.slice(0, 1));
+                              }
+                            }}
                             className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
                           >
                             {SKIN_CONCERN_OPTIONS.map((c) => (
@@ -6270,105 +7024,131 @@ export default function App() {
 
                   {/* Breakout Types Card */}
                   <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
-                        <Shield className="w-4 h-4 text-purple-500" />
-                        Breakout Characteristics
-                      </h4>
-                      {!isEditingBreakout && (
-                        <button
-                          onClick={() => {
-                            setEditBreakoutTypes(Array.isArray(userProfile?.breakout_type) ? userProfile.breakout_type : (userProfile?.breakout_type ? [userProfile.breakout_type] : []));
-                            setBreakoutSaveError(null);
-                            setIsEditingBreakout(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                          title="Edit breakout types"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          <span>Edit</span>
-                        </button>
-                      )}
-                    </div>
+                    {(() => {
+                      const isBreakoutGoalActive = Boolean(
+                        (isEditingGoals ? (editMainConcern === 1 || editScndConcern === 1) : (userProfile?.main_concern === 1 || userProfile?.scnd_concern === 1)) ||
+                        userProfile?.main_concern === 1 ||
+                        userProfile?.scnd_concern === 1
+                      );
 
-                    {isEditingBreakout ? (
-                      <div className="space-y-4 pt-1">
-                        <p className="text-xs text-black/60 font-medium">Select all breakout characteristics that apply to your skin:</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          {BREAKOUT_PHOTO_OPTIONS.map((opt) => {
-                            const isSelected = editBreakoutTypes.includes(opt.value);
-                            return (
+                      return (
+                        <>
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
+                              <Shield className="w-4 h-4 text-purple-500" />
+                              Breakout Characteristics
+                            </h4>
+                            {!isEditingBreakout && (
                               <button
-                                key={opt.value}
-                                type="button"
                                 onClick={() => {
-                                  if (isSelected) {
-                                    setEditBreakoutTypes(editBreakoutTypes.filter(v => v !== opt.value));
-                                  } else {
-                                    setEditBreakoutTypes([...editBreakoutTypes, opt.value]);
-                                  }
+                                  const raw = Array.isArray(userProfile?.breakout_type) ? userProfile.breakout_type : (userProfile?.breakout_type ? [userProfile.breakout_type] : []);
+                                  const normalized = raw.map((b: any) => typeof b === 'number' ? b : parseInt(String(b), 10)).filter((n: number) => !isNaN(n));
+                                  setEditBreakoutTypes(isBreakoutGoalActive && normalized.length > 1 ? normalized.slice(0, 1) : normalized);
+                                  setBreakoutSaveError(null);
+                                  setIsEditingBreakout(true);
                                 }}
-                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                                  isSelected ? 'border-purple-600 bg-purple-50/50 ring-2 ring-purple-500/20' : 'border-black/10 hover:bg-black/[0.02]'
-                                }`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
+                                title="Edit breakout types"
                               >
-                                {opt.img && (
-                                  <img src={opt.img} alt={opt.title} className="w-full h-20 object-cover rounded-lg mb-2 border border-black/5" />
-                                )}
-                                <span className="text-xs font-black text-black">{opt.title}</span>
-                                {isSelected && <Check className="w-4 h-4 text-purple-600 mt-1 self-end" />}
+                                <Pencil className="w-3 h-3" />
+                                <span>Edit</span>
                               </button>
-                            );
-                          })}
-                        </div>
+                            )}
+                          </div>
 
-                        {breakoutSaveError && (
-                          <p className="text-xs text-red-600 font-semibold">{breakoutSaveError}</p>
-                        )}
+                          {isEditingBreakout ? (
+                            <div className="space-y-4 pt-1">
+                              <p className="text-xs text-black/60 font-medium">
+                                {isBreakoutGoalActive 
+                                  ? 'Select the one that best resembles your breakouts' 
+                                  : 'Select all breakout characteristics that apply to your skin'}
+                              </p>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                {BREAKOUT_PHOTO_OPTIONS.map((opt) => {
+                                  const isSelected = editBreakoutTypes.includes(opt.value);
+                                  return (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      onClick={() => {
+                                        if (isBreakoutGoalActive) {
+                                          if (isSelected) {
+                                            setEditBreakoutTypes([]);
+                                          } else {
+                                            setEditBreakoutTypes([opt.value]);
+                                          }
+                                        } else {
+                                          if (isSelected) {
+                                            setEditBreakoutTypes(editBreakoutTypes.filter(v => v !== opt.value));
+                                          } else {
+                                            setEditBreakoutTypes([...editBreakoutTypes, opt.value]);
+                                          }
+                                        }
+                                      }}
+                                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                        isSelected ? 'border-purple-600 bg-purple-50/50 ring-2 ring-purple-500/20' : 'border-black/10 hover:bg-black/[0.02]'
+                                      }`}
+                                    >
+                                      {opt.img && (
+                                        <img src={opt.img} alt={opt.title} className="w-full h-20 object-cover rounded-lg mb-2 border border-black/5" />
+                                      )}
+                                      <span className="text-xs font-black text-black">{opt.title}</span>
+                                      {isSelected && <Check className="w-4 h-4 text-purple-600 mt-1 self-end" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
 
-                        <div className="flex items-center gap-2 pt-2">
-                          <button
-                            onClick={handleSaveBreakout}
-                            disabled={isSavingBreakout}
-                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                          >
-                            {isSavingBreakout && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                            Save Breakout Types
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsEditingBreakout(false);
-                              setBreakoutSaveError(null);
-                            }}
-                            disabled={isSavingBreakout}
-                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      Array.isArray(userProfile.breakout_type) && userProfile.breakout_type.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {userProfile.breakout_type.map((b: any, idx: number) => (
-                            <span 
-                              key={String(b) + idx} 
-                              className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                              {getBreakoutTitle(b)}
-                            </span>
-                          ))}
-                        </div>
-                      ) : typeof userProfile.breakout_type === 'number' || (typeof userProfile.breakout_type === 'string' && userProfile.breakout_type.trim() !== '') ? (
-                        <span className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
-                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                          {getBreakoutTitle(userProfile.breakout_type)}
-                        </span>
-                      ) : (
-                        <p className="text-xs text-black/40 italic">No specific breakout characteristics specified.</p>
-                      )
-                    )}
+                              {breakoutSaveError && (
+                                <p className="text-xs text-red-600 font-semibold">{breakoutSaveError}</p>
+                              )}
+
+                              <div className="flex items-center gap-2 pt-2">
+                                <button
+                                  onClick={handleSaveBreakout}
+                                  disabled={isSavingBreakout}
+                                  className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                                >
+                                  {isSavingBreakout && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                  Save Breakout Types
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setIsEditingBreakout(false);
+                                    setBreakoutSaveError(null);
+                                  }}
+                                  disabled={isSavingBreakout}
+                                  className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            Array.isArray(userProfile.breakout_type) && userProfile.breakout_type.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {(isBreakoutGoalActive ? userProfile.breakout_type.slice(0, 1) : userProfile.breakout_type).map((b: any, idx: number) => (
+                                  <span 
+                                    key={String(b) + idx} 
+                                    className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                    {getBreakoutTitle(b)}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : typeof userProfile.breakout_type === 'number' || (typeof userProfile.breakout_type === 'string' && userProfile.breakout_type.trim() !== '') ? (
+                              <span className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
+                                <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                {getBreakoutTitle(userProfile.breakout_type)}
+                              </span>
+                            ) : (
+                              <p className="text-xs text-black/40 italic">No specific breakout characteristics specified.</p>
+                            )
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Pregnancy Status Card */}
@@ -6448,9 +7228,7 @@ export default function App() {
                       {!isEditingActives && (
                         <button
                           onClick={() => {
-                            const currentActives = Array.isArray(userProfile?.actives_used) 
-                              ? userProfile.actives_used 
-                              : (userProfile?.actives_used ? [String(userProfile.actives_used)] : []);
+                            const currentActives = getActivesSelectedIds(userProfile?.actives_used);
                             setEditActivesVal(currentActives);
                             setActivesSaveError(null);
                             setIsEditingActives(true);
@@ -6468,28 +7246,27 @@ export default function App() {
                       <div className="space-y-4 pt-1">
                         <p className="text-xs text-black/60 font-medium">Select active ingredients you currently use:</p>
                         <div className="space-y-2">
-                          {[
-                            'Prescription retinoids (tretinoin, adapalene etc)',
-                            'Over-the-counter retinols',
-                            'Exfoliating acids (salicylic, glycolic etc)',
-                            "None/ I'm not sure"
-                          ].map((activeOpt) => {
-                            const isSelected = editActivesVal.includes(activeOpt);
+                          {ACTIVE_SKINCARE_OPTIONS.map((opt) => {
+                            const isSelected = editActivesVal.includes(opt.id);
                             return (
-                              <label key={activeOpt} className="flex items-center gap-2 text-xs font-medium text-black/85 cursor-pointer">
+                              <label key={opt.id} className="flex items-center gap-2.5 text-xs font-bold text-black/85 cursor-pointer select-none py-1">
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
                                   onChange={(e) => {
                                     if (e.target.checked) {
-                                      setEditActivesVal([...editActivesVal, activeOpt]);
+                                      if (opt.id === 4) {
+                                        setEditActivesVal([4]);
+                                      } else {
+                                        setEditActivesVal([...editActivesVal.filter(id => id !== 4 && id !== opt.id), opt.id]);
+                                      }
                                     } else {
-                                      setEditActivesVal(editActivesVal.filter(a => a !== activeOpt));
+                                      setEditActivesVal(editActivesVal.filter(id => id !== opt.id));
                                     }
                                   }}
-                                  className="rounded border-black/20 text-black focus:ring-black w-4 h-4"
+                                  className="rounded border-black/20 text-black focus:ring-black w-4 h-4 cursor-pointer"
                                 />
-                                <span>{activeOpt}</span>
+                                <span>{opt.label}</span>
                               </label>
                             );
                           })}
@@ -6521,29 +7298,29 @@ export default function App() {
                         </div>
                       </div>
                     ) : (
-                      Array.isArray(userProfile?.actives_used) && userProfile.actives_used.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {userProfile.actives_used.map((act: any, idx: number) => {
-                            const displayText = ACTIVES_TEXT_MAP[act] || String(act);
-                            return (
-                              <span 
-                                key={String(act) + idx} 
-                                className="text-xs bg-amber-50 text-amber-900 border border-amber-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                {displayText}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      ) : userProfile?.actives_used != null && userProfile.actives_used !== '' ? (
-                        <span className="text-xs bg-amber-50 text-amber-900 border border-amber-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          {ACTIVES_TEXT_MAP[userProfile.actives_used] || String(userProfile.actives_used)}
-                        </span>
-                      ) : (
-                        <p className="text-xs text-black/40 italic">No actives currently specified.</p>
-                      )
+                      (() => {
+                        const selectedIds = getActivesSelectedIds(userProfile?.actives_used);
+                        if (selectedIds.length === 0) {
+                          return <p className="text-xs text-black/40 italic">No actives currently specified.</p>;
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-2">
+                            {selectedIds.map((id) => {
+                              const opt = ACTIVE_SKINCARE_OPTIONS.find(o => o.id === id);
+                              const displayText = opt ? opt.label : (ACTIVES_TEXT_MAP[id] || `Active #${id}`);
+                              return (
+                                <span 
+                                  key={id} 
+                                  className="text-xs bg-amber-50 text-amber-900 border border-amber-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                  {displayText}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()
                     )}
                   </div>
 
@@ -6557,17 +7334,65 @@ export default function App() {
                       {!isEditingPastProblems && (
                         <button
                           onClick={() => {
-                            const rawProblems = userProfile?.past_problems;
-                            let problemsList: string[] = [];
-                            if (Array.isArray(rawProblems)) {
-                              problemsList = rawProblems;
-                            } else if (typeof rawProblems === 'string' && rawProblems.trim() !== '') {
-                              problemsList = rawProblems.split(',').map(s => s.trim()).filter(Boolean);
-                            }
-                            setEditPastProblemsVal(problemsList);
+                            const parsedList = parseAvoidedIngredients(userProfile?.past_problems);
+                            const listWithNames = parsedList.map(item => {
+                              if (item.id && avoidedIngredientNames[item.id]) {
+                                return { id: item.id, name: avoidedIngredientNames[item.id] };
+                              }
+                              return item;
+                            });
+                            setEditPastProblemsVal(listWithNames);
                             setNewProblemInput('');
+                            setIngredientSuggestions([]);
                             setPastProblemsSaveError(null);
                             setIsEditingPastProblems(true);
+
+                            const neededIds = listWithNames
+                              .map(p => p.id)
+                              .filter((id): id is number => typeof id === 'number' && !avoidedIngredientNames[id]);
+                            if (neededIds.length > 0) {
+                              supabase
+                                .from('ingredient_scores')
+                                .select('id, ingredient')
+                                .in('id', neededIds)
+                                .then(({ data }) => {
+                                  if (data && data.length > 0) {
+                                    setAvoidedIngredientNames(prev => {
+                                      const next = { ...prev };
+                                      data.forEach((d: any) => {
+                                        if (d.id && d.ingredient) next[d.id] = d.ingredient;
+                                      });
+                                      return next;
+                                    });
+                                    setEditPastProblemsVal(prev => prev.map(item => {
+                                      if (item.id) {
+                                        const match = data.find(d => d.id === item.id);
+                                        if (match && match.ingredient) return { id: item.id, name: match.ingredient };
+                                      }
+                                      return item;
+                                    }));
+                                  }
+                                });
+                            }
+
+                            const missing = listWithNames.filter(p => p.id === null).map(p => p.name);
+                            if (missing.length > 0) {
+                              supabase
+                                .from('ingredient_scores')
+                                .select('id, ingredient')
+                                .in('ingredient', missing)
+                                .then(({ data }) => {
+                                  if (data && data.length > 0) {
+                                    setEditPastProblemsVal(prev => prev.map(item => {
+                                      if (item.id === null) {
+                                        const match = data.find(d => d.ingredient.toLowerCase() === item.name.toLowerCase());
+                                        if (match) return { id: match.id, name: match.ingredient };
+                                      }
+                                      return item;
+                                    }));
+                                  }
+                                });
+                            }
                           }}
                           className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
                           title="Edit past problems"
@@ -6594,25 +7419,15 @@ export default function App() {
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
-                                  if (newProblemInput.trim() && !editPastProblemsVal.includes(newProblemInput.trim())) {
-                                    setEditPastProblemsVal([...editPastProblemsVal, newProblemInput.trim()]);
-                                    setNewProblemInput('');
-                                    setIsIngredientSuggestionsOpen(false);
-                                  }
+                                  handleAddProblemIngredient();
                                 }
                               }}
-                              placeholder="Search ingredient from database (e.g. Salicylic acid)..."
+                              placeholder="Search ingredient (e.g. Salicylic acid)..."
                               className="flex-1 bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
                             />
                             <button
                               type="button"
-                              onClick={() => {
-                                if (newProblemInput.trim() && !editPastProblemsVal.includes(newProblemInput.trim())) {
-                                  setEditPastProblemsVal([...editPastProblemsVal, newProblemInput.trim()]);
-                                  setNewProblemInput('');
-                                  setIsIngredientSuggestionsOpen(false);
-                                }
-                              }}
+                              onClick={handleAddProblemIngredient}
                               className="bg-black text-white px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors cursor-pointer"
                             >
                               Add
@@ -6621,21 +7436,21 @@ export default function App() {
 
                           {isIngredientSuggestionsOpen && ingredientSuggestions.length > 0 && (
                             <div className="absolute left-0 right-12 top-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto">
-                              {ingredientSuggestions.map((ingName, idx) => (
+                              {ingredientSuggestions.map((sug) => (
                                 <button
-                                  key={ingName + idx}
+                                  key={(sug.id ?? sug.name) + sug.name}
                                   type="button"
                                   onClick={() => {
-                                    if (!editPastProblemsVal.includes(ingName)) {
-                                      setEditPastProblemsVal([...editPastProblemsVal, ingName]);
+                                    if (!editPastProblemsVal.some(p => (sug.id !== null && p.id === sug.id) || p.name.toLowerCase() === sug.name.toLowerCase())) {
+                                      setEditPastProblemsVal([...editPastProblemsVal, sug]);
                                     }
                                     setNewProblemInput('');
                                     setIngredientSuggestions([]);
                                     setIsIngredientSuggestionsOpen(false);
                                   }}
-                                  className="w-full text-left px-3 py-2 text-xs font-bold text-black hover:bg-black/5 transition-colors border-b border-black/5 last:border-b-0 cursor-pointer"
+                                  className="w-full text-left px-3 py-2 text-xs font-bold text-black hover:bg-black/5 transition-colors border-b border-black/5 last:border-b-0 cursor-pointer flex items-center justify-between"
                                 >
-                                  {ingName}
+                                  <span>{sug.name}</span>
                                 </button>
                               ))}
                             </div>
@@ -6643,21 +7458,24 @@ export default function App() {
                         </div>
 
                         <div className="flex flex-wrap gap-2 pt-2">
-                          {editPastProblemsVal.map((prob, idx) => (
-                            <span
-                              key={prob + idx}
-                              className="text-xs bg-red-50 text-red-900 border border-red-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-2 shadow-sm"
-                            >
-                              <span>{prob}</span>
-                              <button
-                                type="button"
-                                onClick={() => setEditPastProblemsVal(editPastProblemsVal.filter((_, i) => i !== idx))}
-                                className="w-4 h-4 rounded-full bg-red-200/60 hover:bg-red-300 text-red-800 flex items-center justify-center cursor-pointer transition-colors"
+                          {editPastProblemsVal.map((prob, idx) => {
+                            const displayName = (prob.id && avoidedIngredientNames[prob.id]) ? avoidedIngredientNames[prob.id] : prob.name;
+                            return (
+                              <span
+                                key={(prob.id ? String(prob.id) : prob.name) + idx}
+                                className="text-xs bg-red-50 text-red-900 border border-red-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-2 shadow-sm"
                               >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))}
+                                <span>{displayName}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditPastProblemsVal(editPastProblemsVal.filter((_, i) => i !== idx))}
+                                  className="w-4 h-4 rounded-full bg-red-200/60 hover:bg-red-300 text-red-800 flex items-center justify-center cursor-pointer transition-colors"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            );
+                          })}
                           {editPastProblemsVal.length === 0 && (
                             <p className="text-xs text-black/40 italic">No ingredients added yet.</p>
                           )}
@@ -6690,13 +7508,7 @@ export default function App() {
                       </div>
                     ) : (
                       (() => {
-                        const rawProblems = userProfile?.past_problems;
-                        let problemsList: string[] = [];
-                        if (Array.isArray(rawProblems)) {
-                          problemsList = rawProblems;
-                        } else if (typeof rawProblems === 'string' && rawProblems.trim() !== '') {
-                          problemsList = rawProblems.split(',').map(s => s.trim()).filter(Boolean);
-                        }
+                        const problemsList = parseAvoidedIngredients(userProfile?.past_problems);
 
                         if (problemsList.length === 0) {
                           return <p className="text-xs text-black/40 italic">No specific past problem ingredients specified.</p>;
@@ -6704,15 +7516,18 @@ export default function App() {
 
                         return (
                           <div className="flex flex-wrap gap-2">
-                            {problemsList.map((prob: string, idx: number) => (
-                              <span 
-                                key={prob + idx} 
-                                className="text-xs bg-red-50 text-red-900 border border-red-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                                {prob}
-                              </span>
-                            ))}
+                            {problemsList.map((prob, idx) => {
+                              const displayName = (prob.id && avoidedIngredientNames[prob.id]) ? avoidedIngredientNames[prob.id] : prob.name;
+                              return (
+                                <span 
+                                  key={(prob.id ? String(prob.id) : prob.name) + idx} 
+                                  className="text-xs bg-red-50 text-red-900 border border-red-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                  <span>{displayName}</span>
+                                </span>
+                              );
+                            })}
                           </div>
                         );
                       })()
@@ -7159,7 +7974,7 @@ export default function App() {
       )}
 
       {/* Bottom Nav Hint */}
-      {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL) && (
+      {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL || appState === AppState.BRANDS) && (
         <div className="fixed bottom-0 left-0 right-0 flex justify-center bg-gradient-to-t from-white to-transparent z-40">
           <div className="clean-card py-3 px-6 flex justify-between md:justify-center gap-6 md:gap-8 items-center w-full md:w-auto bg-white border-t-2 md:border-2 border-black/5 shadow-2xl md:rounded-3xl">
             {user && (

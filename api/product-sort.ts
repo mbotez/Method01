@@ -68,21 +68,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'deep & tender bumps': 8,
       'deep and tender bumps': 8
     };
-    const rawBreakouts = Array.isArray(userProfile.breakout_type)
-      ? userProfile.breakout_type
-      : (userProfile.breakout_type ? [userProfile.breakout_type] : []);
-    const breakout_type: number[] = rawBreakouts.map((b: any) => {
-      if (typeof b === 'number') return b;
-      const parsed = parseInt(String(b), 10);
-      if (!isNaN(parsed) && parsed >= 1 && parsed <= 8) return parsed;
-      return breakoutTypeStringToId[String(b).toLowerCase().trim()] || 0;
-    }).filter((n: number) => n >= 1 && n <= 8);
-    const scan_breakout_type = Array.isArray(userProfile.scan_breakout_type) 
+    const toBreakoutIds = (raw: any): number[] => {
+      if (raw == null) return [];
+      const items = Array.isArray(raw) ? raw : [raw];
+      return items
+        .map((b: any) => {
+          if (typeof b === 'number' && !isNaN(b)) return b;
+          const parsed = parseInt(String(b), 10);
+          if (!isNaN(parsed)) return parsed;
+          return breakoutTypeStringToId[String(b).toLowerCase().trim()] || 0;
+        })
+        .filter((n: number) => typeof n === 'number' && !isNaN(n) && n >= 1 && n <= 8);
+    };
+
+    const breakout_type = toBreakoutIds(userProfile.breakout_type);
+    const rawScanBreakouts = Array.isArray(userProfile.scan_breakout_type) 
       ? userProfile.scan_breakout_type 
       : (Array.isArray(userProfile.blemish_assessment) 
         ? userProfile.blemish_assessment 
         : (userProfile.blemish_assessment ? [userProfile.blemish_assessment] : (userProfile.scan_breakout_type ? [userProfile.scan_breakout_type] : [])));
-    const pregnant = userProfile.pregnant === 'Yes' ? 'Yes' : 'No';
+    const scan_breakout_type = toBreakoutIds(rawScanBreakouts);
+    const pregnant = userProfile.pregnant === 'Yes' || userProfile.pregnant === true;
+    const rawPastProblems = userProfile.past_problems;
+    const past_problems: number[] = Array.isArray(rawPastProblems)
+      ? rawPastProblems
+          .map((id: any) => (typeof id === 'number' ? id : parseInt(String(id), 10)))
+          .filter((n: number) => !isNaN(n))
+      : (typeof rawPastProblems === 'string'
+          ? (() => {
+              try {
+                const parsed = JSON.parse(rawPastProblems);
+                return Array.isArray(parsed)
+                  ? parsed
+                      .map((id: any) => (typeof id === 'number' ? id : parseInt(String(id), 10)))
+                      .filter((n: number) => !isNaN(n))
+                  : [];
+              } catch {
+                return [];
+              }
+            })()
+          : []);
     
     // Initialize Supabase Client
     const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://stbperzlmmslrkdpqawt.supabase.co';
@@ -94,58 +119,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let rawLockedProducts: any[] | null = null;
     let rpcError: any = null;
     
-    const callRpcWithDualSchemas = async (barrierVal: number, reactionVal: number) => {
-      // 1. Try with PostgreSQL native registered signature (p_barrier_risk, p_scan_acne_type)
-      const res1 = await supabase.rpc('get_meli_product_sort', {
-        p_barrier_risk: barrierVal,
-        p_breakout_type: breakout_type,
-        p_cat3: cat3,
-        p_limit: LIMIT_PER_PAGE,
-        p_main_concern: main_concern,
-        p_new_product_reaction: reactionVal,
-        p_offset: offset,
+    const callRpc = async (barrierVal: number, reactionVal: number) => {
+      console.log('PRODUCT-SORT PAYLOAD', JSON.stringify({ p_breakout_type: breakout_type, p_scan_acne_type: scan_breakout_type, p_cat3: cat3 }));
+      const { data, error } = await supabase.rpc('get_meli_product_sort', {
+        p_skin_type: skin_type ?? null,
+        p_main_concern: main_concern ?? null,
+        p_scnd_concern: secondary_concern ?? null,
+        p_barrier_risk: Number(barrierVal) || 0,
+        p_new_product_reaction: Number(reactionVal) || 0,
+        p_product_type: productType ?? null,
+        p_cat3: cat3 != null ? String(cat3) : null,
+        p_breakout_type: (breakout_type || []).map(String),
+        p_scan_acne_type: (scan_breakout_type || []).map(String),
         p_pregnant: pregnant,
-        p_product_type: productType,
-        p_scan_acne_type: scan_breakout_type,
-        p_scnd_concern: secondary_concern,
-        p_skin_type: skin_type
-      });
-      if (!res1.error && res1.data) return res1.data;
-
-      // 2. Try with alternative parameter names (p_barrier_status, p_scan_breakout_type)
-      const res2 = await supabase.rpc('get_meli_product_sort', {
-        p_barrier_status: barrierVal,
-        p_breakout_type: breakout_type,
-        p_cat3: cat3,
         p_limit: LIMIT_PER_PAGE,
-        p_main_concern: main_concern,
-        p_new_product_reaction: reactionVal,
         p_offset: offset,
-        p_pregnant: pregnant,
-        p_product_type: productType,
-        p_scan_breakout_type: scan_breakout_type,
-        p_scnd_concern: secondary_concern,
-        p_skin_type: skin_type
+        p_past_problems: past_problems,
       });
-      if (!res2.error && res2.data) return res2.data;
 
-      throw res1.error || res2.error;
+      if (error) {
+        console.error('RPC get_meli_product_sort error:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+        throw error;
+      }
+
+      return data;
     };
 
     try {
       if (barrier_level === 'high') {
-        const safeData = await callRpcWithDualSchemas(userProfile.barrier_status || 0, userProfile.new_product_reaction || 0);
+        const safeData = await callRpc(userProfile.barrier_status || 0, userProfile.new_product_reaction || 0);
         rawProducts = safeData;
 
-        const lockedData = await callRpcWithDualSchemas(3, 0);
+        const lockedData = await callRpc(3, 0);
         const safeIds = new Set((rawProducts || []).map((p: any) => p.product_id));
         rawLockedProducts = (lockedData || []).filter((p: any) => !safeIds.has(p.product_id));
       } else {
-        const data = await callRpcWithDualSchemas(userProfile.barrier_status || 0, userProfile.new_product_reaction || 0);
+        const data = await callRpc(userProfile.barrier_status || 0, userProfile.new_product_reaction || 0);
         rawProducts = data;
         rawLockedProducts = [];
       }
     } catch (e: any) {
+      console.error('RPC failed, using fallback:', e);
       rpcError = e;
     }
 
@@ -162,7 +181,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (cat3 !== null && cat3 !== undefined) {
           baseQuery = baseQuery.eq('product_scores.cat3', cat3);
         }
-        if (pregnant === 'Yes') {
+        if (pregnant) {
           baseQuery = baseQuery.eq('product_scores.pregnancy_safe', true);
         }
 
@@ -220,6 +239,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       success: true,
+      rpc_failed: !!rpcError,
       route,
       barrier_level,
       products: standardProducts, 

@@ -718,11 +718,18 @@ export const ProductCardContent = ({
       return;
     }
     
+    const numericId = Number(productId);
+    const isValidNumeric = !isNaN(numericId) && numericId > 0;
+    const targetProductId = isValidNumeric
+      ? numericId
+      : (trackerItem?.product_id && !isNaN(Number(trackerItem.product_id)) ? Number(trackerItem.product_id) : null);
+    const effectiveProductId = targetProductId != null ? targetProductId : productId;
+
     try {
       await supabase
         .from('product_user_ratings')
         .upsert({
-          product_id: productId,
+          product_id: effectiveProductId,
           user_id: session.user.id,
           dwis: newRatings.dwis || null,
           price_value: newRatings.price_value || null,
@@ -733,6 +740,42 @@ export const ProductCardContent = ({
         }, {
           onConflict: 'product_id, user_id'
         });
+
+      // Refresh global ratings summary immediately
+      const { data: allRatingsData } = await supabase
+        .from('product_user_ratings')
+        .select('dwis, price_value, feel, layer, avg')
+        .eq('product_id', effectiveProductId);
+
+      if (allRatingsData && allRatingsData.length > 0) {
+        let sumAvg = 0, countAvg = 0;
+        let sumDw = 0, countDw = 0;
+        let sumPrice = 0, countPrice = 0;
+        let sumFeel = 0, countFeel = 0;
+        let sumLayer = 0, countLayer = 0;
+
+        allRatingsData.forEach((r: any) => {
+          const metrics = [r.dwis, r.price_value, r.feel, r.layer].filter(v => v != null && Number(v) > 0);
+          const rowAvg = r.avg != null && Number(r.avg) > 0 ? Number(r.avg) : (metrics.length > 0 ? metrics.reduce((a, b) => a + Number(b), 0) / metrics.length : 0);
+          if (rowAvg > 0) {
+            sumAvg += rowAvg;
+            countAvg++;
+          }
+          if (r.dwis != null && Number(r.dwis) > 0) { sumDw += Number(r.dwis); countDw++; }
+          if (r.price_value != null && Number(r.price_value) > 0) { sumPrice += Number(r.price_value); countPrice++; }
+          if (r.feel != null && Number(r.feel) > 0) { sumFeel += Number(r.feel); countFeel++; }
+          if (r.layer != null && Number(r.layer) > 0) { sumLayer += Number(r.layer); countLayer++; }
+        });
+
+        setGlobalRatingsSummary({
+          avg: countAvg > 0 ? Number((sumAvg / countAvg).toFixed(1)) : 0,
+          dwis: countDw > 0 ? Number((sumDw / countDw).toFixed(1)) : 0,
+          price_value: countPrice > 0 ? Number((sumPrice / countPrice).toFixed(1)) : 0,
+          feel: countFeel > 0 ? Number((sumFeel / countFeel).toFixed(1)) : 0,
+          layer: countLayer > 0 ? Number((sumLayer / countLayer).toFixed(1)) : 0,
+          count: allRatingsData.length
+        });
+      }
     } catch (err) {
       console.error('Error updating rating:', err);
     }
@@ -819,6 +862,7 @@ export const ProductCardContent = ({
         const targetProductId = isValidNumeric
           ? numericId
           : (trackerItem?.product_id && !isNaN(Number(trackerItem.product_id)) ? Number(trackerItem.product_id) : null);
+        const effectiveProductId = targetProductId != null ? targetProductId : productId;
 
         const culpritsPromise = targetProductId != null
           ? (async () => {
@@ -893,7 +937,7 @@ export const ProductCardContent = ({
             return await supabase
               .rpc('evaluate_product_compatibility', {
                 p_user_id: targetUserId,
-                p_product_id: productId
+                p_product_id: effectiveProductId
               })
               .abortSignal(signal);
           } catch (err: any) {
@@ -1059,7 +1103,7 @@ export const ProductCardContent = ({
               return await supabase
                 .from('product_user_ratings')
                 .select('*')
-                .eq('product_id', productId)
+                .eq('product_id', effectiveProductId)
                 .eq('user_id', session.user.id)
                 .abortSignal(signal)
                 .maybeSingle();
@@ -1091,7 +1135,7 @@ export const ProductCardContent = ({
             return await supabase
               .from('product_user_ratings')
               .select('dwis, price_value, feel, layer, avg')
-              .eq('product_id', productId)
+              .eq('product_id', effectiveProductId)
               .abortSignal(signal);
           } catch {
             return { data: [] };
@@ -1108,15 +1152,22 @@ export const ProductCardContent = ({
           let sumLayer = 0, countLayer = 0;
 
           allRatingsData.forEach((r: any) => {
-            if (r.avg != null) { sumAvg += Number(r.avg); countAvg++; }
-            if (r.dwis != null && r.dwis > 0) { sumDw += Number(r.dwis); countDw++; }
-            if (r.price_value != null && r.price_value > 0) { sumPrice += Number(r.price_value); countPrice++; }
-            if (r.feel != null && r.feel > 0) { sumFeel += Number(r.feel); countFeel++; }
-            if (r.layer != null && r.layer > 0) { sumLayer += Number(r.layer); countLayer++; }
+            const metrics = [r.dwis, r.price_value, r.feel, r.layer].filter(v => v != null && Number(v) > 0);
+            const rowAvg = r.avg != null && Number(r.avg) > 0 ? Number(r.avg) : (metrics.length > 0 ? metrics.reduce((a, b) => a + Number(b), 0) / metrics.length : 0);
+            if (rowAvg > 0) {
+              sumAvg += rowAvg;
+              countAvg++;
+            }
+            if (r.dwis != null && Number(r.dwis) > 0) { sumDw += Number(r.dwis); countDw++; }
+            if (r.price_value != null && Number(r.price_value) > 0) { sumPrice += Number(r.price_value); countPrice++; }
+            if (r.feel != null && Number(r.feel) > 0) { sumFeel += Number(r.feel); countFeel++; }
+            if (r.layer != null && Number(r.layer) > 0) { sumLayer += Number(r.layer); countLayer++; }
           });
 
+          const finalAvg = countAvg > 0 ? Number((sumAvg / countAvg).toFixed(1)) : 0;
+
           setGlobalRatingsSummary({
-            avg: countAvg > 0 ? Number((sumAvg / countAvg).toFixed(1)) : 0,
+            avg: finalAvg,
             dwis: countDw > 0 ? Number((sumDw / countDw).toFixed(1)) : 0,
             price_value: countPrice > 0 ? Number((sumPrice / countPrice).toFixed(1)) : 0,
             feel: countFeel > 0 ? Number((sumFeel / countFeel).toFixed(1)) : 0,
@@ -1133,7 +1184,7 @@ export const ProductCardContent = ({
             return await supabase
               .from('product_comments')
               .select('*')
-              .eq('product_id', productId)
+              .eq('product_id', effectiveProductId)
               .order('created_at', { ascending: false })
               .abortSignal(signal);
           } catch {
@@ -1325,31 +1376,86 @@ export const ProductCardContent = ({
           onClick={() => setIsRatingsDropdownOpen(!isRatingsDropdownOpen)}
           className="w-full flex items-center justify-between text-xs font-black text-purple-950 uppercase tracking-wider cursor-pointer"
         >
-          <div className="flex items-center gap-1.5">
-            <Star className="w-3.5 h-3.5 fill-purple-600 text-purple-600" />
-            <span>Ratings: {globalRatingsSummary.avg > 0 ? `${globalRatingsSummary.avg} / 5` : 'None yet. Be the first to add one!'}</span>
-            <span className="text-[10px] text-black/40 font-normal lowercase font-mono">({globalRatingsSummary.count} reviews)</span>
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <Star className="w-3.5 h-3.5 fill-purple-600 text-purple-600 flex-shrink-0" />
+            {globalRatingsSummary.avg > 0 || globalRatingsSummary.count > 0 ? (
+              <span className="truncate">Ratings: {globalRatingsSummary.avg > 0 ? globalRatingsSummary.avg : '3.0'} / 5</span>
+            ) : (
+              <span className="block text-center w-full font-black text-purple-950 uppercase tracking-wider text-xs leading-tight">
+                Ratings: None yet<br />
+                <span className="text-[10px] font-bold text-purple-900 normal-case">Be the first to add one!</span>
+              </span>
+            )}
+            {(globalRatingsSummary.avg > 0 || globalRatingsSummary.count > 0) && (
+              <span className="text-[10px] text-black/40 font-normal lowercase font-mono flex-shrink-0">({globalRatingsSummary.count} reviews)</span>
+            )}
           </div>
-          {isRatingsDropdownOpen ? <ChevronUp className="w-4 h-4 text-purple-700" /> : <ChevronDown className="w-4 h-4 text-purple-700" />}
+          {isRatingsDropdownOpen ? <ChevronUp className="w-4 h-4 text-purple-700 flex-shrink-0 ml-2" /> : <ChevronDown className="w-4 h-4 text-purple-700 flex-shrink-0 ml-2" />}
         </button>
 
-        {isRatingsDropdownOpen && globalRatingsSummary.count > 0 && (
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-purple-200/60 text-[11px]">
-            <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
-              <span className="text-black/60 font-bold">Does What It Says:</span>
-              <span className="font-mono font-black text-purple-900">{globalRatingsSummary.dwis} / 5</span>
-            </div>
-            <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
-              <span className="text-black/60 font-bold">Price & Value:</span>
-              <span className="font-mono font-black text-purple-900">{globalRatingsSummary.price_value} / 5</span>
-            </div>
-            <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
-              <span className="text-black/60 font-bold">Texture & Feel:</span>
-              <span className="font-mono font-black text-purple-900">{globalRatingsSummary.feel} / 5</span>
-            </div>
-            <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
-              <span className="text-black/60 font-bold">Layerability:</span>
-              <span className="font-mono font-black text-purple-900">{globalRatingsSummary.layer} / 5</span>
+        {isRatingsDropdownOpen && (
+          <div className="space-y-3 pt-2 border-t border-purple-200/60">
+            {globalRatingsSummary.count > 0 && (
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+                  <span className="text-black/60 font-bold">Does What It Says:</span>
+                  <span className="font-mono font-black text-purple-900">{globalRatingsSummary.dwis} / 5</span>
+                </div>
+                <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+                  <span className="text-black/60 font-bold">Price & Value:</span>
+                  <span className="font-mono font-black text-purple-900">{globalRatingsSummary.price_value} / 5</span>
+                </div>
+                <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+                  <span className="text-black/60 font-bold">Texture & Feel:</span>
+                  <span className="font-mono font-black text-purple-900">{globalRatingsSummary.feel} / 5</span>
+                </div>
+                <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+                  <span className="text-black/60 font-bold">Layerability:</span>
+                  <span className="font-mono font-black text-purple-900">{globalRatingsSummary.layer} / 5</span>
+                </div>
+              </div>
+            )}
+
+            {/* My Product Ratings Section */}
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between">
+                <h4 className="font-black text-[10px] uppercase tracking-widest text-black/70">My Product Ratings</h4>
+                {!isAuthenticated && (
+                  <span className="text-[9px] text-black/40 font-bold italic">Log in to save ratings</span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-purple-100">
+                {[
+                  { key: 'dwis', label: 'Does What It Says' },
+                  { key: 'price_value', label: 'Price & Value' },
+                  { key: 'feel', label: 'Texture & Feel' },
+                  { key: 'layer', label: 'Layerability' },
+                ].map(criterion => (
+                  <div key={criterion.key} className="flex flex-col gap-1">
+                    <span className="text-[9px] font-bold text-black/70">{criterion.label}</span>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map(star => {
+                        const currentVal = ratings[criterion.key as keyof typeof ratings] || 0;
+                        const isFilled = star <= currentVal;
+                        return (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => handleUpdateRating(criterion.key, star)}
+                            className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold transition-all cursor-pointer ${
+                              isFilled 
+                                ? 'bg-black text-white shadow-xs' 
+                                : 'bg-gray-50 text-black/40 border border-gray-200 hover:border-black/40 hover:text-black'
+                            }`}
+                          >
+                            {star}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -1937,48 +2043,6 @@ export const ProductCardContent = ({
           </div>
         </div>
       )}
-
-      {/* User Ratings Section */}
-      <div className="border-t pt-4 mt-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-black text-xs uppercase tracking-widest text-black/60">My Product Ratings</h3>
-          {!isAuthenticated && (
-            <span className="text-[9px] text-black/40 font-bold italic">Log in to save ratings</span>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-100">
-          {[
-            { key: 'dwis', label: 'Does What It Says' },
-            { key: 'price_value', label: 'Price & Value' },
-            { key: 'feel', label: 'Texture & Feel' },
-            { key: 'layer', label: 'Layerability' },
-          ].map(criterion => (
-            <div key={criterion.key} className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold text-black/70">{criterion.label}</span>
-              <div className="flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map(star => {
-                  const currentVal = ratings[criterion.key as keyof typeof ratings] || 0;
-                  const isFilled = star <= currentVal;
-                  return (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => handleUpdateRating(criterion.key, star)}
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
-                        isFilled 
-                          ? 'bg-black text-white shadow-xs' 
-                          : 'bg-white text-black/40 border border-gray-200 hover:border-black/40 hover:text-black'
-                      }`}
-                    >
-                      {star}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
       {/* Comments Section */}
       <div className="border-t pt-4 mt-4 space-y-3">

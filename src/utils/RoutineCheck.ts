@@ -35,6 +35,7 @@ export interface RoutineCheckResult {
     user_irritation_threshold: 'low' | 'medium' | 'high';
     active_count: number;
     active_budget: number;
+    active_budget_reason?: string;
   };
 }
 
@@ -155,6 +156,66 @@ const concernLabels: Record<number, string> = {
   12: 'not_sure'
 };
 
+// Quiz display names for concerns, matching skin quiz wording
+export const concernQuizDisplayNames: Record<number, string> = {
+  1: 'breakouts and post-breakout marks',
+  2: 'redness',
+  3: 'dark spots',
+  4: 'dullness',
+  5: 'dryness',
+  6: 'oily skin',
+  7: 'wrinkles & fine lines',
+  8: 'large pores & texture',
+  9: 'sensitivity',
+  10: 'dry and flaky skin',
+  11: 'yeast-reactive skin',
+  12: 'not sure'
+};
+
+export function getConcernQuizLabel(concern: any): string {
+  if (concern === null || concern === undefined) return 'your skin concern';
+  const num = Number(concern);
+  if (!isNaN(num) && concernQuizDisplayNames[num]) {
+    return concernQuizDisplayNames[num];
+  }
+  if (typeof concern === 'string') {
+    const raw = concern.trim();
+    const parsed = parseInt(raw, 10);
+    if (!isNaN(parsed) && concernQuizDisplayNames[parsed]) {
+      return concernQuizDisplayNames[parsed];
+    }
+    const normalized = raw.toLowerCase().replace(/_/g, ' ').trim();
+    if (
+      normalized === 'dry and flaky skin' ||
+      normalized === 'dry and flaky' ||
+      normalized === 'extremely dry flaky skin' ||
+      normalized === 'extremely dry & flaky skin' ||
+      normalized === 'dry flaky skin'
+    ) {
+      return 'dry and flaky skin';
+    }
+    if (
+      normalized === 'breakouts and scars' ||
+      normalized === 'breakouts & scars' ||
+      normalized === 'breakouts and post-breakout marks' ||
+      normalized === 'breakouts & post-breakout marks'
+    ) {
+      return 'breakouts and post-breakout marks';
+    }
+    if (normalized === 'wrinkles and fine lines' || normalized === 'wrinkles & fine lines') {
+      return 'wrinkles & fine lines';
+    }
+    if (normalized === 'pores and texture' || normalized === 'large pores and texture' || normalized === 'large pores & texture') {
+      return 'large pores & texture';
+    }
+    if (normalized === 'yeast breakout' || normalized === 'yeast-reactive skin' || normalized === 'yeast reactive skin') {
+      return 'yeast-reactive skin';
+    }
+    return normalized;
+  }
+  return 'your skin concern';
+}
+
 export function isNotSureConcern(concern: any): boolean {
   if (!concern || concern === 12 || Number(concern) === 12) return true;
   if (concernLabels[Number(concern)] === 'not_sure') return true;
@@ -202,6 +263,58 @@ export function computeIrritationThreshold(userProfile: UserProfile): 'low' | 'm
   }
 
   return riskTier;
+}
+
+/**
+ * Explains deterministically why a user has their assigned actives budget based on
+ * questionnaire answers, skin barrier status, and irritation risk overrides.
+ */
+export function getActivesBudgetExplanation(
+  userProfile: UserProfile,
+  activeBudget?: number,
+  effectiveRiskTier?: 'low' | 'medium' | 'high'
+): string {
+  const riskTier = effectiveRiskTier || computeIrritationThreshold(userProfile);
+  const budget = typeof activeBudget === 'number' ? activeBudget : (
+    riskTier === 'high' ? 0 : riskTier === 'medium' ? 1 : 2
+  );
+
+  const barrierStatus = getNum(userProfile?.barrier_status, 0);
+  const reaction = getNum(userProfile?.new_product_reaction, 0);
+  const mainC = Number(userProfile?.main_concern);
+  const scndC = Number(userProfile?.scnd_concern);
+
+  if (budget === 0 || riskTier === 'high') {
+    const reasons: string[] = [];
+    if (mainC === 10 || scndC === 10) {
+      reasons.push('you mentioned dry and flaky skin as a concern');
+    }
+    if (mainC === 9 || scndC === 9) {
+      reasons.push('you mentioned sensitivity as a concern');
+    }
+    if (reaction === 3) {
+      reasons.push('new skincare products almost always irritate or burn your skin');
+    }
+    if (barrierStatus >= 7) {
+      reasons.push(`your barrier status is compromised (score ${barrierStatus}/8)`);
+    }
+
+    if (reasons.length > 0) {
+      const joinedReasons = reasons.length === 1 
+        ? reasons[0] 
+        : `${reasons.slice(0, -1).join(', ')} and ${reasons[reasons.length - 1]}`;
+      return `Your actives budget is 0 because ${joinedReasons}. When your skin barrier is sensitive or recovering, strong active ingredients can trigger flare-ups. Pausing actives gives your barrier time to heal.`;
+    }
+
+    return `Your actives budget is 0 because your skin barrier is currently classified as high sensitivity. Pausing active ingredients gives your moisture barrier time to recover before reintroducing potent treatments.`;
+  }
+
+  if (budget === 1 || riskTier === 'medium') {
+    return `Your actives budget is 1 because your skin barrier has moderate sensitivity (barrier status ${barrierStatus}/8). Limiting your routine to 1 active product targets your skin concerns without overloading or irritating your barrier.`;
+  }
+
+  // Low risk / Budget = 2
+  return `Your actives budget is 2 because your skin barrier is healthy and resilient (barrier status ${barrierStatus}/8 with good product tolerance). Capping routine actives at 2 helps achieve results while preventing barrier sensitization over time.`;
 }
 
 // Mapping dictionary for string identifiers and face scan terms to numeric IDs (1 through 8)
@@ -454,7 +567,8 @@ export async function checkRoutine(
       debug: {
         user_irritation_threshold: computeIrritationThreshold(userProfile),
         active_count: 0,
-        active_budget: 0
+        active_budget: 0,
+        active_budget_reason: getActivesBudgetExplanation(userProfile, 0, computeIrritationThreshold(userProfile))
       }
     };
   }
@@ -828,7 +942,7 @@ export async function checkRoutine(
       const isSensitivityOrEczema = [9, 10].includes(userProfile.main_concern) || [9, 10].includes(userProfile.scnd_concern);
       const isRedness = userProfile.main_concern === 2 || userProfile.scnd_concern === 2;
       const concernNum = [9, 10].includes(userProfile.main_concern) ? userProfile.main_concern : ([9, 10].includes(userProfile.scnd_concern) ? userProfile.scnd_concern : (userProfile.main_concern === 2 ? userProfile.main_concern : userProfile.scnd_concern));
-      const concernLabel = concernLabels[concernNum] || 'concern';
+      const concernLabel = getConcernQuizLabel(concernNum);
 
       if (isSensitivityOrEczema || effectiveRiskTier === 'high') {
         detrimental.push({
@@ -1093,12 +1207,12 @@ export async function checkRoutine(
   const matchingProducts = routineProducts.filter(p => p.cat2 === 'Treatment' || p.cat2 === 'Targeted');
 
   if (mainScore < 3 && !isNotSureConcern(userProfile.main_concern)) {
-    const mainLabel = concernLabels[userProfile.main_concern] || 'your main concern';
-    shortfallNotes.push(`This routine isn't doing much for ${mainLabel.replace(/_/g, ' ')}, your top concern.`);
+    const mainLabel = getConcernQuizLabel(userProfile.main_concern);
+    shortfallNotes.push(`This routine isn't doing much for ${mainLabel}, your top concern.`);
   }
   if (scndScore < 3 && userProfile.scnd_concern !== userProfile.main_concern && !isNotSureConcern(userProfile.scnd_concern)) {
-    const scndLabel = concernLabels[userProfile.scnd_concern] || 'your secondary concern';
-    shortfallNotes.push(`It's also light on support for ${scndLabel.replace(/_/g, ' ')}.`);
+    const scndLabel = getConcernQuizLabel(userProfile.scnd_concern);
+    shortfallNotes.push(`It's also light on support for ${scndLabel}.`);
   }
 
   // ------------------------------------------
@@ -1115,12 +1229,12 @@ export async function checkRoutine(
   // Run async queries for recommendations
   for (const item of underServedConcerns) {
     const ids = await getRecommendedAddition(item.num, userProfile);
-    const label = concernLabels[item.num] || `concern #${item.num}`;
+    const label = getConcernQuizLabel(item.num);
     for (const pid of ids) {
       recommended_additions.push({
         concern: item.type === 'main' ? 'primary' : 'secondary',
         product_id: String(pid),
-        reason: `A solid pick to help with ${label.replace(/_/g, ' ')}.`
+        reason: `A solid pick to help with ${label}.`
       });
     }
   }
@@ -1241,7 +1355,8 @@ export async function checkRoutine(
     debug: {
       user_irritation_threshold: effectiveRiskTier,
       active_count: activeRecords.length,
-      active_budget: activeBudget
+      active_budget: activeBudget,
+      active_budget_reason: getActivesBudgetExplanation(userProfile, activeBudget, effectiveRiskTier)
     }
   };
 }
