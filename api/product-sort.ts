@@ -226,7 +226,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // GENERATE ALERTS
     const alerts: string[] = [];
     if (barrier_level === 'high') {
-      alerts.push('Your barrier needs recovery — actives paused for now');
+      alerts.push('Your barrier needs recovery — any actives are excluded for now');
     }
 
     return res.status(200).json({

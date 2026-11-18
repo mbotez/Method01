@@ -40,7 +40,7 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       message = 'An unexpected system error occurred.';
     }
 
-    // Ignore websocket, HMR, or connection refused errors so they never pop up an error modal
+    // Ignore websocket, HMR, connection refused, or statement timeout errors so they never pop up an error modal
     const lowerMsg = message.toLowerCase();
     if (
       lowerMsg.includes('websocket') ||
@@ -49,7 +49,9 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       lowerMsg.includes('hmr') ||
       lowerMsg.includes('vite') ||
       lowerMsg.includes('connection refused') ||
-      lowerMsg.includes('socket')
+      lowerMsg.includes('socket') ||
+      lowerMsg.includes('statement timeout') ||
+      lowerMsg.includes('timeout')
     ) {
       return;
     }
@@ -69,7 +71,9 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         msg.includes('hmr') ||
         msg.includes('vite') ||
         msg.includes('connection refused') ||
-        msg.includes('socket')
+        msg.includes('socket') ||
+        msg.includes('statement timeout') ||
+        msg.includes('timeout')
       ) {
         return; // Ignore dev server websocket / HMR errors
       }
@@ -87,7 +91,9 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         reasonStr.includes('hmr') ||
         reasonStr.includes('vite') ||
         reasonStr.includes('connection refused') ||
-        reasonStr.includes('socket')
+        reasonStr.includes('socket') ||
+        reasonStr.includes('statement timeout') ||
+        reasonStr.includes('timeout')
       ) {
         return; // Ignore dev server websocket / HMR errors
       }

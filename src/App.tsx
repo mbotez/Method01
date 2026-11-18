@@ -2769,7 +2769,9 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
         });
 
         try {
+          console.log("Running checkRoutine for routine:", rt.routine_name || `Routine #${rIdx}`, "prodIds:", prodIds, "timing:", timing);
           const checkResult = await checkRoutine(mappedProfile, prodIds, timing);
+          console.log("Check result received for routine:", rt.routine_name || `Routine #${rIdx}`, checkResult);
           if (!active) break;
           
           // Fetch names and brands for recommended additions if they exist
@@ -2798,6 +2800,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             newChecks[key] = checkResult;
           }
         } catch (e) {
+          console.error("Routine check error for routine:", rt.routine_name || `Routine #${rIdx}`, e);
         }
       }
 
@@ -3707,6 +3710,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              console.log("Re-evaluate clicked for routine:", rt.routine_name || `Routine #${rIdx}`, "products:", rt.products);
                               refreshRoutines();
                             }}
                             disabled={isRefreshingRoutines}
@@ -3727,8 +3731,48 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                             <div>
                               <span className="text-[9px] font-semibold uppercase text-[#73716C] block tracking-wider">Actives Budget</span>
                               <span className="text-[11px] font-semibold uppercase text-[#171717]">
-                                Balanced
+                                {check.debug.active_count} / {check.debug.active_budget} Active
                               </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Recommendations & Warnings Synthesis */}
+                        {check.recommendations && check.recommendations.length > 0 && (
+                          <div className="space-y-2 pt-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#73716C] block">Analysis & Insights</span>
+                            {check.recommendations.map((rec: string, rIndex: number) => (
+                              <div key={rIndex} className="text-xs text-[#171717] bg-white border border-[#EAE9E5] p-2.5 rounded-lg whitespace-pre-line leading-relaxed">
+                                {rec}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Detrimental Warnings Fallback */}
+                        {(!check.recommendations || check.recommendations.length === 0) && check.detrimental && check.detrimental.length > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 block">Warnings</span>
+                            {check.detrimental.map((det: any, dIndex: number) => (
+                              <div key={dIndex} className="text-xs text-red-700 bg-red-50 border border-red-200 p-2 rounded-lg">
+                                • {det.reason}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Recommended Additions */}
+                        {(((check as any).resolved_additions) || check.recommended_additions) && (((check as any).resolved_additions) || check.recommended_additions).length > 0 && (
+                          <div className="space-y-2 pt-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A6332] block">Recommended Additions</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {(((check as any).resolved_additions || check.recommended_additions) as any[]).map((add: any, aIndex: number) => (
+                                <div key={aIndex} className="bg-white border border-[#D6C7A9] p-2 rounded-lg text-xs space-y-1">
+                                  <span className="text-[9px] uppercase font-semibold text-[#7A6332] block">{add.concern} Concern Support</span>
+                                  <p className="font-semibold text-[#171717] truncate">{add.brand ? `${add.brand} - ${add.name}` : `Product #${add.product_id}`}</p>
+                                  <p className="text-[11px] text-[#73716C]">{add.reason}</p>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
@@ -5186,7 +5230,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                   
                   <div className="flex flex-nowrap gap-4 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth snap-x snap-mandatory">
                     {[
-                      { key: 'Moisturiser', title: 'Moisturisers', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/moisturiser.jpg' },
+                      { key: 'Moisturiser', title: 'Moisturisers', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/moisturiser2.jpg' },
                       { key: 'Treatment', title: 'Serums', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/serum.jpg' },
                       { key: 'Cleanser', title: 'Cleansers', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/cleanse.jpg' },
                       { key: 'SPF', title: 'Sunscreen', img: 'https://stbperzlmmslrkdpqawt.supabase.co/storage/v1/object/public/web_art/sunscreen.jpg' },
