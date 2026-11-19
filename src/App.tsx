@@ -194,7 +194,9 @@ export default function App() {
           .from('guides')
           .select('*')
           .limit(1);
-        if (!error && data && data.length > 0) {
+        if (error) {
+          console.error('Guides query error:', { message: error.message, code: error.code, details: error.details });
+        } else if (data && data.length > 0) {
           const g = data[0];
           setLandingGuide({
             id: g.id,
@@ -211,8 +213,8 @@ export default function App() {
             imageUrl: g.image_url || '/assets/g1.jpg'
           });
         }
-      } catch {
-        // Fallback already set
+      } catch (err: any) {
+        console.error('Guides query exception:', { message: err?.message || err, code: err?.code, details: err?.details });
       }
     };
     fetchLandingGuide();
@@ -1861,7 +1863,6 @@ export default function App() {
         setAppState(AppState.DASHBOARD);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
-        setAppState(AppState.AUTH);
       }
 
       if (currentUser && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED')) {
@@ -1927,7 +1928,7 @@ export default function App() {
             .eq('id', currentUser.id)
             .single();
 
-          if (error || !data || !data.username || data.username === 'skincareenthusiast') {
+          if (error || !data || !data.username) {
             const generated = await generateUniqueUsername(supabase);
             const { data: upsertedData, error: upsertError } = await supabase
               .from('users')

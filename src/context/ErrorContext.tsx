@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, Component } from 'react';
 
 interface AppError {
   message: string;
@@ -15,10 +15,59 @@ interface ErrorContextType {
 
 const ErrorContext = createContext<ErrorContextType | undefined>(undefined);
 
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class ErrorBoundary extends Component<any, any> {
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null,
+  };
+
+  public static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  public componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('React ErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  public render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 bg-white z-[99999] flex items-center justify-center p-6 text-center">
+          <div className="max-w-md w-full bg-red-50 border-2 border-red-200 rounded-3xl p-8 shadow-2xl">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-2xl font-bold">!</div>
+            <h2 className="text-xl font-black text-red-900 mb-2">Something went wrong</h2>
+            <p className="text-sm font-semibold text-red-700 mb-6">{this.state.error?.message || 'An unexpected rendering error occurred.'}</p>
+            <button
+              onClick={() => {
+                (this as any).setState({ hasError: false, error: null });
+                window.location.href = '/';
+              }}
+              className="w-full bg-black text-white py-3.5 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black/80 transition-all shadow-lg"
+            >
+              Return Home
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (this as any).props.children;
+  }
+}
+
 export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [error, setError] = useState<AppError | null>(null);
 
   const showError = (err: any, statusCode?: number | string, details?: string) => {
+    console.error('showError invoked:', { err, statusCode, details });
     let message = 'An unexpected error occurred.';
     let code = statusCode || 500;
     let tech = details || '';
@@ -40,7 +89,6 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       message = 'An unexpected system error occurred.';
     }
 
-    // Ignore websocket, HMR, connection refused, or statement timeout errors so they never pop up an error modal
     const lowerMsg = message.toLowerCase();
     if (
       lowerMsg.includes('websocket') ||
@@ -63,6 +111,7 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   useEffect(() => {
     const handleGlobalError = (event: ErrorEvent) => {
+      console.error('Global window error:', event.error || event.message, event.filename, event.lineno);
       const msg = (event.message || '').toLowerCase();
       if (
         msg.includes('websocket') ||
@@ -75,7 +124,7 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         msg.includes('statement timeout') ||
         msg.includes('timeout')
       ) {
-        return; // Ignore dev server websocket / HMR errors
+        return;
       }
       if (event.error || event.message) {
         showError(event.error || event.message, 500, event.filename ? `at ${event.filename}:${event.lineno}` : undefined);
@@ -83,6 +132,7 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
 
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('Global unhandled rejection:', event.reason);
       const reasonStr = String(event.reason || '').toLowerCase();
       if (
         reasonStr.includes('websocket') ||
@@ -95,7 +145,7 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         reasonStr.includes('statement timeout') ||
         reasonStr.includes('timeout')
       ) {
-        return; // Ignore dev server websocket / HMR errors
+        return;
       }
       if (event.reason) {
         showError(event.reason, 500);
@@ -111,56 +161,59 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, []);
 
+
   return (
-    <ErrorContext.Provider value={{ error, showError, clearError }}>
-      {children}
-      {error && (
-        <div className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-lg w-full border border-red-100 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center text-red-600 font-bold text-lg">
-                  !
+    <ErrorBoundary>
+      <ErrorContext.Provider value={{ error, showError, clearError }}>
+        {children}
+        {error && (
+          <div className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-lg w-full border border-red-100 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center text-red-600 font-bold text-lg">
+                    !
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900 tracking-tight">System Error</h3>
+                    {error.statusCode && (
+                      <span className="text-xs font-bold text-red-500 uppercase tracking-widest">
+                        Status / Code: {error.statusCode}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-black text-gray-900 tracking-tight">System Error</h3>
-                  {error.statusCode && (
-                    <span className="text-xs font-bold text-red-500 uppercase tracking-widest">
-                      Status / Code: {error.statusCode}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={clearError}
-                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="bg-red-50/80 border border-red-100 rounded-2xl p-4">
-                <p className="text-sm font-bold text-red-900">{error.message}</p>
+                <button
+                  onClick={clearError}
+                  className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition-colors"
+                >
+                  ✕
+                </button>
               </div>
 
-              {error.details && (
-                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 max-h-40 overflow-y-auto">
-                  <p className="text-xs font-mono text-gray-600 whitespace-pre-wrap">{error.details}</p>
+              <div className="space-y-4">
+                <div className="bg-red-50/80 border border-red-100 rounded-2xl p-4">
+                  <p className="text-sm font-bold text-red-900">{error.message}</p>
                 </div>
-              )}
 
-              <button
-                onClick={clearError}
-                className="w-full bg-black text-white py-3.5 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black/80 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-lg"
-              >
-                Dismiss & Continue
-              </button>
+                {error.details && (
+                  <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 max-h-40 overflow-y-auto">
+                    <p className="text-xs font-mono text-gray-600 whitespace-pre-wrap">{error.details}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={clearError}
+                  className="w-full bg-black text-white py-3.5 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-black/80 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-lg"
+                >
+                  Dismiss & Continue
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </ErrorContext.Provider>
+        )}
+      </ErrorContext.Provider>
+    </ErrorBoundary>
   );
 };
 

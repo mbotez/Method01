@@ -173,34 +173,45 @@ export const handleWebAuthCallback = async (
   const errorDescription = urlParams.get('error_description') || hashParams.get('error_description') || urlParams.get('error') || hashParams.get('error');
   if (errorDescription) {
     const decodedError = decodeURIComponent(errorDescription.replace(/\+/g, ' '));
+    console.error('OAuth Error:', decodedError);
     onError?.(decodedError);
     return false;
   }
 
   const hasAuthCallbackPath = window.location.pathname.includes('/auth/callback');
-  const hasAuthParams = currentUrl.includes('code=') || currentUrl.includes('access_token=');
+  const code = urlParams.get('code');
+  const hasAuthParams = currentUrl.includes('code=') || currentUrl.includes('access_token=') || code;
 
   if (hasAuthCallbackPath || hasAuthParams) {
-    
-    return new Promise((resolve) => {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_IN' && session) {
-          subscription.unsubscribe();
-          window.history.replaceState(null, '', '/dashboard');
-          onSuccess?.();
-          resolve(true);
+    try {
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          console.error('exchangeCodeForSession error:', { message: error.message, code: (error as any).code, details: (error as any).details });
+          onError?.(error.message);
+          return false;
         }
-      });
-
-      supabase.auth.getSession().then(({ data }) => {
         if (data?.session) {
-          subscription.unsubscribe();
           window.history.replaceState(null, '', '/dashboard');
           onSuccess?.();
-          resolve(true);
+          return true;
         }
-      });
-    });
+      }
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        console.error('getSession error:', { message: sessionError.message, code: (sessionError as any).code, details: (sessionError as any).details });
+      }
+      if (sessionData?.session) {
+        window.history.replaceState(null, '', '/dashboard');
+        onSuccess?.();
+        return true;
+      }
+    } catch (err: any) {
+      console.error('Auth callback exception:', err);
+      onError?.(err?.message || 'Authentication processing error');
+      return false;
+    }
   }
 
   return false;
