@@ -280,8 +280,15 @@ export const BrandsView: React.FC<BrandsViewProps> = ({
     }
   }, [selectedBrandItem, user?.id]);
 
+  const hasCompletedQuiz = useMemo(() => {
+    return Boolean(userProfile?.skin_type && userProfile.skin_type.trim() !== '');
+  }, [userProfile]);
+
   const getProductScore = (prod: any): number | null => {
     if (isProductCat3_11(prod)) {
+      return null;
+    }
+    if (!hasCompletedQuiz) {
       return null;
     }
     if (userScores[prod.id] !== undefined) {
@@ -714,17 +721,30 @@ export const BrandsView: React.FC<BrandsViewProps> = ({
                           ) : <span />}
 
                           {!isCat3_11 && (
-                            score !== null && score !== undefined && scoreConfig ? (
-                              <span 
-                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black border ${scoreConfig.pillClasses} shrink-0`}
-                                title={`Product Score: ${score}/100 (${scoreConfig.statusLabel})`}
-                              >
-                                <span>{score}/100</span>
-                                <span className="text-[8px] font-bold uppercase opacity-80 hidden xs:inline sm:inline">· {scoreConfig.statusLabel}</span>
-                              </span>
+                            hasCompletedQuiz ? (
+                              score !== null && score !== undefined && scoreConfig ? (
+                                <span 
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black border ${scoreConfig.pillClasses} shrink-0`}
+                                  title={`Product Score: ${score}/100 (${scoreConfig.statusLabel})`}
+                                >
+                                  <span>{score}/100</span>
+                                  <span className="text-[8px] font-bold uppercase opacity-80 hidden xs:inline sm:inline">· {scoreConfig.statusLabel}</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-black/5 text-black/40">
+                                  Score N/A
+                                </span>
+                              )
                             ) : (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-black/5 text-black/40">
-                                Score N/A
+                              <span 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.dispatchEvent(new CustomEvent('open-quiz-or-login'));
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black border bg-neutral-100 text-neutral-600 border-neutral-200 shrink-0 cursor-pointer hover:bg-neutral-200 transition-colors"
+                                title="Take the skin quiz to find out if this product is a good fit!"
+                              >
+                                <span>?/100</span>
                               </span>
                             )
                           )}

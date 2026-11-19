@@ -77,11 +77,6 @@ export const signInWithGoogle = async () => {
  */
 let lastHandledUrl = '';
 
-/**
- * Set up deep link token handling for Capacitor (using App.addListener('appUrlOpen', ...))
- * for PKCE / OAuth redirect callbacks. Parses code, handles error_description, closes Browser,
- * calls supabase.auth.exchangeCodeForSession(code), and guards against handling the same URL twice.
- */
 export const setupCapacitorDeepLinkAuth = (
   onSuccess?: () => void,
   onError?: (errorMessage: string) => void
@@ -117,11 +112,21 @@ export const setupCapacitorDeepLinkAuth = (
           try { await Browser.close(); } catch {}
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) {
-            onError?.(error.message);
+            const { data: sessionData } = await supabase.auth.getSession();
+            if (sessionData?.session) {
+              onSuccess?.();
+            } else {
+              onError?.(error.message);
+            }
           } else if (data?.session) {
             onSuccess?.();
           } else {
-            onError?.('Failed to establish session from code');
+            const { data: sessionData } = await supabase.auth.getSession();
+            if (sessionData?.session) {
+              onSuccess?.();
+            } else {
+              onError?.('Failed to establish session from code');
+            }
           }
         } else {
           try { await Browser.close(); } catch {}
@@ -157,8 +162,14 @@ export const setupCapacitorDeepLinkAuth = (
 };
 
 /**
- * Handles web OAuth callback when landing on `/auth/callback`.
+ * Handles web OAuth callback when landing on `/auth/callback` or when code is present in URL.
+ * Idempotent: uses module-level lastHandledWebCode and inFlightWebAuthPromise to ensure
+ * the same ?code= is only exchanged once. Also treats code exchange error as success if
+ * supabase.auth.getSession() already has an active session.
  */
+let lastHandledWebCode = '';
+let inFlightWebAuthPromise: Promise<boolean> | null = null;
+
 export const handleWebAuthCallback = async (
   onSuccess?: () => void,
   onError?: (errorMessage: string) => void
@@ -181,11 +192,39 @@ export const handleWebAuthCallback = async (
   const code = urlParams.get('code');
   const hasAuthParams = currentUrl.includes('code=') || currentUrl.includes('access_token=') || code;
 
-  if (hasAuthCallbackPath || hasAuthParams) {
+  if (!hasAuthCallbackPath && !hasAuthParams) {
+    return false;
+  }
+
+  // Idempotency check: if we already handled this exact code, check existing session
+  if (code && code === lastHandledWebCode) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session) {
+      window.history.replaceState(null, '', '/dashboard');
+      onSuccess?.();
+      return true;
+    }
+    return false;
+  }
+
+  // If already in flight, await the existing promise
+  if (inFlightWebAuthPromise) {
+    return inFlightWebAuthPromise;
+  }
+
+  inFlightWebAuthPromise = (async (): Promise<boolean> => {
     try {
       if (code) {
+        lastHandledWebCode = code;
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
+          console.warn('exchangeCodeForSession error, checking session fallback:', error.message);
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            window.history.replaceState(null, '', '/dashboard');
+            onSuccess?.();
+            return true;
+          }
           console.error('exchangeCodeForSession error:', { message: error.message, code: (error as any).code, details: (error as any).details });
           onError?.(error.message);
           return false;
@@ -206,12 +245,22 @@ export const handleWebAuthCallback = async (
         onSuccess?.();
         return true;
       }
+
+      return false;
     } catch (err: any) {
       console.error('Auth callback exception:', err);
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session) {
+        window.history.replaceState(null, '', '/dashboard');
+        onSuccess?.();
+        return true;
+      }
       onError?.(err?.message || 'Authentication processing error');
       return false;
+    } finally {
+      inFlightWebAuthPromise = null;
     }
-  }
+  })();
 
-  return false;
+  return inFlightWebAuthPromise;
 };
