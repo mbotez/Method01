@@ -1226,18 +1226,7 @@ export async function checkRoutine(
     underServedConcerns.push({ num: userProfile.scnd_concern, type: 'secondary' });
   }
 
-  // Run async queries for recommendations
-  for (const item of underServedConcerns) {
-    const ids = await getRecommendedAddition(item.num, userProfile);
-    const label = getConcernQuizLabel(item.num);
-    for (const pid of ids) {
-      recommended_additions.push({
-        concern: item.type === 'main' ? 'primary' : 'secondary',
-        product_id: String(pid),
-        reason: `A solid pick to help with ${label}.`
-      });
-    }
-  }
+  // Recommended additions queries bypassed as feature has been removed from routines
 
   // Normalization Scoring Engine starting from 100 points
   let score = 100;

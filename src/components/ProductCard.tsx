@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
 import { Login } from './Login';
 import { ProductComparisonTable } from './ProductComparisonTable';
+import { getScoreColorConfig } from '../utils/scoreColors';
 
 // Concern ID mapping dictionary for displaying user-friendly text labels
 const CONCERN_MAP: Record<number, string> = {
@@ -130,6 +131,18 @@ export function computeProductKeyBenefits(product: any, scores: any, rpcBenefits
   const name = (p.name || p.product_name || p.Name || '').toLowerCase();
   const desc = (p.description || '').toLowerCase();
 
+  // Rule: If cat3 = 11 (Lipcare), do not compute or return key benefits
+  const rawCat3 = Number(
+    p.cat3 ??
+    s?.cat3 ??
+    p.product_scores?.cat3 ??
+    (Array.isArray(p.product_scores) ? p.product_scores[0]?.cat3 : undefined) ??
+    (Array.isArray(s) ? s[0]?.cat3 : undefined)
+  );
+  if (rawCat3 === 11) {
+    return [];
+  }
+
   // Extract category 2 (cat2) from product or scores
   const rawCat2 = (
     p.cat2 ||
@@ -221,22 +234,39 @@ export function computeProductKeyBenefits(product: any, scores: any, rpcBenefits
   }
 
   // 6. Clears pores & blemishes
-  if (
-    s.clear_blackheads > 0 ||
-    s.clear_whiteheads > 0 ||
-    s.clear_surface_breakouts > 0 ||
-    s.soothe_deep_breakouts > 0 ||
-    s.has_bha_active ||
-    s.has_purifying_active ||
-    (s.synergy_breakout_response && s.synergy_breakout_response > 0) ||
+  // Formula Scores: Require clear_blackheads >= 2, clear_whiteheads >= 2, or clear_surface_breakouts >= 2
+  const hasPrimaryPoreScore =
+    Number(s.clear_blackheads) >= 2 ||
+    Number(s.clear_whiteheads) >= 2 ||
+    Number(s.clear_surface_breakouts) >= 2;
+
+  // Active Flags: Keep has_bha_active === true, has_purifying_active === true, or synergy_breakout_response > 0
+  const hasPoreActive =
+    Boolean(s.has_bha_active) ||
+    Boolean(s.has_purifying_active);
+
+  const hasPoreActiveFlags =
+    hasPoreActive ||
+    (s.synergy_breakout_response != null && Number(s.synergy_breakout_response) > 0);
+
+  // Remove standalone soothe_deep_breakouts trigger:
+  // soothe_deep_breakouts >= 2 only counts if at least one of clear_blackheads >= 2, clear_whiteheads >= 2,
+  // clear_surface_breakouts >= 2, has_bha_active === true, or has_purifying_active === true is also true
+  const hasSupportedSootheBreakouts =
+    Number(s.soothe_deep_breakouts) >= 2 && (hasPrimaryPoreScore || hasPoreActive);
+
+  // Keyword Matching: Restrict keyword matching (blemish, breakout, acne, clarifying) to product_name only
+  const hasPoreKeyword =
     name.includes('blemish') ||
-    desc.includes('blemish') ||
     name.includes('breakout') ||
-    desc.includes('breakout') ||
     name.includes('acne') ||
-    desc.includes('acne') ||
-    name.includes('clarifying') ||
-    desc.includes('clarifying')
+    name.includes('clarifying');
+
+  if (
+    hasPrimaryPoreScore ||
+    hasSupportedSootheBreakouts ||
+    hasPoreActiveFlags ||
+    hasPoreKeyword
   ) {
     benefits.push('Clears pores & blemishes');
   }
@@ -307,9 +337,22 @@ export function computeProductKeyBenefits(product: any, scores: any, rpcBenefits
   return finalBenefits;
 }
 
-export function computeProductPotentialIrritants(scores: any, rpcSafetyConcerns?: string[]): string[] {
+export function computeProductPotentialIrritants(scores: any, rpcSafetyConcerns?: string[], product?: any): string[] {
   const s = scores || {};
+  const p = product || {};
   const concerns: string[] = [];
+
+  // Rule: If cat3 = 11 (Lipcare), do not compute or return potential irritants
+  const rawCat3 = Number(
+    p.cat3 ??
+    s?.cat3 ??
+    p.product_scores?.cat3 ??
+    (Array.isArray(p.product_scores) ? p.product_scores[0]?.cat3 : undefined) ??
+    (Array.isArray(s) ? s[0]?.cat3 : undefined)
+  );
+  if (rawCat3 === 11) {
+    return [];
+  }
 
   if (s.has_yeast_trigger) {
     concerns.push('Yeast-induced Breakout Trigger');
@@ -323,7 +366,7 @@ export function computeProductPotentialIrritants(scores: any, rpcSafetyConcerns?
   if (s.night) {
     concerns.push('Photosensitizing Active (Use PM Only)');
   }
-  if (Number(s.aggregated_clogging_risk) > 0) {
+  if (Number(s.aggregated_clogging_risk) < 0) {
     concerns.push('May Cause Clogged Pores');
   }
 
@@ -331,8 +374,8 @@ export function computeProductPotentialIrritants(scores: any, rpcSafetyConcerns?
     for (const c of rpcSafetyConcerns) {
       const normalizedC = c === 'High Irritation Risk' ? 'May Be Irritant' : c;
       const isClogConcern = normalizedC.toLowerCase().includes('clog') || normalizedC.toLowerCase().includes('comedogenic');
-      if (isClogConcern && Number(s.aggregated_clogging_risk) <= 0) {
-        continue; // Skip clogging flag if aggregated_clogging_risk is <= 0
+      if (isClogConcern && Number(s.aggregated_clogging_risk) >= 0) {
+        continue; // Skip clogging flag if aggregated_clogging_risk is >= 0
       }
       if (normalizedC !== 'Contains Fragrance' && !concerns.some(existing => existing.toLowerCase() === normalizedC.toLowerCase())) {
         concerns.push(normalizedC);
@@ -935,6 +978,14 @@ export const ProductCardContent = ({
           scoreTablePromise,
           productIngredientsPromise
         ]);
+        console.log('[ProductCard] Evaluation debug:', {
+          effectiveProductId,
+          targetUserId,
+          rpcResult,
+          productTableResult,
+          scoreTableResult,
+          culpritsResult
+        });
         if (!active || signal.aborted) return;
 
         if (culpritsResult?.data) {
@@ -943,8 +994,17 @@ export const ProductCardContent = ({
 
         const tableProd = productTableResult?.data || null;
         const fetchedCat2 = scoreTableResult?.data?.cat2 || tableProd?.cat2 || trackerItem?.cat2 || '';
+        const fetchedCat3 = scoreTableResult?.data?.cat3 ??
+          tableProd?.cat3 ??
+          tableProd?.product_scores?.cat3 ??
+          (Array.isArray(tableProd?.product_scores) ? tableProd.product_scores[0]?.cat3 : undefined) ??
+          trackerItem?.cat3 ??
+          trackerItem?.product_scores?.cat3 ??
+          (Array.isArray(trackerItem?.product_scores) ? trackerItem.product_scores[0]?.cat3 : undefined) ??
+          null;
         if (tableProd) {
           tableProd.cat2 = fetchedCat2;
+          tableProd.cat3 = fetchedCat3;
         }
 
         const rpcData = rpcResult?.data || null;
@@ -952,16 +1012,20 @@ export const ProductCardContent = ({
 
         setProductIngredientsList(prodIngResult?.data || []);
         if (error) {
+          console.error('[ProductCard] RPC Error encountered:', error, { effectiveProductId, targetUserId });
           // If the RPC failed but direct product row exists, gracefully display the product
           if (tableProd) {
             const formulaBenefits = computeProductKeyBenefits(tableProd, null);
+            console.log('[ProductCard] RPC error but tableProd exists, showing fallback score. tableProd:', tableProd);
             setProduct({
               ...tableProd,
               cat2: fetchedCat2,
+              cat3: fetchedCat3,
               photo_url: tableProd.photo_url || trackerItem?.photo_url || null,
             });
             setComp({
-              skinTypeFit: 'General Fit',
+              scoreDisplay: 'Score could not be calculated',
+              compatibilityScore: null,
               conflicts: [],
               benefits: formulaBenefits,
               safetyConcerns: []
@@ -969,6 +1033,7 @@ export const ProductCardContent = ({
             setScores(null);
             setRpcErrorObj(null);
           } else if (trackerItem) {
+            console.log('[ProductCard] RPC error and no tableProd, but trackerItem exists. trackerItem:', trackerItem);
             setProduct({
               id: targetProductId || productId,
               name: trackerItem.product_name || 'Product',
@@ -976,7 +1041,7 @@ export const ProductCardContent = ({
               type: trackerItem.product_type || 'Skincare',
               photo_url: trackerItem.photo_url || null
             });
-            setComp({ skinTypeFit: 'General Fit', conflicts: [], benefits: [], safetyConcerns: [] });
+            setComp({ scoreDisplay: 'Score could not be calculated', compatibilityScore: null, conflicts: [], benefits: [], safetyConcerns: [] });
           } else {
             setRpcErrorObj({
               error: error.message,
@@ -988,6 +1053,7 @@ export const ProductCardContent = ({
 
         if (data) {
           if (data.error) {
+            console.warn('[ProductCard] RPC returned data.error:', data.error, { effectiveProductId, targetUserId, data });
             // Attempt to gracefully load product info from products table directly so UI isn't blocked
             const directProductRes = isValidNumeric ? await (async () => {
               try {
@@ -997,7 +1063,8 @@ export const ProductCardContent = ({
                   .eq('id', numericId)
                   .abortSignal(signal)
                   .maybeSingle();
-              } catch {
+              } catch (err) {
+                console.error('[ProductCard] Failed to fetch direct product on data.error:', err);
                 return { data: null };
               }
             })() : { data: null };
@@ -1006,32 +1073,40 @@ export const ProductCardContent = ({
 
             if (directProduct) {
               directProduct.cat2 = fetchedCat2;
+              directProduct.cat3 = fetchedCat3;
+              console.log('[ProductCard] data.error present, but directProduct found. Setting fallback Score could not be calculated. directProduct:', directProduct);
               setProduct({
                 ...directProduct,
                 cat2: fetchedCat2,
+                cat3: fetchedCat3,
                 photo_url: directProduct.photo_url || trackerItem?.photo_url || null,
               });
               setComp({
-                skinTypeFit: 'General Fit',
+                scoreDisplay: 'Score could not be calculated',
+                compatibilityScore: null,
                 conflicts: [],
                 benefits: computeProductKeyBenefits(directProduct, null),
                 safetyConcerns: []
               });
               setRpcErrorObj(null);
             } else if (trackerItem) {
+              console.log('[ProductCard] data.error present, no directProduct, using trackerItem. trackerItem:', trackerItem);
               setProduct({
                 id: targetProductId || productId,
                 name: trackerItem.product_name || 'Product',
                 brand: trackerItem.brand || '',
                 type: trackerItem.product_type || 'Skincare',
-                photo_url: trackerItem.photo_url || null
+                photo_url: trackerItem.photo_url || null,
+                cat3: fetchedCat3
               });
-              setComp({ skinTypeFit: 'General Fit', conflicts: [], benefits: [], safetyConcerns: [] });
+              setComp({ scoreDisplay: 'Score could not be calculated', compatibilityScore: null, conflicts: [], benefits: [], safetyConcerns: [] });
             } else {
               setRpcErrorObj(data);
             }
           } else {
+            console.log('[ProductCard] RPC success data received:', data);
             const finalCat2 = fetchedCat2 || data?.scores?.cat2 || data?.product?.cat2 || '';
+            const finalCat3 = fetchedCat3 ?? data?.scores?.cat3 ?? data?.product?.cat3 ?? null;
             const effectiveScores = data.scores || {
               oil_free: true,
               sulfate_free: true,
@@ -1041,17 +1116,20 @@ export const ProductCardContent = ({
               night: false
             };
             effectiveScores.cat2 = finalCat2;
+            effectiveScores.cat3 = finalCat3;
 
             const p = data.product || {};
             p.cat2 = finalCat2;
+            p.cat3 = finalCat3;
 
             // Inherent key benefits computed from formula properties regardless of user profile
             const formulaBenefits = computeProductKeyBenefits(p, effectiveScores, data.compatibility?.benefits);
-            const formulaConcerns = computeProductPotentialIrritants(effectiveScores, data.compatibility?.safetyConcerns);
+            const formulaConcerns = computeProductPotentialIrritants(effectiveScores, data.compatibility?.safetyConcerns, p);
 
             const effectiveComp = {
               ...(data.compatibility || {
-                skinTypeFit: 'General Catalog Formula',
+                scoreDisplay: 'Score could not be calculated',
+                compatibilityScore: null,
                 conflicts: []
               }),
               benefits: formulaBenefits,
@@ -1063,6 +1141,7 @@ export const ProductCardContent = ({
               ...(tableProd || {}),
               ...p,
               cat2: finalCat2,
+              cat3: finalCat3,
               photo_url: p.photo_url || tableProd?.photo_url || trackerItem?.photo_url || null,
               ingredients: p.ingredients || tableProd?.ingredients || [],
               name: p.name || tableProd?.name || trackerItem?.product_name || 'Product Name',
@@ -1190,7 +1269,7 @@ export const ProductCardContent = ({
             type: trackerItem.product_type || 'Skincare',
             photo_url: trackerItem.photo_url || null
           });
-          setComp({ skinTypeFit: 'General Fit', conflicts: [], benefits: [], safetyConcerns: [] });
+          setComp({ scoreDisplay: 'Score could not be calculated', compatibilityScore: null, conflicts: [], benefits: [], safetyConcerns: [] });
         }
       } finally {
         if (active) {
@@ -1267,6 +1346,17 @@ export const ProductCardContent = ({
   );
 
   const displayIngredients = isIngredientsExpanded ? (product.ingredients || []) : (product.ingredients || []).slice(0, 5);
+
+  const isCat3_11 = Boolean(
+    Number(product?.cat3) === 11 ||
+    Number(scores?.cat3) === 11 ||
+    Number(trackerItem?.cat3) === 11 ||
+    Number(product?.product_scores?.cat3) === 11 ||
+    (Array.isArray(product?.product_scores) && Number(product.product_scores[0]?.cat3) === 11) ||
+    Number(trackerItem?.product_scores?.cat3) === 11 ||
+    (Array.isArray(trackerItem?.product_scores) && Number(trackerItem.product_scores[0]?.cat3) === 11) ||
+    (Array.isArray(scores) && Number(scores[0]?.cat3) === 11)
+  );
 
   return (
     <div className="bg-white rounded-3xl p-6 shadow-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto border border-gray-100 space-y-3">
@@ -1462,7 +1552,7 @@ export const ProductCardContent = ({
       </div>
 
       {/* Key Benefits */}
-      {comp?.benefits && comp.benefits.length > 0 && (() => {
+      {!isCat3_11 && comp?.benefits && comp.benefits.length > 0 && (() => {
         const getIngredientsForFlag = (flagName: string) => {
           const metrics = getMetricNamesForFlag(flagName);
           if (!metrics || metrics.length === 0) return [];
@@ -1564,7 +1654,7 @@ export const ProductCardContent = ({
       })()}
 
       {/* Potential Irritants */}
-      {comp?.safetyConcerns && comp.safetyConcerns.length > 0 && (() => {
+      {!isCat3_11 && comp?.safetyConcerns && comp.safetyConcerns.length > 0 && (() => {
         const getIngredientsForFlag = (flagName: string) => {
           const metrics = getMetricNamesForFlag(flagName);
           if (!metrics || metrics.length === 0) return [];
@@ -1702,30 +1792,31 @@ export const ProductCardContent = ({
       )}
 
       {/* Formula Compatibility Analysis (When authenticated) */}
-      {isAuthenticated && comp && (
-        <div className="bg-black/[0.03] border border-black/10 rounded-xl p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Skin Compatibility</span>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${
-              comp.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-              comp.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
-              'bg-amber-100 text-amber-800 border-amber-300'
-            }`}>
-              {comp.skinTypeFit || 'Compatible'}
-            </span>
-          </div>
-
-          {comp.conflicts && comp.conflicts.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-0.5">
-              {comp.conflicts.map((conflict: string, idx: number) => (
-                <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                  <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
-                </span>
-              ))}
+      {!isCat3_11 && isAuthenticated && comp && (() => {
+        const compScoreConfig = getScoreColorConfig(comp.compatibilityScore);
+        return (
+          <div className={`border rounded-xl p-3 space-y-2 transition-all ${comp.compatibilityScore != null ? `${compScoreConfig.cardBorder} ${compScoreConfig.cardBg}` : 'bg-black/[0.03] border-black/10'}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Skin Compatibility Score</span>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border transition-colors ${
+                comp.compatibilityScore != null ? compScoreConfig.pillClasses : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+              }`}>
+                {comp.scoreDisplay || (comp.compatibilityScore !== undefined && comp.compatibilityScore !== null ? `${comp.compatibilityScore} / 100` : 'Score could not be calculated')}
+              </span>
             </div>
-          )}
-        </div>
-      )}
+
+            {comp.conflicts && comp.conflicts.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {comp.conflicts.map((conflict: string, idx: number) => (
+                  <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                    <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Ingredients */}
       {productIngredientsList.length > 0 && (

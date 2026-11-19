@@ -25,6 +25,7 @@ import {
   RatingSlider 
 } from './ProductCard';
 import { Login } from './Login';
+import { getScoreColorConfig } from '../utils/scoreColors';
 
 export function useProductDetail(productId: string | null, trackerItem?: any) {
   const [product, setProduct] = useState<any>(null);
@@ -195,8 +196,17 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
 
         const tableProd = productTableResult?.data || null;
         const fetchedCat2 = scoreTableResult?.data?.cat2 || tableProd?.cat2 || trackerItem?.cat2 || '';
+        const fetchedCat3 = scoreTableResult?.data?.cat3 ??
+          tableProd?.cat3 ??
+          tableProd?.product_scores?.cat3 ??
+          (Array.isArray(tableProd?.product_scores) ? tableProd.product_scores[0]?.cat3 : undefined) ??
+          trackerItem?.cat3 ??
+          trackerItem?.product_scores?.cat3 ??
+          (Array.isArray(trackerItem?.product_scores) ? trackerItem.product_scores[0]?.cat3 : undefined) ??
+          null;
         if (tableProd) {
           tableProd.cat2 = fetchedCat2;
+          tableProd.cat3 = fetchedCat3;
         }
 
         const { data, error } = rpcResult;
@@ -207,10 +217,12 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
             setProduct({
               ...tableProd,
               cat2: fetchedCat2,
+              cat3: fetchedCat3,
               photo_url: tableProd.photo_url || trackerItem?.photo_url || null,
             });
             setComp({
-              skinTypeFit: 'General Fit',
+              scoreDisplay: 'Score could not be calculated',
+              compatibilityScore: null,
               conflicts: [],
               benefits: formulaBenefits,
               safetyConcerns: []
@@ -225,7 +237,7 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
               type: trackerItem.product_type || 'Skincare',
               photo_url: trackerItem.photo_url || null
             });
-            setComp({ skinTypeFit: 'General Fit', conflicts: [], benefits: [], safetyConcerns: [] });
+            setComp({ scoreDisplay: 'Score could not be calculated', compatibilityScore: null, conflicts: [], benefits: [], safetyConcerns: [] });
           } else {
             setRpcErrorObj({
               error: error.message,
@@ -260,7 +272,8 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
                 photo_url: directProduct.photo_url || trackerItem?.photo_url || null,
               });
               setComp({
-                skinTypeFit: 'General Fit',
+                scoreDisplay: 'Score could not be calculated',
+                compatibilityScore: null,
                 conflicts: [],
                 benefits: computeProductKeyBenefits(directProduct, null),
                 safetyConcerns: []
@@ -274,12 +287,13 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
                 type: trackerItem.product_type || 'Skincare',
                 photo_url: trackerItem.photo_url || null
               });
-              setComp({ skinTypeFit: 'General Fit', conflicts: [], benefits: [], safetyConcerns: [] });
+              setComp({ scoreDisplay: 'Score could not be calculated', compatibilityScore: null, conflicts: [], benefits: [], safetyConcerns: [] });
             } else {
               setRpcErrorObj(data);
             }
           } else {
             const finalCat2 = fetchedCat2 || data?.scores?.cat2 || data?.product?.cat2 || '';
+            const finalCat3 = fetchedCat3 ?? data?.scores?.cat3 ?? data?.product?.cat3 ?? null;
             const effectiveScores = data.scores || {
               oil_free: true,
               sulfate_free: true,
@@ -289,16 +303,19 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
               night: false
             };
             effectiveScores.cat2 = finalCat2;
+            effectiveScores.cat3 = finalCat3;
 
             const p = data.product || {};
             p.cat2 = finalCat2;
+            p.cat3 = finalCat3;
 
             const formulaBenefits = computeProductKeyBenefits(p, effectiveScores, data.compatibility?.benefits);
-            const formulaConcerns = computeProductPotentialIrritants(effectiveScores, data.compatibility?.safetyConcerns);
+            const formulaConcerns = computeProductPotentialIrritants(effectiveScores, data.compatibility?.safetyConcerns, p);
 
             const effectiveComp = {
               ...(data.compatibility || {
-                skinTypeFit: 'General Catalog Formula',
+                scoreDisplay: 'Score could not be calculated',
+                compatibilityScore: null,
                 conflicts: []
               }),
               benefits: formulaBenefits,
@@ -309,6 +326,7 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
               ...(tableProd || {}),
               ...p,
               cat2: finalCat2,
+              cat3: finalCat3,
               photo_url: p.photo_url || tableProd?.photo_url || trackerItem?.photo_url || null,
               ingredients: p.ingredients || tableProd?.ingredients || [],
               name: p.name || tableProd?.name || trackerItem?.product_name || 'Product Name',
@@ -870,55 +888,61 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
               </td>
               {/* Product 1 Compatibility */}
               <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                {p1.isAuthenticated && p1.comp ? (
-                  <div className="space-y-1.5">
-                    <span className={`inline-block px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wide border ${
-                      p1.comp.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                      p1.comp.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
-                      'bg-amber-100 text-amber-800 border-amber-300'
-                    }`}>
-                      {p1.comp.skinTypeFit || 'Compatible'}
-                    </span>
-                    {p1.comp.conflicts && p1.comp.conflicts.length > 0 ? (
-                      <div className="flex flex-wrap gap-1 pt-0.5">
-                        {p1.comp.conflicts.map((conflict: string, idx: number) => (
-                          <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1">
-                            <Shield className="w-2.5 h-2.5 text-red-600 flex-shrink-0" /> <span className="break-words">{conflict}</span>
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[9.5px] sm:text-[10px] text-emerald-700 font-semibold pt-0.5">No ingredient conflicts detected</p>
-                    )}
-                  </div>
-                ) : (
+                {Number(p1.product?.cat3) === 11 || Number(p1.scores?.cat3) === 11 ? (
+                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">N/A (Lipcare)</span>
+                ) : p1.isAuthenticated && p1.comp ? (() => {
+                  const p1ScoreConfig = getScoreColorConfig(p1.comp.compatibilityScore);
+                  return (
+                    <div className="space-y-1.5">
+                      <span className={`inline-block px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wide border transition-colors ${
+                        p1.comp.compatibilityScore != null ? p1ScoreConfig.pillClasses : 'bg-gray-100 text-gray-700 border-gray-200'
+                      }`}>
+                        {p1.comp.scoreDisplay || (p1.comp.compatibilityScore !== undefined && p1.comp.compatibilityScore !== null ? `${p1.comp.compatibilityScore} / 100` : 'Score could not be calculated')}
+                      </span>
+                      {p1.comp.conflicts && p1.comp.conflicts.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {p1.comp.conflicts.map((conflict: string, idx: number) => (
+                            <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1">
+                              <Shield className="w-2.5 h-2.5 text-red-600 flex-shrink-0" /> <span className="break-words">{conflict}</span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[9.5px] sm:text-[10px] text-emerald-700 font-semibold pt-0.5">No ingredient conflicts detected</p>
+                      )}
+                    </div>
+                  );
+                })() : (
                   <span className="text-[10px] sm:text-[11px] text-black/40 italic">Log in to view compatibility</span>
                 )}
               </td>
               {/* Product 2 Compatibility */}
               <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                {p2.isAuthenticated && p2.comp ? (
-                  <div className="space-y-1.5">
-                    <span className={`inline-block px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wide border ${
-                      p2.comp.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                      p2.comp.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
-                      'bg-amber-100 text-amber-800 border-amber-300'
-                    }`}>
-                      {p2.comp.skinTypeFit || 'Compatible'}
-                    </span>
-                    {p2.comp.conflicts && p2.comp.conflicts.length > 0 ? (
-                      <div className="flex flex-wrap gap-1 pt-0.5">
-                        {p2.comp.conflicts.map((conflict: string, idx: number) => (
-                          <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1">
-                            <Shield className="w-2.5 h-2.5 text-red-600 flex-shrink-0" /> <span className="break-words">{conflict}</span>
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[9.5px] sm:text-[10px] text-emerald-700 font-semibold pt-0.5">No ingredient conflicts detected</p>
-                    )}
-                  </div>
-                ) : (
+                {Number(p2.product?.cat3) === 11 || Number(p2.scores?.cat3) === 11 ? (
+                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">N/A (Lipcare)</span>
+                ) : p2.isAuthenticated && p2.comp ? (() => {
+                  const p2ScoreConfig = getScoreColorConfig(p2.comp.compatibilityScore);
+                  return (
+                    <div className="space-y-1.5">
+                      <span className={`inline-block px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wide border transition-colors ${
+                        p2.comp.compatibilityScore != null ? p2ScoreConfig.pillClasses : 'bg-gray-100 text-gray-700 border-gray-200'
+                      }`}>
+                        {p2.comp.scoreDisplay || (p2.comp.compatibilityScore !== undefined && p2.comp.compatibilityScore !== null ? `${p2.comp.compatibilityScore} / 100` : 'Score could not be calculated')}
+                      </span>
+                      {p2.comp.conflicts && p2.comp.conflicts.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {p2.comp.conflicts.map((conflict: string, idx: number) => (
+                            <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1">
+                              <Shield className="w-2.5 h-2.5 text-red-600 flex-shrink-0" /> <span className="break-words">{conflict}</span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[9.5px] sm:text-[10px] text-emerald-700 font-semibold pt-0.5">No ingredient conflicts detected</p>
+                      )}
+                    </div>
+                  );
+                })() : (
                   <span className="text-[10px] sm:text-[11px] text-black/40 italic">Log in to view compatibility</span>
                 )}
               </td>

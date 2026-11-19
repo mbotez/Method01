@@ -17,7 +17,7 @@ async function startServer() {
   const portIndex = process.argv.indexOf("--port");
   if (portIndex !== -1 && process.argv[portIndex + 1]) {
     port = parseInt(process.argv[portIndex + 1], 10);
-  } else if (process.env.PORT) {
+  } else if (process.env.NODE_ENV === "production" && process.env.PORT && process.env.PORT !== "8080") {
     port = parseInt(process.env.PORT, 10);
   }
 
@@ -93,7 +93,9 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(port, host, () => {});
+  const server = app.listen(port, host, () => {
+    console.log(`Server listening on http://${host}:${port}`);
+  });
 
   process.on("SIGTERM", () => {
     server.close();
@@ -105,6 +107,7 @@ async function startServer() {
   });
 }
 
-startServer().catch(() => {
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
   process.exit(1);
 });

@@ -49,7 +49,7 @@ import { supabase, recoverSupabaseSession } from './lib/supabase';
 import { ProductCardProvider, useProductCard } from './context/ProductCardContext';
 import { Login } from './components/Login';
 import { ProductDetailModalNew } from './components/ProductDetailModalNew';
-import { ProductCard, ProductCardContent } from './components/ProductCard';
+import { ProductCard, ProductCardContent, computeProductKeyBenefits } from './components/ProductCard';
 import { ProductLink } from './components/ProductLink';
 import { ComparisonModal } from './components/ComparisonModal';
 import { AiProductComparisonModal } from './components/AiProductComparisonModal';
@@ -63,37 +63,23 @@ import { productSort } from './utils/productsort';
 import { searchProducts } from "./utils/TextSearch";
 import { TrackerSpreadsheetRow } from './components/TrackerSpreadsheetRow';
 import { checkRoutine, RoutineCheckResult, UserProfile, getActivesBudgetExplanation } from './utils/RoutineCheck';
+import { getScoreColorConfig } from './utils/scoreColors';
 import { fetchRoutinesWithLiveProducts } from './utils/routineFetcher';
 import { BREAKOUT_PHOTO_OPTIONS, getBreakoutTitle, breakoutTypeStringToId } from './data/breakoutOptions';
 import { setupCapacitorDeepLinkAuth, handleWebAuthCallback, isNativePlatform } from './utils/auth';
 import { Browser } from '@capacitor/browser';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
+import { LandingView } from './views/LandingView';
 import { FeatureUnavailableModal } from './components/FeatureUnavailableModal';
 import { checkPhotoRecognitionLimit, recordPhotoScanUsage } from './utils/photoRecognitionLimit';
 import { generateUniqueUsername } from './utils/usernameGenerator';
-
-export const SKIN_CONCERN_OPTIONS = [
-  { id: 1, label: 'Breakouts & post-breakout marks' },
-  { id: 2, label: 'Redness' },
-  { id: 3, label: 'Dark Spots' },
-  { id: 4, label: 'Dullness' },
-  { id: 5, label: 'Dryness' },
-  { id: 6, label: 'Oily skin' },
-  { id: 7, label: 'Wrinkles & fine lines' },
-  { id: 8, label: 'Large pores & texture' },
-  { id: 9, label: 'Sensitivity' },
-  { id: 10, label: 'Extremely dry flaky skin' },
-  { id: 11, label: 'Yeast-reactive skin' },
-  { id: 12, label: 'Not sure' },
-];
-
-export const getSkinConcernLabel = (id: any): string | null => {
-  if (id === null || id === undefined) return null;
-  const num = Number(id);
-  if (isNaN(num) || num === 12) return null;
-  const match = SKIN_CONCERN_OPTIONS.find((c) => c.id === num);
-  return match ? match.label : null;
-};
+import { AppState, AvoidedIngredient } from './types';
+import { SKIN_CONCERN_OPTIONS, CAT3_MAPPING, ACTIVES_TEXT_MAP, ACTIVE_SKINCARE_OPTIONS, DEFAULT_LANDING_ARTICLES, MOBILE_ROW_LETTERS, MOBILE_DROPDOWN_LETTERS, WEB_ROW_1_LETTERS, WEB_ROW_2_LETTERS } from './config/appConstants';
+import { getSkinConcernLabel, getActivesSelectedIds, extractAvoidedIngredientIds, parseAvoidedIngredients } from './utils/profileHelpers';
+import { BrandsView } from './views/BrandsView';
+import { FeedbackView } from './views/FeedbackView';
+import { DeleteAccountView } from './views/DeleteAccountView';
+import { ProfileView } from './views/ProfileView';
 
 // --- Components ---
 
@@ -117,265 +103,6 @@ const ErrorModal = ({ error, onClose }: { error: string, onClose: () => void }) 
 );
 
 // --- Main App Logic ---
-
-enum AppState {
-  LANDING,
-  AUTH,
-  ONBOARDING_DETAILS,
-  DASHBOARD,
-  RANK,
-  TRACKER,
-  SOCIAL,
-  PROFILE,
-  PROGRESS,
-  PRODUCT_PAGE,
-  ROUTINES,
-  PRIVACY_POLICY,
-  DELETE_ACCOUNT,
-  FEEDBACK,
-  BRANDS
-}
-
-const CAT3_MAPPING: Record<string, { id: number, name: string }[]> = {
-  "Cleanser": [
-    { id: 1, name: "Facewash" },
-    { id: 2, name: "Makeup Remover" },
-    { id: 3, name: "Exfoliator" },
-    { id: 7, name: "Oil" },
-    { id: 14, name: "Pad" },
-    { id: 15, name: "Scrub" }
-  ],
-  "Moisturiser": [
-    { id: 6, name: "Cream" },
-    { id: 7, name: "Oil" },
-    { id: 10, name: "Eyecare" },
-    { id: 11, name: "Lipcare" },
-    { id: 16, name: "Mask" }
-  ],
-  "Treatment": [
-    { id: 3, name: "Exfoliator" },
-    { id: 4, name: "Serum" },
-    { id: 5, name: "Toner" },
-    { id: 7, name: "Oil" },
-    { id: 12, name: "Spot Treatment" },
-    { id: 14, name: "Pad" },
-    { id: 15, name: "Scrub" },
-    { id: 16, name: "Mask" }
-  ],
-  "Targeted": [
-    { id: 4, name: "Serum" },
-    { id: 5, name: "Toner" },
-    { id: 6, name: "Cream" },
-    { id: 10, name: "Eyecare" },
-    { id: 11, name: "Lipcare" },
-    { id: 12, name: "Spot Treatment" },
-    { id: 13, name: "Patch" },
-    { id: 14, name: "Pad" },
-    { id: 16, name: "Mask" }
-  ],
-  "SPF": [
-    { id: 8, name: "Mineral SPF" },
-    { id: 9, name: "Chemical SPF" },
-    { id: 11, name: "Lipcare" }
-  ]
-};
-
-const ACTIVES_TEXT_MAP: Record<number | string, string> = {
-  1: 'Prescription retinoids (tretinoin, adapalene etc)',
-  2: 'Over-the-counter retinols',
-  3: 'Exfoliating acids (salicylic, glycolic etc)',
-  4: "None/ I'm not sure"
-};
-
-export const ACTIVE_SKINCARE_OPTIONS = [
-  { id: 1, label: 'Prescription retinoids (tretinoin, adapalene etc)' },
-  { id: 2, label: 'Over-the-counter retinols' },
-  { id: 3, label: 'Exfoliating acids (salicylic, glycolic etc)' },
-  { id: 4, label: "None/ I'm not sure" }
-] as const;
-
-export const getActivesSelectedIds = (raw: any): number[] => {
-  if (raw === null || raw === undefined) return [];
-  let items: any[] = [];
-  if (Array.isArray(raw)) {
-    items = raw;
-  } else if (typeof raw === 'number') {
-    items = [raw];
-  } else if (typeof raw === 'string') {
-    const trimmed = raw.trim();
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      items = trimmed.slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim());
-    } else if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-      try {
-        items = JSON.parse(trimmed);
-      } catch {
-        items = trimmed.split(',').map(s => s.trim());
-      }
-    } else if (trimmed.includes(',')) {
-      items = trimmed.split(',').map(s => s.trim());
-    } else if (trimmed !== '') {
-      items = [trimmed];
-    }
-  }
-
-  const selected = new Set<number>();
-  for (const item of items) {
-    if (item === null || item === undefined) continue;
-    const s = String(item).trim();
-    const num = Number(s);
-    if (!isNaN(num) && num >= 1 && num <= 4) {
-      selected.add(num);
-    } else {
-      const lower = s.toLowerCase();
-      if (lower.includes('prescription') || lower.includes('tretinoin') || lower.includes('adapalene')) {
-        selected.add(1);
-      } else if (lower.includes('over-the-counter') || lower.includes('retinol') || lower.includes('otc')) {
-        selected.add(2);
-      } else if (lower.includes('acid') || lower.includes('exfoliat') || lower.includes('salicylic') || lower.includes('glycolic')) {
-        selected.add(3);
-      } else if (lower.includes('none') || lower.includes('not sure')) {
-        selected.add(4);
-      }
-    }
-  }
-  return Array.from(selected);
-};
-
-export interface AvoidedIngredient {
-  id: number | null;
-  name: string;
-}
-
-export const extractAvoidedIngredientIds = (raw: any): number[] => {
-  if (raw === null || raw === undefined) return [];
-  let parsed = raw;
-  if (typeof raw === 'string') {
-    const trimmed = raw.trim();
-    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-      try {
-        parsed = JSON.parse(trimmed);
-      } catch {
-        parsed = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    } else if (trimmed.includes(',')) {
-      parsed = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-    } else if (trimmed !== '') {
-      parsed = [trimmed];
-    } else {
-      return [];
-    }
-  }
-
-  if (!Array.isArray(parsed)) {
-    if (typeof parsed === 'number' && !isNaN(parsed)) return [parsed];
-    if (typeof parsed === 'string') {
-      const num = parseInt(parsed.trim(), 10);
-      if (!isNaN(num) && String(num) === parsed.trim()) return [num];
-    }
-    if (typeof parsed === 'object' && parsed !== null) {
-      if (parsed.id !== undefined && parsed.id !== null) {
-        const num = Number(parsed.id);
-        return !isNaN(num) ? [num] : [];
-      }
-    }
-    return [];
-  }
-
-  const ids: number[] = [];
-  for (const item of parsed) {
-    if (item === null || item === undefined) continue;
-    if (typeof item === 'number' && !isNaN(item)) {
-      if (!ids.includes(item)) ids.push(item);
-    } else if (typeof item === 'string') {
-      const num = parseInt(item.trim(), 10);
-      if (!isNaN(num) && String(num) === item.trim()) {
-        if (!ids.includes(num)) ids.push(num);
-      }
-    } else if (typeof item === 'object' && item !== null) {
-      if (item.id !== undefined && item.id !== null) {
-        const num = Number(item.id);
-        if (!isNaN(num) && !ids.includes(num)) ids.push(num);
-      }
-    }
-  }
-  return ids;
-};
-
-export const parseAvoidedIngredients = (raw: any): AvoidedIngredient[] => {
-  if (!raw) return [];
-
-  let parsed = raw;
-  if (typeof raw === 'string') {
-    const trimmed = raw.trim();
-    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-      try {
-        parsed = JSON.parse(trimmed);
-      } catch {
-        parsed = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    } else if (trimmed.includes(',')) {
-      parsed = trimmed.split(',').map(s => s.trim()).filter(Boolean);
-    } else if (trimmed !== '') {
-      parsed = [trimmed];
-    } else {
-      return [];
-    }
-  }
-
-  if (!Array.isArray(parsed)) {
-    if (typeof parsed === 'object' && parsed !== null) {
-      parsed = [parsed];
-    } else {
-      return [];
-    }
-  }
-
-  return parsed.map((item: any) => {
-    if (typeof item === 'object' && item !== null) {
-      const id = typeof item.id === 'number' ? item.id : (item.id ? parseInt(String(item.id), 10) || null : null);
-      const name = item.name || item.ingredient || item.label || item.title || (id ? `Ingredient #${id}` : '');
-      return { id, name: String(name).trim() };
-    }
-    if (typeof item === 'number') {
-      return { id: item, name: `Ingredient #${item}` };
-    }
-    const str = String(item).trim();
-    return { id: null, name: str };
-  }).filter(ing => ing.name.length > 0 || ing.id !== null);
-};
-
-const DEFAULT_LANDING_ARTICLES = [
-  {
-    id: 'layering-mastery',
-    title: 'The Ultimate Skincare Layering Order',
-    category: 'Layering',
-    readTime: '4 min read',
-    article_content: 'Master the exact order of application from thinnest water-based textures to richest lipid creams to guarantee maximum dermal absorption without pilling or flushing.',
-    image_url: '/assets/g1.jpg',
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    article_link: '#'
-  },
-  {
-    id: 'actives-compatibility',
-    title: 'Active Ingredients Compatibility Matrix',
-    category: 'Actives',
-    readTime: '5 min read',
-    article_content: 'The go-to reference table explaining which dermatological actives can be combined in the same regimen, and which combinations cause chemical degradation or micro-inflammation.',
-    image_url: '/assets/g2.jpg',
-    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-    article_link: '#'
-  },
-  {
-    id: 'barrier-repair',
-    title: 'Barrier Repair & Stratum Corneum Recovery',
-    category: 'Barrier',
-    readTime: '4 min read',
-    article_content: 'How to identify an acid-mantle breakdown, eliminate micro-irritants, and rapidly restore compromised skin using physiological 3:1:1:1 lipid ratios.',
-    image_url: '/assets/g3.jpg',
-    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
-    article_link: '#'
-  }
-];
 
 export default function App() {
   const [isWeb, setIsWeb] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 640);
@@ -458,7 +185,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [user]);
 
-  const [landingArticles, setLandingArticles] = useState<any[]>(DEFAULT_LANDING_ARTICLES);
   const [landingGuide, setLandingGuide] = useState<any>(SKINCARE_GUIDES[0]);
 
   useEffect(() => {
@@ -492,27 +218,7 @@ export default function App() {
     fetchLandingGuide();
   }, []);
 
-  useEffect(() => {
-    const fetchLandingArticles = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('articles')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(3);
-        if (!error && data && data.length > 0) {
-          const mappedArticles = data.map((art: any, idx: number) => ({
-            ...art,
-            image_url: art.image_url && !art.image_url.includes('supabase') ? art.image_url : `/assets/g${(idx % 6) + 1}.jpg`
-          }));
-          setLandingArticles(mappedArticles);
-        }
-      } catch {
-        // Fallback already set
-      }
-    };
-    fetchLandingArticles();
-  }, []);
+
 
   useEffect(() => {
     const handleResize = () => {
@@ -523,7 +229,7 @@ export default function App() {
   }, []);
   const { openProductCard } = useProductCard();
   const [userProfile, setUserProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [skinType, setSkinType] = useState('normal');
   const [concern, setConcern] = useState('Other');
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
@@ -554,6 +260,7 @@ export default function App() {
   const [isHeaderSearching, setIsHeaderSearching] = useState(false);
   const [isHeaderSearchDropdownOpen, setIsHeaderSearchDropdownOpen] = useState(false);
   const headerSearchContainerRef = useRef<HTMLDivElement>(null);
+  const headerSearchDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!headerSearchQuery.trim()) {
@@ -565,22 +272,14 @@ export default function App() {
       setIsHeaderSearching(true);
       const query = headerSearchQuery.trim();
 
-
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .or(`name.ilike.%${query}%,brand.ilike.%${query}%,type.ilike.%${query}%`)
-        .limit(10);
-
-      if (error) {
-      }
-
-      if (!error && data) {
-        setHeaderSearchResults(data);
-      } else {
+      try {
+        const data = await searchProducts(query, 'All', 15);
+        setHeaderSearchResults(data || []);
+      } catch (err) {
         setHeaderSearchResults([]);
+      } finally {
+        setIsHeaderSearching(false);
       }
-      setIsHeaderSearching(false);
     }, 300);
     return () => clearTimeout(timer);
   }, [headerSearchQuery]);
@@ -590,6 +289,33 @@ export default function App() {
     setHeaderSearchResults([]);
     setIsHeaderSearchDropdownOpen(false);
   };
+
+  // Close header search dropdown on click outside or escape key
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        headerSearchContainerRef.current &&
+        !headerSearchContainerRef.current.contains(event.target as Node) &&
+        headerSearchDropdownRef.current &&
+        !headerSearchDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsHeaderSearchDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsHeaderSearchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
   const [routineSearchQuery, setRoutineSearchQuery] = useState('');
   const [expandedRoutines, setExpandedRoutines] = useState<number[]>([]);
   const [routineChecks, setRoutineChecks] = useState<Record<string, RoutineCheckResult>>({});
@@ -598,46 +324,7 @@ export default function App() {
   const [isRefreshingRoutines, setIsRefreshingRoutines] = useState(false);
 
   const getBenefitsForProduct = (p: any, s: any) => {
-    const rawCat2 = p?.cat2 ||
-      s?.cat2 ||
-      p?.product_scores?.cat2 ||
-      (Array.isArray(p?.product_scores) ? p?.product_scores[0]?.cat2 : '') ||
-      '';
-    const isTreatment = String(rawCat2).trim().toLowerCase() === 'treatment';
-
-    const benefits: string[] = [];
-    const name = (p.name || p.product_name || '').toLowerCase();
-    const desc = (p.description || '').toLowerCase();
-    if (!isTreatment && (s?.calm_redness_dry_skin > 0 || s?.calm_redness_oily_skin > 0 || s?.calm_redness_combi_skin > 0 || name.includes('redness') || desc.includes('redness'))) {
-      benefits.push('Calms facial redness');
-    }
-    if (s?.barrier_repair_dry_skin > 0 || s?.barrier_repair_oily_skin > 0 || s?.barrier_repair_combi_skin > 0 || name.includes('barrier') || desc.includes('barrier')) {
-      benefits.push('Repairs skin barrier');
-    }
-    if (s?.hydration_dry_skin > 0 || s?.hydration_oily_skin > 0 || s?.hydration_combi_skin > 0) {
-      benefits.push('Deep hydration');
-    }
-    if (s?.reduce_wrinkles > 0) {
-      benefits.push('Smooths fine lines & wrinkles');
-    }
-    if (s?.has_brightening_ingredient || s?.fade_pie > 0 || s?.fade_pih > 0 || s?.dark_spots > 0) {
-      benefits.push('Brightens skin tone & fades dark spots');
-    }
-    if (s?.clear_blackheads > 0 || s?.clear_surface_breakouts > 0 || s?.clear_whiteheads > 0 || s?.soothe_deep_breakouts > 0) {
-      benefits.push('Clears pores & blemishes');
-    }
-    if (s?.oil_control > 0) {
-      benefits.push('Oil control');
-    }
-
-    let finalBenefits = isTreatment
-      ? benefits.filter(b => b.toLowerCase() !== 'calms facial redness')
-      : benefits;
-
-    if (finalBenefits.length === 0) {
-      finalBenefits.push('Balances skin & maintains health');
-    }
-    return finalBenefits;
+    return computeProductKeyBenefits(p, s);
   };
 
   const getActiveRoutineProducts = (products: any[], routineTime: string) => {
@@ -693,36 +380,7 @@ export default function App() {
   const [leaderboardFilter, setLeaderboardFilter] = useState('All');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
-  const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
-  const handleFeedbackSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.id) return;
-    const trimmed = feedbackText.trim();
-    if (!trimmed) {
-      setFeedbackError('Please enter your feedback.');
-      return;
-    }
-    setFeedbackSubmitting(true);
-    setFeedbackError(null);
-    setFeedbackSuccess(null);
-    try {
-      const { error } = await supabase.from('feedback').insert({
-        user_id: user.id,
-        feedback: trimmed
-      });
-      if (error) throw error;
-      setFeedbackSuccess('Thank you! Your feedback has been successfully submitted.');
-      setFeedbackText('');
-    } catch (err: any) {
-      setFeedbackError(err.message || 'Failed to submit feedback. Please try again.');
-    } finally {
-      setFeedbackSubmitting(false);
-    }
-  };
   const [isSignUp, setIsSignUp] = useState(false);
   const [pendingQuestionnaireAnswers, setPendingQuestionnaireAnswers] = useState<any>(null); // NEW
   const [isQuizBannerDismissed, setIsQuizBannerDismissed] = useState(false);
@@ -1135,13 +793,30 @@ export default function App() {
     setIsSavingGoals(true);
     setGoalsSaveError(null);
     try {
+      const hadBreakoutGoal = Number(userProfile?.main_concern) === 1 || Number(userProfile?.scnd_concern) === 1;
+      const willHaveBreakoutGoal = editMainConcern === 1 || editScndConcern === 1;
+
+      const hasBreakoutCharacteristics = Boolean(
+        (Array.isArray(userProfile?.breakout_type) && userProfile.breakout_type.length > 0) ||
+        (typeof userProfile?.breakout_type === 'number' && !isNaN(userProfile.breakout_type)) ||
+        (typeof userProfile?.breakout_type === 'string' && userProfile.breakout_type.trim() !== '')
+      );
+
+      const shouldRemoveBreakouts = !willHaveBreakoutGoal && (hadBreakoutGoal || hasBreakoutCharacteristics);
+
+      const updatePayload: any = {
+        id: user.id,
+        main_concern: editMainConcern,
+        scnd_concern: editScndConcern,
+      };
+
+      if (shouldRemoveBreakouts) {
+        updatePayload.breakout_type = null;
+      }
+
       const { error: updateError } = await supabase
         .from('user_profile')
-        .upsert({
-          id: user.id,
-          main_concern: editMainConcern,
-          scnd_concern: editScndConcern,
-        });
+        .upsert(updatePayload);
 
       if (updateError) {
         throw updateError;
@@ -1151,15 +826,22 @@ export default function App() {
         ...prev,
         main_concern: editMainConcern,
         scnd_concern: editScndConcern,
+        ...(shouldRemoveBreakouts ? { breakout_type: null } : {})
       } : {
         main_concern: editMainConcern,
         scnd_concern: editScndConcern,
+        ...(shouldRemoveBreakouts ? { breakout_type: null } : {})
       });
+
+      if (shouldRemoveBreakouts) {
+        setEditBreakoutTypes([]);
+        setIsEditingBreakout(false);
+      }
 
       setIsEditingGoals(false);
 
       // If user edits target skin goals to choose 'Breakouts & post-breakout marks' (id 1), open up breakout type choices restricted to 1
-      if (editMainConcern === 1 || editScndConcern === 1) {
+      if (willHaveBreakoutGoal) {
         const currentBreakout = Array.isArray(userProfile?.breakout_type) 
           ? userProfile.breakout_type 
           : (userProfile?.breakout_type ? [userProfile.breakout_type] : []);
@@ -1181,93 +863,11 @@ export default function App() {
   const [loadingLatestVideos, setLoadingLatestVideos] = useState(true);
   const [loadingLastPost, setLoadingLastPost] = useState(true);
 
-const MOBILE_ROW_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
-const MOBILE_DROPDOWN_LETTERS = ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
-const WEB_ROW_1_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'];
-const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
 
-  // Brands page states & effects
+
+  // Brands page states
   const [selectedBrandsLetter, setSelectedBrandsLetter] = useState<string | null>(null);
-  const [brandsList, setBrandsList] = useState<any[]>([]);
   const [selectedBrandItem, setSelectedBrandItem] = useState<any | null>(null);
-  const [brandProducts, setBrandProducts] = useState<any[]>([]);
-  const [loadingBrands, setLoadingBrands] = useState<boolean>(false);
-  const [loadingBrandProducts, setLoadingBrandProducts] = useState<boolean>(false);
-  const [isMobileBrandsDropdownOpen, setIsMobileBrandsDropdownOpen] = useState<boolean>(false);
-  const mobileBrandsDropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (mobileBrandsDropdownRef.current && !mobileBrandsDropdownRef.current.contains(e.target as Node)) {
-        setIsMobileBrandsDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (appState === AppState.BRANDS) {
-      const fetchBrands = async () => {
-        setLoadingBrands(true);
-        if (!selectedBrandsLetter) {
-          const { data } = await supabase
-            .from('brands')
-            .select('*')
-            .order('brand_name', { ascending: true });
-          setBrandsList(data || []);
-          setLoadingBrands(false);
-          return;
-        }
-
-        let { data, error } = await supabase
-          .from('brands')
-          .select('*')
-          .eq('letter', selectedBrandsLetter)
-          .order('brand_name', { ascending: true });
-
-        if (error || !data || data.length === 0) {
-          const { data: allBrands } = await supabase.from('brands').select('*').order('brand_name', { ascending: true });
-          if (allBrands) {
-            data = allBrands.filter((b: any) => {
-              const bLetter = b.letter || (b.brand_name ? b.brand_name.charAt(0).toUpperCase() : '');
-              return bLetter === selectedBrandsLetter;
-            });
-          }
-        }
-        setBrandsList(data || []);
-        setLoadingBrands(false);
-      };
-      fetchBrands();
-    }
-  }, [appState, selectedBrandsLetter]);
-
-  useEffect(() => {
-    if (selectedBrandItem) {
-      const fetchBrandProducts = async () => {
-        setLoadingBrandProducts(true);
-        let { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .eq('brand_id', selectedBrandItem.brand_id);
-
-        if (error || !data || data.length === 0) {
-          const { data: nameData } = await supabase
-            .from('products')
-            .select('*')
-            .ilike('brand', selectedBrandItem.brand_name);
-          if (nameData) {
-            data = nameData;
-          }
-        }
-        setBrandProducts(data || []);
-        setLoadingBrandProducts(false);
-      };
-      fetchBrandProducts();
-    } else {
-      setBrandProducts([]);
-    }
-  }, [selectedBrandItem]);
 
   // Dashboard Product Scan States
   const dashboardFileInputRef = useRef<HTMLInputElement>(null);
@@ -1283,14 +883,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
   const [navScanMatched, setNavScanMatched] = useState<MatchedProduct[]>([]);
   const [isNavConfirmOpen, setIsNavConfirmOpen] = useState(false);
 
-  // Landing Page Product Scan States
-  const landingFileInputRef = useRef<HTMLInputElement>(null);
-  const [isLandingScanning, setIsLandingScanning] = useState(false);
-  const [landingScanError, setLandingScanError] = useState<string | null>(null);
-  const [landingScanMatched, setLandingScanMatched] = useState<MatchedProduct[]>([]);
-  const [isLandingConfirmOpen, setIsLandingConfirmOpen] = useState(false);
-  const [cachedLandingProducts, setCachedLandingProducts] = useState<MatchedProduct[]>([]);
-  const [isLandingEvaluating, setIsLandingEvaluating] = useState(false);
+
   const [showFeatureUnavailable, setShowFeatureUnavailable] = useState(false);
   const [authPromptConfig, setAuthPromptConfig] = useState<{
     title: string;
@@ -1531,91 +1124,18 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
     }
   };
 
-  const handleLandingPhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    const limitCheck = checkPhotoRecognitionLimit(user);
-    if (!limitCheck.allowed) {
-      if (limitCheck.reason === 'REQUIRE_AUTH') {
-        openAuthPromptModal(
-          "Sign in or sign up",
-          "You've used your 1 free photo recognition scan. Please sign in or create an account to continue."
-        );
-      } else {
-        setLandingScanError("Photo recognition limit reached. Please sign in.");
-      }
-      if (landingFileInputRef.current) {
-        landingFileInputRef.current.value = '';
-      }
-      return;
-    }
-
-    setIsLandingScanning(true);
-    setLandingScanError(null);
-
-    try {
-      const matches = await searchProductsFromPhoto(file);
-      recordPhotoScanUsage(user);
-      setLandingScanMatched(matches);
-      setIsLandingConfirmOpen(true);
-    } catch (err: any) {
-      setLandingScanError(err.message || 'Photo scan failed. Please try again.');
-    } finally {
-      setIsLandingScanning(false);
-      if (landingFileInputRef.current) {
-        landingFileInputRef.current.value = '';
-      }
-    }
-  };
-
   // Failsafe watchdog timer: ensure photo scanning / evaluation loader can never hang indefinitely
   useEffect(() => {
-    if (isLandingScanning || isNavScanning || isDashboardScanning || isLandingEvaluating) {
+    if (isNavScanning || isDashboardScanning) {
       const watchdog = setTimeout(() => {
-        setIsLandingScanning(false);
         setIsNavScanning(false);
         setIsDashboardScanning(false);
-        setIsLandingEvaluating(false);
-        setLandingScanError('Photo scan timed out. Please try again.');
         setNavScanError('Photo scan timed out. Please try again.');
         setDashboardScanError('Photo scan timed out. Please try again.');
       }, 30000);
       return () => clearTimeout(watchdog);
     }
-  }, [isLandingScanning, isNavScanning, isDashboardScanning, isLandingEvaluating]);
-
-  const handleLandingConfirmScan = async (confirmed: MatchedProduct[]) => {
-    setIsLandingConfirmOpen(false);
-    if (confirmed.length === 0) return;
-
-    if (!user) {
-        // Cache those products provisorily
-        localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
-        setCachedLandingProducts(confirmed);
-        // Start the questionnaire
-        setAppState(AppState.ONBOARDING_DETAILS);
-        return;
-    }
-
-    const payload = confirmed.map(prod => ({
-      user_id: user?.id,
-      brand: prod.brand,
-      product_name: prod.name,
-      product_type: prod.type,
-      routine_time: 'AM/PM',
-      in_use: true,
-      photo_url: prod.photo_url || null,
-      product_id: prod.id
-    }));
-
-    const { error: insertError } = await supabase.from('tracker').insert(payload);
-    if (insertError) {
-      setLandingScanError("Failed to save scanned products to tracker.");
-    }
-  };
+  }, [isNavScanning, isDashboardScanning]);
 
   const handleNavConfirmScan = async (confirmed: MatchedProduct[]) => {
     setIsNavConfirmOpen(false);
@@ -1623,7 +1143,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
 
     if (!user) {
         localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
-        setCachedLandingProducts(confirmed);
         setAppState(AppState.ONBOARDING_DETAILS);
         return;
     }
@@ -1651,7 +1170,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
 
     if (!user) {
         localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
-        setCachedLandingProducts(confirmed);
         setAppState(AppState.ONBOARDING_DETAILS);
         return;
     }
@@ -2027,37 +1545,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
   const [isSavingRoutineForm, setIsSavingRoutineForm] = useState(false);
   const [routineFormError, setRoutineFormError] = useState<string | null>(null);
 
-  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleDeleteAccount = async () => {
-    if (deleteConfirmationText !== 'DELETE') {
-      setError('Please type DELETE to confirm account deletion.');
-      return;
-    }
-    if (!user?.id) return;
-    setIsDeleting(true);
-    setError(null);
-    try {
-      const { data, error: fnError } = await supabase.functions.invoke('delete-account');
-      if (fnError) {
-        throw new Error(fnError.message || 'Failed to delete account');
-      }
-
-      await supabase.auth.signOut();
-      setUser(null);
-      setProfile(null);
-      setUserProfile(null);
-      setDeleteConfirmationText('');
-      setError(null);
-      setSuccessMessage('Your account has been deleted.');
-      navigateTo(AppState.LANDING, '/');
-    } catch (err: any) {
-      setError(`Failed to delete account: ${err.message || err}`);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   // Search Hooks & Functions
   function useDebounce<T>(value: T, delay: number): T {
@@ -2395,7 +1883,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
         // Save cached landing products if they exist (after signup or login)
         const cachedLanding = localStorage.getItem('cachedLandingProducts');
         if (cachedLanding) {
-            if (mounted) setIsLandingEvaluating(true);
             try {
                 const productsToEvaluate = JSON.parse(cachedLanding);
                 await fetchTrackerData(currentUser.id);
@@ -2430,7 +1917,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                 localStorage.removeItem('cachedLandingProducts');
             } catch (cacheErr) {
             } finally {
-                if (mounted) setIsLandingEvaluating(false);
             }
         }
 
@@ -2769,38 +2255,12 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
         });
 
         try {
-          console.log("Running checkRoutine for routine:", rt.routine_name || `Routine #${rIdx}`, "prodIds:", prodIds, "timing:", timing);
           const checkResult = await checkRoutine(mappedProfile, prodIds, timing);
-          console.log("Check result received for routine:", rt.routine_name || `Routine #${rIdx}`, checkResult);
-          if (!active) break;
-          
-          // Fetch names and brands for recommended additions if they exist
-          if (checkResult.recommended_additions && checkResult.recommended_additions.length > 0) {
-            const recPids = checkResult.recommended_additions.map(ra => Number(ra.product_id)).filter(id => !isNaN(id));
-            if (recPids.length > 0) {
-              const { data: recProds } = await supabase
-                .from('products')
-                .select('id, brand, name, type')
-                .in('id', recPids);
-              if (recProds && active) {
-                (checkResult as any).resolved_additions = checkResult.recommended_additions.map(ra => {
-                  const found = recProds.find(rp => Number(rp.id) === Number(ra.product_id));
-                  return {
-                    ...ra,
-                    brand: found?.brand || 'Recommended',
-                    name: found?.name || 'Targeted Product',
-                    type: found?.type || 'Treatment'
-                  };
-                });
-              }
-            }
-          }
-
           if (active) {
             newChecks[key] = checkResult;
           }
         } catch (e) {
-          console.error("Routine check error for routine:", rt.routine_name || `Routine #${rIdx}`, e);
+          // Routine check error handled silently
         }
       }
 
@@ -3637,6 +3097,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
           routines.map((rt: any, rIdx: number) => {
             const check = routineChecks[rt.id || String(rIdx)];
             const score = check?.routine_score;
+            const scoreConfig = getScoreColorConfig(score);
             const isExpanded = expandedRoutines.includes(rIdx);
 
             return (
@@ -3666,18 +3127,16 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
 
                   <div className="flex items-center gap-3 shrink-0">
                     <div className="hidden sm:flex items-center gap-2">
-                      <div className="w-12 h-1.5 bg-[#EAE9E5] rounded-full overflow-hidden">
+                      <div className="w-14 h-1.5 bg-[#EAE9E5] rounded-full overflow-hidden">
                         <div 
-                          className="h-full bg-[#171717] rounded-full" 
+                          className={`h-full ${scoreConfig.barBg} rounded-full transition-all duration-300`} 
                           style={{ width: `${score !== undefined ? Math.min(Math.max(score, 5), 100) : 0}%` }}
                         />
                       </div>
                     </div>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-wider ${
-                      score === undefined ? 'bg-[#FAF7F0] text-[#73716C] animate-pulse border border-[#EAE9E5]' :
-                      score >= 80 ? 'bg-[#FAF7F0] border border-[#D6C7A9] text-[#7A6332]' :
-                      score >= 50 ? 'bg-[#FAF7F0] border border-[#D6C7A9] text-[#7A6332]' :
-                      'bg-red-50 text-red-700 border border-red-200'
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase tracking-wider border transition-colors ${
+                      score === undefined ? 'bg-[#FAF7F0] text-[#73716C] animate-pulse border-[#EAE9E5]' :
+                      scoreConfig.badgeBg
                     }`}>
                       {score !== undefined ? `${score}/100` : '...'}
                     </span>
@@ -3710,7 +3169,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              console.log("Re-evaluate clicked for routine:", rt.routine_name || `Routine #${rIdx}`, "products:", rt.products);
                               refreshRoutines();
                             }}
                             disabled={isRefreshingRoutines}
@@ -3720,6 +3178,42 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                             <span>{isRefreshingRoutines ? 'Syncing...' : 'Re-evaluate'}</span>
                           </button>
                         </div>
+
+                        {/* Routine Score Card with 5-tier color scale (0-20, 20-40, 40-60, 60-80, 80-100) */}
+                        <div className={`p-3 rounded-xl border ${scoreConfig.cardBorder} ${scoreConfig.cardBg} transition-all`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center text-white ${scoreConfig.barBg} shadow-xs shrink-0`}>
+                                <span className="text-base font-black leading-none">{score !== undefined ? score : '—'}</span>
+                                <span className="text-[8px] font-medium opacity-80 leading-none mt-0.5">/ 100</span>
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold uppercase tracking-wider text-[#171717]">Score Card</span>
+                                  <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${scoreConfig.badgeBg}`}>
+                                    {scoreConfig.statusLabel} ({scoreConfig.rangeLabel})
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-[#73716C] block mt-0.5">
+                                  Color-coded rating based on compatibility, barrier tolerance & ingredient synergy.
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-stretch sm:self-center shrink-0 bg-white/80 px-3 py-1.5 rounded-lg border border-black/5">
+                              <div className="w-24 sm:w-28 h-2 bg-black/10 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full ${scoreConfig.barBg} rounded-full transition-all duration-300`}
+                                  style={{ width: `${score !== undefined ? Math.min(Math.max(score, 5), 100) : 0}%` }}
+                                />
+                              </div>
+                              <span className="text-[11px] font-black text-[#171717]">
+                                {score !== undefined ? `${score}%` : '...'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
                         {check.debug && (
                           <div className="grid grid-cols-2 gap-3 bg-white border border-[#EAE9E5] p-2.5 rounded-lg">
                             <div>
@@ -3758,22 +3252,6 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                                 • {det.reason}
                               </div>
                             ))}
-                          </div>
-                        )}
-
-                        {/* Recommended Additions */}
-                        {(((check as any).resolved_additions) || check.recommended_additions) && (((check as any).resolved_additions) || check.recommended_additions).length > 0 && (
-                          <div className="space-y-2 pt-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#7A6332] block">Recommended Additions</span>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {(((check as any).resolved_additions || check.recommended_additions) as any[]).map((add: any, aIndex: number) => (
-                                <div key={aIndex} className="bg-white border border-[#D6C7A9] p-2 rounded-lg text-xs space-y-1">
-                                  <span className="text-[9px] uppercase font-semibold text-[#7A6332] block">{add.concern} Concern Support</span>
-                                  <p className="font-semibold text-[#171717] truncate">{add.brand ? `${add.brand} - ${add.name}` : `Product #${add.product_id}`}</p>
-                                  <p className="text-[11px] text-[#73716C]">{add.reason}</p>
-                                </div>
-                              ))}
-                            </div>
                           </div>
                         )}
                       </div>
@@ -3867,7 +3345,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                   </div>
                   <button 
                     onClick={() => setIsMobileNavOpen(false)}
-                    className="p-1.5 hover:bg-black/5 rounded-full transition-colors cursor-pointer text-black/60 hover:text-black"
+                    className="p-1.5 rounded-full transition-colors cursor-pointer text-black/60 hover:text-black outline-none focus:outline-none focus:bg-transparent active:bg-transparent"
                     aria-label="Close menu"
                   >
                     <X className="w-5 h-5" />
@@ -3879,51 +3357,51 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                   {user && (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.DASHBOARD); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.DASHBOARD ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.DASHBOARD ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                     >
-                      <FlaskConical className="w-5 h-5 shrink-0" />
+                      <FlaskConical className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.DASHBOARD ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
                       <span className="text-xs uppercase tracking-widest font-black">Home</span>
                     </button>
                   )}
                   {user ? (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.ROUTINES); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.ROUTINES ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.ROUTINES ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                     >
-                      <Sun className="w-5 h-5 shrink-0" />
+                      <Sun className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.ROUTINES ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
                       <span className="text-xs uppercase tracking-widest font-black">My Routines</span>
                     </button>
                   ) : (
                     <button 
                       onClick={() => { setAuthPromptModalOpen(true); setIsMobileNavOpen(false); }} 
-                      className="flex items-center gap-4 px-3 py-2.5 rounded-xl text-black/60 hover:text-black hover:bg-black/5 font-semibold cursor-pointer"
+                      className="flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent text-black/60 hover:text-black font-semibold group"
                     >
-                      <Sun className="w-5 h-5 shrink-0" />
+                      <Sun className="w-5 h-5 shrink-0 text-black/40 group-hover:text-black" />
                       <span className="text-xs uppercase tracking-widest font-black">My Routines</span>
                     </button>
                   )}
                   {user && (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.TRACKER); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.TRACKER ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.TRACKER ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                     >
-                      <CheckSquare className="w-5 h-5 shrink-0" />
+                      <CheckSquare className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.TRACKER ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
                       <span className="text-xs uppercase tracking-widest font-black">Tracker</span>
                     </button>
                   )}
                   <button 
                     onClick={() => { resetHeaderSearchState(); setAppState(AppState.RANK); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.RANK ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.RANK ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                   >
-                    <ShoppingBag className="w-5 h-5 shrink-0" />
+                    <ShoppingBag className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.RANK ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
                     <span className="text-xs uppercase tracking-widest font-black">Products</span>
                   </button>
 
                   <button 
                     onClick={() => { resetHeaderSearchState(); setAppState(AppState.BRANDS); setSelectedBrandItem(null); setSelectedBrandsLetter(null); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.BRANDS ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.BRANDS ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                   >
-                    <Award className="w-5 h-5 shrink-0" />
+                    <Award className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.BRANDS ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
                     <span className="text-xs uppercase tracking-widest font-black">Brands</span>
                   </button>
 
@@ -3936,33 +3414,33 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
                       }
                       setIsMobileNavOpen(false); 
                     }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.RANK ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    className="flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent text-black/60 hover:text-black font-semibold group"
                   >
-                    <Sliders className="w-5 h-5 shrink-0" />
+                    <Sliders className="w-5 h-5 shrink-0 text-black/40 group-hover:text-black" />
                     <span className="text-xs uppercase tracking-widest font-black">AI Compare</span>
                   </button>
 
                   <button 
                     onClick={() => { resetHeaderSearchState(); setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setSocialActiveMainTab('articles'); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.SOCIAL ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.SOCIAL ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                   >
-                    <Heart className="w-5 h-5 shrink-0" />
+                    <Heart className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.SOCIAL ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
                     <span className="text-xs uppercase tracking-widest font-black">The Edit</span>
                   </button>
                   {user && (
                     <>
                       <button 
                         onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} 
-                        className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.PROFILE ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                        className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.PROFILE ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                       >
-                        <UserIcon className="w-5 h-5 shrink-0" />
+                        <UserIcon className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.PROFILE ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
                         <span className="text-xs uppercase tracking-widest font-black">Profile</span>
                       </button>
                       <button 
                         onClick={() => { resetHeaderSearchState(); setAppState(AppState.FEEDBACK); setIsMobileNavOpen(false); }} 
-                        className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${appState === AppState.FEEDBACK ? 'bg-black/10 text-black font-black shadow-sm' : 'text-black/70 hover:text-black hover:bg-black/5 font-semibold'}`}
+                        className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.FEEDBACK ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                       >
-                        <MessageSquare className="w-5 h-5 shrink-0" />
+                        <MessageSquare className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.FEEDBACK ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
                         <span className="text-xs uppercase tracking-widest font-black">Feedback</span>
                       </button>
                     </>
@@ -4020,9 +3498,9 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
       
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#EAE9E5]">
-        <div className="flex justify-between items-center px-4 md:px-6 h-16 gap-4 max-w-7xl mx-auto">
+        <div className="flex justify-between items-center px-3 sm:px-4 md:px-6 h-14 sm:h-16 gap-2 sm:gap-4 max-w-7xl mx-auto">
           {/* Top Left: Canonic brand and Nav Links */}
-          <div className="flex items-center gap-6 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0">
             <button 
               onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} 
               className={`p-1.5 -ml-1 text-[#171717] hover:bg-[#F4F3F0] rounded-lg cursor-pointer transition-colors ${user ? 'block' : 'block md:hidden'}`}
@@ -4031,14 +3509,12 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             >
               <Menu className="w-5 h-5 text-[#171717]" />
             </button>
-
             <button 
               onClick={() => { resetHeaderSearchState(); setAppState(user ? AppState.DASHBOARD : AppState.LANDING); }} 
-              className="font-bubble text-2xl md:text-3xl text-[#171717] cursor-pointer tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap"
+              className="font-bubble text-xl sm:text-2xl md:text-3xl text-[#171717] cursor-pointer tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap"
             >
               Canonic
             </button>
-
             <nav className="hidden md:flex items-center gap-6">
               <button 
                 onClick={() => { resetHeaderSearchState(); setAppState(AppState.RANK); }}
@@ -4056,13 +3532,13 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
           </div>
 
           {/* Header search bar (pill) */}
-          <div ref={headerSearchContainerRef} className="flex-1 max-w-md mx-auto hidden sm:block">
+          <div ref={headerSearchContainerRef} className="flex-1 min-w-0 max-w-md mx-1 sm:mx-4">
             <div className="relative w-full">
-              <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#73716C] pointer-events-none" />
+              <Search className="absolute left-2.5 sm:left-3.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#73716C] pointer-events-none" />
               <input 
                 type="text" 
-                placeholder="Search products, ingredients, routines..."
-                className="w-full bg-[#F4F3F0] border border-[#E5E4E0] py-2 px-4 pl-10 pr-9 rounded-full text-xs font-medium uppercase tracking-wider text-[#171717] placeholder:text-[#73716C] outline-none focus:border-[#CFCBC2] transition-colors"
+                placeholder="Search products..."
+                className="w-full bg-[#F4F3F0] border border-[#E5E4E0] py-1.5 sm:py-2 pl-8 sm:pl-10 pr-7 sm:pr-9 rounded-full text-xs font-medium uppercase tracking-wider text-[#171717] placeholder:text-[#73716C] outline-none focus:border-[#CFCBC2] transition-colors"
                 value={headerSearchQuery}
                 onChange={(e) => {
                   setHeaderSearchQuery(e.target.value);
@@ -4073,7 +3549,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
               {headerSearchQuery && (
                 <button 
                   onClick={() => resetHeaderSearchState()}
-                  className="absolute right-3.5 top-1/2 transform -translate-y-1/2 p-0.5 rounded-full hover:bg-[#E5E4E0] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer"
+                  className="absolute right-2 sm:right-3.5 top-1/2 transform -translate-y-1/2 p-0.5 rounded-full hover:bg-[#E5E4E0] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer"
                   title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -4082,18 +3558,18 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             </div>
           </div>
 
-          <div className="flex items-center gap-4 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 md:gap-4 shrink-0">
             {!user ? (
               <>
                 <button 
                   onClick={() => { resetHeaderSearchState(); setIsSignUp(false); setAppState(AppState.AUTH); }}
-                  className="text-xs font-semibold uppercase tracking-[0.14em] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap"
+                  className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.08em] sm:tracking-[0.14em] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap px-1 sm:px-0"
                 >
                   Sign In
                 </button>
                 <button 
                   onClick={() => { resetHeaderSearchState(); setIsSignUp(true); setAppState(AppState.AUTH); }}
-                  className="text-xs font-semibold uppercase tracking-[0.14em] text-[#171717] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] px-3.5 py-1.5 rounded-full border border-[#E5E4E0]"
+                  className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.08em] sm:tracking-[0.14em] text-[#171717] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full border border-[#E5E4E0]"
                 >
                   Join
                 </button>
@@ -4101,7 +3577,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             ) : (
               <button 
                 onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); }}
-                className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#171717] hover:text-[#73716C] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] px-3.5 py-1.5 rounded-full border border-[#E5E4E0]"
+                className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-semibold uppercase tracking-[0.08em] sm:tracking-[0.14em] text-[#171717] hover:text-[#73716C] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] p-1.5 sm:px-3.5 sm:py-1.5 rounded-full border border-[#E5E4E0]"
               >
                 <UserIcon className="w-3.5 h-3.5 text-[#171717]" />
                 <span className="hidden sm:inline">{user?.username || 'Profile'}</span>
@@ -4112,7 +3588,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
 
         {/* Full-width Search Results Dropdown */}
         {isHeaderSearchDropdownOpen && headerSearchQuery.trim() && (
-          <div className="absolute top-full left-0 right-0 w-full bg-white/95 backdrop-blur-md border-b border-black/10 shadow-2xl overflow-hidden z-[100] max-h-[70vh] overflow-y-auto">
+          <div ref={headerSearchDropdownRef} className="absolute top-full left-0 right-0 w-full bg-white/95 backdrop-blur-md border-b border-black/10 shadow-2xl overflow-hidden z-[100] max-h-[70vh] overflow-y-auto">
             <div className="max-w-4xl mx-auto px-4 py-3">
               {isHeaderSearching ? (
                 <div className="p-6 text-center text-xs text-black/50 uppercase tracking-widest font-black flex items-center justify-center gap-2">
@@ -4241,175 +3717,26 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
           )}
 
           {appState === AppState.DELETE_ACCOUNT && (
-            <motion.div
-              key="delete-account"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              className="space-y-6 max-w-xl mx-auto pb-12 w-full pt-6"
-            >
-              <div className="clean-card bg-white border border-black/10 rounded-3xl p-8 shadow-sm space-y-6">
-                <div className="text-center space-y-3">
-                  <div className="inline-flex p-3 bg-red-50 rounded-full mb-2">
-                    <Trash2 className="w-8 h-8 text-red-600" />
-                  </div>
-                  <h2 className="text-3xl md:text-4xl font-sans font-black text-black uppercase tracking-tighter">
-                    Delete Account
-                  </h2>
-                  <p className="text-xs font-medium text-black/60 max-w-md mx-auto">
-                    Permanent Account & Data Removal Request
-                  </p>
-                </div>
-
-                {!user ? (
-                  <div className="space-y-6 text-center bg-black/[0.02] p-6 rounded-2xl border border-black/5">
-                    <p className="text-sm font-medium text-black/80">
-                      You are currently not signed in. To delete your account and associated records, please log in first.
-                    </p>
-                    <button
-                      onClick={() => {
-                        setIsSignUp(false);
-                        setAppState(AppState.AUTH);
-                        window.history.pushState(null, '', '/auth');
-                      }}
-                      className="w-full bg-black text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-venus-accent transition-colors shadow-md cursor-pointer"
-                    >
-                      Log In to Proceed
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="bg-red-50 border border-red-200/60 p-5 rounded-2xl space-y-3">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-red-800 flex items-center gap-2">
-                        <Shield className="w-4 h-4 text-red-600" />
-                        Warning: Action is irreversible
-                      </h3>
-                      <p className="text-xs text-red-700 font-medium leading-relaxed">
-                        Deleting your account will permanently remove your profile data, skin questionnaire responses, skincare routines, progress photos, tracker items, and all associated records from the Supabase database. This action cannot be undone.
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-xs font-black uppercase tracking-wider text-black">
-                        To confirm, type <span className="text-red-600 font-black">DELETE</span> below:
-                      </label>
-                      <input
-                        type="text"
-                        value={deleteConfirmationText}
-                        onChange={(e) => setDeleteConfirmationText(e.target.value)}
-                        placeholder="Type DELETE"
-                        className="w-full border border-black/20 bg-white rounded-xl p-3 text-sm uppercase outline-none focus:border-red-600 font-black tracking-widest text-center"
-                      />
-                    </div>
-
-                    {error && (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600 font-medium text-center">
-                        {error}
-                      </div>
-                    )}
-
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        onClick={() => navigateTo(AppState.PROFILE, '/profile')}
-                        className="flex-1 bg-black/5 hover:bg-black/10 text-black py-3 rounded-xl text-xs uppercase font-black tracking-widest transition-colors cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleDeleteAccount}
-                        disabled={deleteConfirmationText !== 'DELETE' || isDeleting}
-                        className={`flex-1 py-3 rounded-xl text-xs uppercase font-black tracking-widest transition-all cursor-pointer shadow-md ${
-                          deleteConfirmationText === 'DELETE' && !isDeleting
-                            ? 'bg-red-600 hover:bg-red-700 text-white'
-                            : 'bg-black/10 text-black/40 cursor-not-allowed shadow-none'
-                        }`}
-                      >
-                        {isDeleting ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Deleting...
-                          </span>
-                        ) : (
-                          'Permanently Delete'
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
+            <DeleteAccountView
+              user={user}
+              setUser={setUser}
+              setProfile={setProfile}
+              setUserProfile={setUserProfile}
+              error={error}
+              setError={setError}
+              setSuccessMessage={setSuccessMessage}
+              setIsSignUp={setIsSignUp}
+              setAppState={setAppState}
+              navigateTo={navigateTo}
+            />
           )}
 
           {appState === AppState.FEEDBACK && (
-            <motion.div
-              key="feedback"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              className="space-y-6 max-w-xl mx-auto pb-12 w-full pt-6"
-            >
-              <div className="clean-card bg-white border border-black/10 rounded-3xl p-8 shadow-sm space-y-6">
-                <div className="text-center space-y-3">
-                  <div className="inline-flex p-3 bg-black/5 rounded-full mb-2">
-                    <MessageSquare className="w-8 h-8 text-black" />
-                  </div>
-                  <h2 className="text-3xl md:text-4xl font-sans font-black text-black uppercase tracking-tighter">
-                    Feedback
-                  </h2>
-                  <p className="text-xs md:text-sm text-black/60 font-medium max-w-sm mx-auto">
-                    We value your thoughts, feature requests, and bug reports. Let us know how we can improve your experience.
-                  </p>
-                </div>
-
-                {!user ? (
-                  <div className="space-y-6 text-center bg-black/[0.02] p-6 rounded-2xl border border-black/5">
-                    <p className="text-sm font-medium text-black/80">
-                      You are currently not signed in. Please log in to send feedback.
-                    </p>
-                    <button
-                      onClick={() => {
-                        setIsSignUp(false);
-                        setAppState(AppState.AUTH);
-                        window.history.pushState(null, '', '/auth');
-                      }}
-                      className="w-full bg-black text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-venus-accent transition-colors shadow-md cursor-pointer"
-                    >
-                      Log In to Proceed
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={handleFeedbackSubmit} className="space-y-4">
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-black/40 block mb-2">Your Feedback</label>
-                      <textarea 
-                        rows={6}
-                        required
-                        value={feedbackText}
-                        onChange={(e) => setFeedbackText(e.target.value)}
-                        placeholder="Type your feedback here..."
-                        className="w-full bg-black/5 border-2 border-black/5 rounded-2xl p-4 font-medium outline-none focus:border-black transition-colors text-xs md:text-sm resize-y"
-                      />
-                    </div>
-
-                    {feedbackError && (
-                      <p className="text-red-600 text-xs font-bold text-center bg-red-50 p-3 rounded-xl">{feedbackError}</p>
-                    )}
-
-                    {feedbackSuccess && (
-                      <p className="text-green-700 text-xs font-bold text-center bg-green-50 p-3 rounded-xl">{feedbackSuccess}</p>
-                    )}
-
-                    <button 
-                      type="submit" 
-                      disabled={feedbackSubmitting}
-                      className="w-full bg-black text-white font-black uppercase tracking-widest py-3.5 rounded-xl hover:bg-neutral-800 transition-all disabled:opacity-50 cursor-pointer text-xs"
-                    >
-                      {feedbackSubmitting ? 'Submitting...' : 'Submit Feedback'}
-                    </button>
-                  </form>
-                )}
-              </div>
-            </motion.div>
+            <FeedbackView
+              user={user}
+              setIsSignUp={setIsSignUp}
+              setAppState={setAppState}
+            />
           )}
 
           {appState === AppState.SOCIAL && (
@@ -4437,6 +3764,7 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             >
               <ProductCardContent 
                 productId={String(selectedProductForPage.id)}
+                trackerItem={selectedProductForPage}
                 onClose={() => setAppState(selectedBrandItem ? AppState.BRANDS : (user ? AppState.DASHBOARD : AppState.RANK))} 
               />
             </motion.div>
@@ -4444,473 +3772,26 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
 
           {/* LANDING */}
           {appState === AppState.LANDING && (
-            <>
-              {/* MOBILE VIEW LANDING */}
-              {!isWeb && (
-                <motion.div 
-                  key="landing-mobile"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className={`text-center flex flex-col items-center justify-between overflow-hidden touch-none ${isNativePlatform() ? 'h-screen w-screen fixed inset-0 z-0 pt-16' : 'w-full h-[calc(100dvh-65px)] fixed inset-x-0 bottom-0 z-10 pt-8'} bg-[url('/assets/landing_banner.png')] bg-cover bg-center px-6 pb-12`}
-                >
-                  <div className="flex flex-col items-center gap-4 w-full max-w-sm">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <h1 className="text-5xl md:text-6xl font-cursive font-bold leading-[0.9] text-white tracking-normal drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
-                        Canonic
-                      </h1>
-                      <p className="text-xl md:text-2xl font-cursive font-bold text-white tracking-normal drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)]">
-                        Beauty, Smarter
-                      </p>
-                    </div>
-                    <button 
-                      onClick={() => setAppState(AppState.ONBOARDING_DETAILS)}
-                      className="w-full flex items-center justify-center cursor-pointer mt-2"
-                    >
-                      <motion.div
-                        animate={{ y: [0, -6, 0] }}
-                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                        className="flex items-center justify-center gap-2 bg-white/80 backdrop-blur-md border border-white/40 text-black text-lg md:text-xl font-bold px-6 py-3 rounded-full shadow-lg hover:bg-white transition-all w-full"
-                      >
-                        <span>Take skin quiz</span>
-                        <ChevronRight className="w-5 h-5" />
-                      </motion.div>
-                    </button>
-                  </div>
-                  <button 
-                    onClick={() => triggerPhotoScan(landingFileInputRef)}
-                    className="p-4 bg-white/80 backdrop-blur-md border border-black/10 text-black hover:bg-white active:scale-95 rounded-full font-black transition-all shadow-xl flex items-center justify-center mx-auto cursor-pointer mb-4"
-                    title="Scan product photo"
-                  >
-                    <Camera className="w-6 h-6 text-black" />
-                  </button>
-                  
-                  <ProductConfirmationModal
-                    isOpen={isLandingConfirmOpen}
-                    products={landingScanMatched}
-                    onConfirm={handleLandingConfirmScan}
-                    onCancel={() => setIsLandingConfirmOpen(false)}
-                    user={user}
-                    onLogin={(confirmed) => {
-                      localStorage.setItem('cachedLandingProducts', JSON.stringify(confirmed));
-                      setAppState(AppState.AUTH);
-                      setIsLandingConfirmOpen(false);
-                    }}
-                  />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    ref={landingFileInputRef}
-                    onChange={handleLandingPhotoScan}
-                    className="hidden"
-                  />
-                  {landingScanError && (
-                    <div className="p-3 mb-4 bg-red-50 text-red-700 rounded-xl border border-red-100 text-center space-y-2 max-w-sm mx-auto">
-                      <p className="text-xs font-bold">{landingScanError}</p>
-                      <button
-                        onClick={() => {
-                          setLandingScanError(null);
-                          triggerPhotoScan(landingFileInputRef);
-                        }}
-                        className="px-3 py-1 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-700 transition-all cursor-pointer"
-                      >
-                        Retry Scan
-                      </button>
-                    </div>
-                  )}
-                </motion.div>
-              )}
-
-              {/* WEBSITE VIEW LANDING */}
-              {isWeb && (
-                <motion.div 
-                  key="landing-web"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="w-full"
-                >
-                  {/* Hero Banner (1/3 of screen height) */}
-                  <div 
-                    onClick={() => setAppState(AppState.RANK)}
-                    className="w-full h-[calc((100vh-65px)/3)] min-h-[200px] max-h-[320px] relative overflow-hidden bg-[#B0D8FA] cursor-pointer group flex items-center justify-center"
-                    title="Explore Products"
-                  >
-                    <img 
-                      src="/assets/b2.jpg" 
-                      alt="Canonic" 
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover object-[center_46%] transition-transform duration-700 ease-out group-hover:scale-[1.01]" 
-                    />
-                  </div>
-
-                  {/* Main Landing Sections */}
-                  <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-12 space-y-12 md:space-y-16 w-full">
-                    {/* SECTION 1: THE EDIT (FIRST 3 ARTICLES) */}
-                    <section className="space-y-6 w-full">
-                      <div className="flex items-center justify-between pb-3 border-b border-black/10">
-                        <div className="flex items-baseline gap-3">
-                          <h2 
-                            className="text-xl md:text-2xl font-black uppercase tracking-tight text-black cursor-pointer hover:text-venus-accent transition-colors" 
-                            style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}
-                            onClick={() => {
-                              resetHeaderSearchState();
-                              setAppState(AppState.SOCIAL);
-                              setSocialActiveMainTab('articles');
-                              setIsFollowsOpen(false);
-                            }}
-                          >
-                            The Edit
-                          </h2>
-                          <span className="text-xs text-black/40 font-medium hidden sm:inline">Skincare guides & rituals</span>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            resetHeaderSearchState();
-                            setAppState(AppState.SOCIAL);
-                            setSocialActiveMainTab('articles');
-                            setIsFollowsOpen(false);
-                          }}
-                          className="group inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors cursor-pointer py-1.5 px-3 rounded-lg hover:bg-black/5"
-                          title="View all articles in The Edit"
-                          aria-label="View all articles in The Edit"
-                        >
-                          <span>View All</span>
-                          <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1 text-black" />
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 w-full">
-                        {landingArticles.slice(0, 3).map((article, idx) => (
-                          <article 
-                            key={article.id || article.article_id || idx}
-                            onClick={() => {
-                              resetHeaderSearchState();
-                              setAppState(AppState.SOCIAL);
-                              setSocialActiveMainTab('articles');
-                              setIsFollowsOpen(false);
-                            }}
-                            className="clean-card bg-white border border-black/10 hover:border-black p-5 rounded-2xl transition-all duration-300 hover:shadow-lg cursor-pointer flex flex-col justify-between group h-full"
-                          >
-                            <div className="space-y-3">
-                              <div className="rounded-xl overflow-hidden border border-black/5 bg-[#F5F4F0] aspect-[16/10] w-full relative">
-                                <img 
-                                  src={article.image_url || `/assets/g${(idx % 6) + 1}.jpg`} 
-                                  alt={article.title} 
-                                  referrerPolicy="no-referrer"
-                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                  onError={(e) => {
-                                    const target = e.currentTarget;
-                                    target.src = `/assets/g${(idx % 6) + 1}.jpg`;
-                                  }}
-                                />
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-black/50">
-                                <span className="font-black uppercase tracking-wider text-[10px] text-venus-accent">
-                                  {article.category || 'Editorial'}
-                                </span>
-                              </div>
-                              <h3 className="text-sm md:text-base font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2 leading-snug">
-                                {article.title}
-                              </h3>
-                              <p className="text-xs text-black/70 font-medium leading-relaxed line-clamp-3">
-                                {article.article_content || article.summary}
-                              </p>
-                            </div>
-
-                            <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-end text-xs font-black uppercase tracking-wider text-black">
-                              <span className="group-hover:underline flex items-center gap-1.5">
-                                Read
-                                <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
-                              </span>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    </section>
-
-                    {/* SECTION 2: BROWSE PRODUCTS (ONE ROW) */}
-                    <section className="space-y-6 w-full">
-                      <div className="flex items-center justify-between pb-3 border-b border-black/10">
-                        <div className="flex items-baseline gap-3">
-                          <h2 
-                            className="text-xl md:text-2xl font-black uppercase tracking-tight text-black cursor-pointer hover:text-venus-accent transition-colors" 
-                            style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}
-                            onClick={() => {
-                              resetHeaderSearchState();
-                              setAppState(AppState.RANK);
-                            }}
-                          >
-                            Browse Products
-                          </h2>
-                          <span className="text-xs text-black/40 font-medium hidden sm:inline">Skin-matched catalog</span>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            resetHeaderSearchState();
-                            setAppState(AppState.RANK);
-                          }}
-                          className="group inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-black/70 hover:text-black transition-colors cursor-pointer py-1.5 px-3 rounded-lg hover:bg-black/5"
-                          title="View all products on Products page"
-                          aria-label="View all products on Products page"
-                        >
-                          <span>View All</span>
-                          <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1 text-black" />
-                        </button>
-                      </div>
-
-                      {/* Primary Filter Bubbles */}
-                      <div className="flex flex-nowrap justify-start sm:justify-center md:justify-center gap-3 md:gap-4 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 snap-x snap-mandatory w-full">
-                        {[
-                          { name: 'Type', image: 'https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=300&q=80', filterKey: 'By Type' },
-                          { name: 'Ingredient', image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=300&q=80', filterKey: 'By Ingredient' },
-                          { name: 'Concern', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=300&q=80', filterKey: 'By Concern' },
-                          { name: 'Trending', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=300&q=80', filterKey: 'Trending' },
-                          { name: 'Pregnancy-safe', image: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&w=300&q=80', filterKey: 'Pregnancy-safe' }
-                        ].map(item => {
-                          const isActive = (primaryFilter === 'By Type' && (subFilter === item.filterKey || (item.filterKey === 'By Type' && subFilter === 'All'))) || primaryFilter === item.filterKey;
-                          return (
-                            <button
-                              key={item.name}
-                              onClick={() => {
-                                if (item.filterKey === 'By Type') {
-                                  setPrimaryFilter('By Type');
-                                  setSubFilter('All');
-                                } else {
-                                  setPrimaryFilter(item.filterKey);
-                                  setSubFilter('all');
-                                }
-                              }}
-                              className="flex flex-col items-center gap-1.5 shrink-0 snap-start group cursor-pointer w-20 sm:w-24 md:w-28 text-center"
-                            >
-                              <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full overflow-hidden border-2 transition-all duration-300 shadow-md mx-auto ${
-                                isActive ? 'border-black scale-105 shadow-lg ring-2 ring-black/20' : 'border-black/10 group-hover:border-black/40'
-                              }`}>
-                                <img src={item.image} alt={item.name} referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                              </div>
-                              <span className={`text-[9px] md:text-xs font-black uppercase tracking-wider text-center w-full whitespace-normal leading-tight ${
-                                isActive ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/70 group-hover:text-black'
-                              }`}>
-                                {item.name}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Sub-bar Filter */}
-                      {(primaryFilter === 'By Type' || primaryFilter === 'Pregnancy-safe') && (
-                        <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
-                          {['All', 'Cleanser', 'SPF', 'Cream', 'Serum', 'Toner', 'Retinol', 'Moisturizer'].map((type) => (
-                            <button
-                              key={type}
-                              onClick={() => setSubFilter(type)}
-                              className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === type.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
-                            >
-                              {type}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {primaryFilter === 'By Ingredient' && (
-                        <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
-                          {['all', 'Retinols', 'Hyaluronic Acid', 'PDRN', 'Collagen', 'Niacinamide', 'Salicylic Acid', 'Vitamin C', 'Vitamin E', 'Glycolic Acid', 'Peptides', 'Ceramides', 'AHA/BHA'].map((ing) => (
-                            <button
-                              key={ing}
-                              onClick={() => setSubFilter(ing)}
-                              className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === ing.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
-                            >
-                              {ing}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {primaryFilter === 'By Concern' && (
-                        <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
-                          {['all', 'Blemish-prone skin', 'Redness', 'Dry Skin', 'Aging skin'].map((concern) => (
-                            <button
-                              key={concern}
-                              onClick={() => setSubFilter(concern)}
-                              className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === concern.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
-                            >
-                              {concern}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {primaryFilter === 'Trending' && (
-                        <div className="flex justify-start sm:justify-center md:justify-center gap-3 md:gap-5 overflow-x-auto no-scrollbar pb-1 pt-1 w-full flex-wrap">
-                          {['all', 'K-Beauty', 'J-Beauty', 'Glass Skin', 'PDRN', 'Natural', 'Winter Care'].map((trend) => (
-                            <button
-                              key={trend}
-                              onClick={() => setSubFilter(trend)}
-                              className={`text-[10px] md:text-xs font-black uppercase transition-all whitespace-nowrap cursor-pointer ${subFilter.toLowerCase() === trend.toLowerCase() ? 'text-black underline decoration-venus-accent decoration-2' : 'text-black/40 hover:text-black'}`}
-                            >
-                              {trend}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Exactly ONE row of products (4 products on desktop, 2x2 on mobile) */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-3 md:gap-4 w-full">
-                        {(() => {
-                          const baseList = products && products.length > 0 ? products : INVENTORY;
-                          const filtered = baseList.filter(p => {
-                            const pType = (p.type || p.Type || '').toLowerCase();
-                            const pName = (p.name || p.Name || p.ProductName || p['Product Name'] || '').toLowerCase();
-                            const pBrand = (p.brand || p.Brand || '').toLowerCase();
-                            const pDesc = (p.description || '').toLowerCase();
-                            const pIngs = Array.isArray(p.ingredients) ? p.ingredients.map((i: string) => i.toLowerCase()) : [];
-
-                            const cat2 = (p.product_scores?.cat2 || '').toLowerCase();
-                            const pf = (Array.isArray(p.products_filter) ? p.products_filter[0] : p.products_filter) || {};
-                            const pregSafe = pf.preg_safe === true;
-
-                            if (primaryFilter === 'By Type') {
-                              if (subFilter === 'All' || subFilter === 'all') return true;
-                              const sub = subFilter.toLowerCase();
-                              if (sub === 'cleanser') return pType.includes('clean') || cat2.includes('clean');
-                              if (sub === 'spf') return pType.includes('spf') || pType.includes('sun') || cat2.includes('spf');
-                              if (sub === 'cream') return pType.includes('cream') || cat2.includes('cream');
-                              if (sub === 'serum') return pType.includes('serum') || cat2.includes('serum');
-                              if (sub === 'toner') return pType.includes('toner') || cat2.includes('toner');
-                              if (sub === 'retinol') return pf.c_retinol === true || pType.includes('retinol') || pName.includes('retinol') || pIngs.some(i => i.includes('retinol'));
-                              if (sub === 'moisturizer') return pType.includes('moist') || cat2.includes('moist');
-                              return pType.includes(sub) || cat2.includes(sub);
-                            }
-                            if (primaryFilter === 'Pregnancy-safe') {
-                              if (!pregSafe && !pDesc.includes('pregnancy-safe')) return false;
-                              if (subFilter === 'All' || subFilter === 'all') return true;
-                              const sub = subFilter.toLowerCase();
-                              return pType.includes(sub) || cat2.includes(sub);
-                            }
-                            if (primaryFilter === 'By Ingredient') {
-                              if (subFilter === 'all' || subFilter === 'All') return true;
-                              const target = subFilter.toLowerCase();
-                              if (target === 'retinols' || target === 'retinol') {
-                                if (pf.c_retinol === true) return true;
-                              } else if (target === 'hyaluronic acid' || target === 'ha') {
-                                if (pf.c_ha === true) return true;
-                              } else if (target === 'pdrn') {
-                                if (pf.c_pdrn === true || pf.pdrn === true) return true;
-                              } else if (target === 'collagen') {
-                                if (pf.c_collagen === true) return true;
-                              } else if (target === 'niacinamide') {
-                                if (pf.c_niac === true) return true;
-                              } else if (target === 'salicylic acid' || target === 'salicylic') {
-                                if (pf.c_salicylic === true) return true;
-                              } else if (target === 'vitamin c' || target === 'vit c' || target === 'vitc') {
-                                if (pf.c_vitc === true) return true;
-                              } else if (target === 'vitamin e' || target === 'vit e' || target === 'vite') {
-                                if (pf.c_vite === true) return true;
-                              } else if (target === 'glycolic acid' || target === 'glycolic') {
-                                if (pf.c_glycolic === true) return true;
-                              } else if (target === 'peptides' || target === 'peptide') {
-                                if (pf.c_peptides === true) return true;
-                              } else if (target === 'ceramides' || target === 'ceramide') {
-                                if (pf.c_ceramide === true) return true;
-                              } else if (target === 'aha/bha') {
-                                if (pf.c_ahabha === true) return true;
-                              }
-                              const cleanTarget = target.replace(/s$/, '');
-                              return pIngs.some((i: string) => i.includes(target) || (cleanTarget.length > 2 && i.includes(cleanTarget))) ||
-                                     pDesc.includes(target) || (cleanTarget.length > 2 && pDesc.includes(cleanTarget)) ||
-                                     pName.includes(target) || (cleanTarget.length > 2 && pName.includes(cleanTarget));
-                            }
-                            if (primaryFilter === 'By Concern') {
-                              if (subFilter === 'all' || subFilter === 'All') return true;
-                              const target = subFilter.toLowerCase();
-                              if (target === 'blemish-prone skin') return pf.blem_prone === true;
-                              if (target === 'redness') return pf.red === true;
-                              if (target === 'dry skin') return pf.dry === true;
-                              if (target === 'aging skin') return pf.aging === true;
-                              return pDesc.includes(target) || pName.includes(target);
-                            }
-                            if (primaryFilter === 'Trending') {
-                              if (subFilter === 'all' || subFilter === 'All') return true;
-                              const target = subFilter.toLowerCase();
-                              if (target === 'k-beauty') return pf.k_beauty === true;
-                              if (target === 'j-beauty') return pf.j_beauty === true;
-                              if (target === 'glass skin') return pf.glass === true;
-                              if (target === 'pdrn') return pf.c_pdrn === true || pf.pdrn === true;
-                              if (target === 'natural') return pf.natural === true;
-                              return pDesc.includes(target) || pName.includes(target) || pBrand.includes(target) || pIngs.some((i: string) => i.includes(target));
-                            }
-                            return true;
-                          });
-
-                          const displayList = (filtered.length > 0 ? filtered : baseList).slice(0, 4);
-
-                          return displayList.map((p: any) => {
-                            const userProd = userProducts.find(up => (up?.product_name === (p.name || p.Name || p.ProductName || p['Product Name'])));
-                            return (
-                              <div 
-                                key={p.id} 
-                                onClick={() => openProductCard(String(p.id))} 
-                                className="cursor-pointer clean-card p-3 border-2 bg-white border-black/5 hover:border-black transition-all flex flex-col items-center text-center justify-between gap-2 relative group w-full"
-                                data-product-id={p.id}
-                              >
-                                {p.photo_url ? (
-                                  <img 
-                                    src={p.photo_url} 
-                                    alt={p.name || p.Name || p.ProductName || p['Product Name'] || 'Product'} 
-                                    referrerPolicy="no-referrer"
-                                    className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-black/10 flex-shrink-0 group-hover:scale-105 transition-transform mx-auto" 
-                                  />
-                                ) : (
-                                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-black/5 rounded-xl border border-black/10 flex items-center justify-center flex-shrink-0 text-[8px] text-black/40 mx-auto">
-                                    No Image
-                                  </div>
-                                )}
-                                <div className="w-full min-w-0 text-center">
-                                  <div className="text-[9px] font-black uppercase tracking-widest text-venus-accent mb-0.5 whitespace-normal break-words text-center">
-                                    {p.brand || p.Brand || 'Unknown'}
-                                  </div>
-                                  <h3 className="text-[10px] md:text-xs font-black text-black uppercase leading-tight whitespace-normal break-words text-center line-clamp-2">
-                                    {p.name || p.Name || p.ProductName || p['Product Name'] || 'Unnamed'}
-                                  </h3>
-                                </div>
-                                <div className="absolute top-2 right-2">
-                                  {userProd ? (
-                                    <button 
-                                      onClick={(e) => { e.stopPropagation(); handleDeleteUPP(userProd.id); }} 
-                                      className="p-1 hover:bg-black/10 rounded-full shrink-0"
-                                      title="Remove from routine"
-                                    >
-                                      <Trash2 className="w-3 h-3 text-black/70"/>
-                                    </button>
-                                  ) : (
-                                    <button 
-                                      onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        if (!user) {
-                                          setAuthPromptModalOpen(true);
-                                          return;
-                                        }
-                                        setSelectedProductForUPP(p); 
-                                      }} 
-                                      className="p-1 hover:bg-black/5 rounded-full shrink-0"
-                                      title="Add to routine"
-                                    >
-                                      <Plus className="w-3 h-3 text-black/50"/>
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </section>
-                  </div>
-                </motion.div>
-              )}
-            </>
+            <LandingView
+              setAppState={setAppState}
+              user={user}
+              resetHeaderSearchState={resetHeaderSearchState}
+              setSocialActiveMainTab={setSocialActiveMainTab}
+              setIsFollowsOpen={setIsFollowsOpen}
+              primaryFilter={primaryFilter}
+              setPrimaryFilter={setPrimaryFilter}
+              subFilter={subFilter}
+              setSubFilter={setSubFilter}
+              products={products}
+              userProducts={userProducts}
+              handleDeleteUPP={handleDeleteUPP}
+              setAuthPromptModalOpen={setAuthPromptModalOpen}
+              setSelectedProductForUPP={setSelectedProductForUPP}
+              openProductCard={openProductCard}
+              triggerPhotoScan={triggerPhotoScan}
+              isWeb={isWeb}
+              isNativePlatform={isNativePlatform}
+            />
           )}
 
           {/* ONBOARDING: DETAILS */}
@@ -5521,342 +4402,19 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
 
           {/* BRANDS PAGE */}
           {appState === AppState.BRANDS && (
-            <motion.div 
-              key="brands-page"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              className="space-y-3 md:space-y-4 max-w-6xl mx-auto w-full pb-16"
-            >
-              <div className="border-b border-black/5 pb-2.5 md:pb-3 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  {(selectedBrandItem || selectedBrandsLetter) && (
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        if (selectedBrandItem) {
-                          setSelectedBrandItem(null);
-                        } else {
-                          setSelectedBrandsLetter(null);
-                        }
-                      }}
-                      className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-black/70 hover:text-black transition-colors cursor-pointer shrink-0 -ml-1"
-                      aria-label="Back"
-                      title="Back"
-                    >
-                      <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
-                    </button>
-                  )}
-                  <div>
-                    <h2 className="text-2xl md:text-3xl font-sans font-black text-black uppercase tracking-tight leading-tight">
-                      {selectedBrandItem ? selectedBrandItem.brand_name : 'Brands'}
-                    </h2>
-                    {selectedBrandItem && (
-                      <p className="text-xs font-bold text-black/50 mt-0.5">
-                        {loadingBrandProducts ? 'Loading...' : `${brandProducts.length} products in catalog`}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Alphabet A to Z Bar */}
-              <div className="bg-white border border-black/10 rounded-2xl p-2.5 md:p-3 shadow-sm">
-                {/* Mobile View: A to G then little dropdown arrow for H-Z */}
-                <div className="flex md:hidden items-center justify-center gap-1 sm:gap-1.5 w-full">
-                  {MOBILE_ROW_LETTERS.map((letter) => {
-                    const isSelected = selectedBrandsLetter === letter;
-                    return (
-                      <button
-                        key={letter}
-                        type="button"
-                        onClick={() => {
-                          setSelectedBrandsLetter(isSelected ? null : letter);
-                          setSelectedBrandItem(null);
-                        }}
-                        className={`w-8 h-8 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center justify-center shrink-0 ${
-                          isSelected 
-                            ? 'bg-black text-white shadow-md scale-105' 
-                            : 'bg-white text-black/80 border border-black/10 hover:bg-black/5 hover:border-black/30'
-                        }`}
-                      >
-                        {letter}
-                      </button>
-                    );
-                  })}
-
-                  {/* Little dropdown arrow for rest of letters (H to Z) */}
-                  <div className="relative shrink-0" ref={mobileBrandsDropdownRef}>
-                    <button
-                      type="button"
-                      onClick={() => setIsMobileBrandsDropdownOpen(!isMobileBrandsDropdownOpen)}
-                      className={`w-8 h-8 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center justify-center shrink-0 ${
-                        Boolean(selectedBrandsLetter && MOBILE_DROPDOWN_LETTERS.includes(selectedBrandsLetter))
-                          ? 'bg-black text-white shadow-md scale-105'
-                          : 'bg-white text-black/80 border border-black/10 hover:bg-black/5 hover:border-black/30'
-                      }`}
-                      aria-label="More letters"
-                      aria-expanded={isMobileBrandsDropdownOpen}
-                      title="More letters (H–Z)"
-                    >
-                      {selectedBrandsLetter && MOBILE_DROPDOWN_LETTERS.includes(selectedBrandsLetter) ? (
-                        <span className="flex items-center gap-0.5 text-[11px]">
-                          {selectedBrandsLetter}
-                          <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isMobileBrandsDropdownOpen ? 'rotate-180' : ''}`} />
-                        </span>
-                      ) : (
-                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMobileBrandsDropdownOpen ? 'rotate-180' : ''}`} />
-                      )}
-                    </button>
-
-                    {isMobileBrandsDropdownOpen && (
-                      <div className="absolute right-0 top-full mt-2 bg-white border border-black/10 rounded-2xl shadow-xl p-3 z-50 w-64 max-w-[90vw]">
-                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-black/5">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-black/40">
-                            Letters (H–Z)
-                          </span>
-                          {selectedBrandsLetter && MOBILE_DROPDOWN_LETTERS.includes(selectedBrandsLetter) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedBrandsLetter(null);
-                                setIsMobileBrandsDropdownOpen(false);
-                              }}
-                              className="text-[10px] font-bold text-black/50 hover:text-black underline cursor-pointer"
-                            >
-                              Clear
-                            </button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-5 gap-1.5">
-                          {MOBILE_DROPDOWN_LETTERS.map((letter) => {
-                            const isSelected = selectedBrandsLetter === letter;
-                            return (
-                              <button
-                                key={letter}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedBrandsLetter(isSelected ? null : letter);
-                                  setSelectedBrandItem(null);
-                                  setIsMobileBrandsDropdownOpen(false);
-                                }}
-                                className={`h-9 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center justify-center ${
-                                  isSelected
-                                    ? 'bg-black text-white shadow-sm'
-                                    : 'bg-black/5 text-black hover:bg-black/10'
-                                }`}
-                              >
-                                {letter}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Web View: Two rows (A to M, and below that N to Z) */}
-                <div className="hidden md:flex flex-col gap-2 items-center w-full">
-                  <div className="flex items-center justify-center gap-1.5 lg:gap-2">
-                    {WEB_ROW_1_LETTERS.map((letter) => {
-                      const isSelected = selectedBrandsLetter === letter;
-                      return (
-                        <button
-                          key={letter}
-                          type="button"
-                          onClick={() => {
-                            setSelectedBrandsLetter(isSelected ? null : letter);
-                            setSelectedBrandItem(null);
-                          }}
-                          className={`w-9 h-9 lg:w-10 lg:h-10 rounded-xl font-black text-xs lg:text-sm transition-all cursor-pointer flex items-center justify-center ${
-                            isSelected 
-                              ? 'bg-black text-white shadow-md scale-105' 
-                              : 'bg-white text-black/80 border border-black/10 hover:bg-black/5 hover:border-black/30'
-                          }`}
-                        >
-                          {letter}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center justify-center gap-1.5 lg:gap-2">
-                    {WEB_ROW_2_LETTERS.map((letter) => {
-                      const isSelected = selectedBrandsLetter === letter;
-                      return (
-                        <button
-                          key={letter}
-                          type="button"
-                          onClick={() => {
-                            setSelectedBrandsLetter(isSelected ? null : letter);
-                            setSelectedBrandItem(null);
-                          }}
-                          className={`w-9 h-9 lg:w-10 lg:h-10 rounded-xl font-black text-xs lg:text-sm transition-all cursor-pointer flex items-center justify-center ${
-                            isSelected 
-                              ? 'bg-black text-white shadow-md scale-105' 
-                              : 'bg-white text-black/80 border border-black/10 hover:bg-black/5 hover:border-black/30'
-                          }`}
-                        >
-                          {letter}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Main Content: Brands List or Brand Products */}
-              {!selectedBrandItem ? (
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      {selectedBrandsLetter && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBrandsLetter(null)}
-                          className="w-7 h-7 rounded-full hover:bg-black/5 flex items-center justify-center text-black/60 hover:text-black transition-colors cursor-pointer -ml-1"
-                          aria-label="Back to all brands"
-                          title="Back to all brands"
-                        >
-                          <ArrowLeft className="w-4 h-4" />
-                        </button>
-                      )}
-                      <h3 className="text-lg font-black uppercase tracking-tight text-black">
-                        {selectedBrandsLetter ? (
-                          <>
-                            Brands starting with <span className="underline decoration-venus-accent">{selectedBrandsLetter}</span>
-                          </>
-                        ) : (
-                          'All Brands'
-                        )}
-                      </h3>
-                    </div>
-                    <span className="text-xs font-bold text-black/50">{brandsList.length} brands found</span>
-                  </div>
-
-                  {loadingBrands ? (
-                    <div className="flex items-center justify-center py-20">
-                      <Loader2 className="w-8 h-8 animate-spin text-black" />
-                    </div>
-                  ) : brandsList.length === 0 ? (
-                    <div className="bg-white border border-black/10 rounded-2xl p-12 text-center shadow-sm">
-                      <p className="text-sm font-bold text-black/60">No brands found starting with letter {selectedBrandsLetter}.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {brandsList.map((brand) => (
-                        <div
-                          key={brand.brand_id || brand.brand_name}
-                          onClick={() => setSelectedBrandItem(brand)}
-                          className="bg-white border border-black/10 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-black/30 transition-all cursor-pointer flex items-center justify-between group"
-                        >
-                          <div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent block mb-1">Brand</span>
-                            <h4 className="text-base font-bold text-black group-hover:underline">{brand.brand_name}</h4>
-                            {brand.country && <p className="text-xs text-black/50 mt-1">{brand.country}</p>}
-                          </div>
-                          <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-colors">
-                            <ChevronRight className="w-4 h-4" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div>
-                  {selectedBrandItem && (() => {
-                    const shopLogosConfig = [
-                      { key: 'boots', file: 'boots_logo.png', label: 'Boots' },
-                      { key: 'harrods', file: 'harrods_logo.png', label: 'Harrods' },
-                      { key: 'harvey', file: 'harveynichols_logo.png', label: 'Harvey Nichols' },
-                      { key: 'liberty', file: 'liberty_logo.png', label: 'Liberty' },
-                      { key: 'selfridges', file: 'selfridges_london.png', label: 'Selfridges' },
-                      { key: 'sephora', file: 'sephora_logo.png', label: 'Sephora' },
-                      { key: 'spacenk', file: 'spacenk_logo.png', label: 'Space NK' },
-                    ];
-                    const activeShops = shopLogosConfig.filter(s => selectedBrandItem[s.key] === true);
-                    if (activeShops.length === 0) return null;
-                    return (
-                      <div className="bg-white border border-black/10 rounded-2xl p-4 sm:p-5 mb-4 shadow-sm">
-                        <h3 className="text-xs font-black uppercase tracking-widest text-black/50 mb-3">Available at Retailers & Stockists</h3>
-                        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                          {activeShops.map(shop => {
-                            const { data: { publicUrl } } = supabase.storage.from('web_art').getPublicUrl(`shop_logos/${shop.file}`);
-                            return (
-                              <div key={shop.key} className="bg-neutral-50 border border-black/5 rounded-xl p-2.5 flex items-center justify-center h-12 px-4 shadow-xs" title={shop.label}>
-                                <img 
-                                  src={publicUrl} 
-                                  alt={shop.label} 
-                                  className="max-h-7 max-w-[100px] object-contain"
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {loadingBrandProducts ? (
-                    <div className="flex items-center justify-center py-20">
-                      <Loader2 className="w-8 h-8 animate-spin text-black" />
-                    </div>
-                  ) : brandProducts.length === 0 ? (
-                    <div className="bg-white border border-black/10 rounded-2xl p-12 text-center shadow-sm">
-                      <p className="text-sm font-bold text-black/60">No products found for {selectedBrandItem.brand_name}.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
-                      {brandProducts.map((prod) => (
-                        <div 
-                          key={prod.id}
-                          onClick={() => {
-                            setSelectedProductForPage(prod);
-                            setAppState(AppState.PRODUCT_PAGE);
-                          }}
-                          className="bg-white border border-black/10 rounded-2xl p-2.5 sm:p-4 shadow-sm hover:shadow-md hover:border-black/20 transition-all cursor-pointer flex flex-col justify-between group"
-                        >
-                          <div>
-                            <div className="w-full h-32 sm:h-36 md:h-40 rounded-xl overflow-hidden mb-2 sm:mb-3 bg-neutral-50/80 border border-black/5 flex items-center justify-center p-2 sm:p-2.5">
-                              {prod.photo_url ? (
-                                <img 
-                                  src={prod.photo_url} 
-                                  alt={prod.name || prod.full_name || 'Product'} 
-                                  referrerPolicy="no-referrer" 
-                                  className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200" 
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="flex flex-col items-center justify-center text-black/25">
-                                  <ShoppingBag className="w-6 h-6 sm:w-8 sm:h-8 mb-1 stroke-1" />
-                                  <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider">No Image</span>
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-[9px] sm:text-[10px] uppercase font-black tracking-widest text-venus-accent mb-0.5 sm:mb-1 truncate">
-                              {prod.brand || selectedBrandItem.brand_name}
-                            </p>
-                            <h4 className="text-xs sm:text-sm font-bold text-black line-clamp-2 mb-1 group-hover:underline leading-tight min-h-[2rem]">
-                              {prod.name || prod.full_name}
-                            </h4>
-                            {prod.type && (
-                              <span className="inline-block px-1.5 py-0.5 bg-black/5 rounded text-[9px] sm:text-[10px] font-semibold text-black/70 mb-2 sm:mb-3 truncate max-w-full">
-                                {prod.type}
-                              </span>
-                            )}
-                          </div>
-                          <div className="pt-2 border-t border-black/5 flex items-center justify-between text-[10px] sm:text-xs font-black uppercase text-black">
-                            <span>View Details</span>
-                            <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover:translate-x-0.5 transition-transform" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </motion.div>
+            <BrandsView 
+              setAppState={setAppState}
+              user={user}
+              userProfile={userProfile}
+              selectedBrandItem={selectedBrandItem}
+              setSelectedBrandItem={setSelectedBrandItem}
+              selectedBrandsLetter={selectedBrandsLetter}
+              setSelectedBrandsLetter={setSelectedBrandsLetter}
+              onSelectProduct={(prod) => {
+                setSelectedProductForPage(prod);
+                setAppState(AppState.PRODUCT_PAGE);
+              }}
+            />
           )}
 
           {appState === AppState.RANK && (
@@ -6510,1026 +5068,17 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
             );
           })()}
 
-          {/* PROFILE PAGE */}
           {appState === AppState.PROFILE && (
-            <motion.div
-              key="profile"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-8 max-w-2xl mx-auto pb-12 w-full"
-            >
-              <header className="text-center space-y-3">
-                <div className="inline-flex p-3 bg-black/5 rounded-full mb-2">
-                  <UserIcon className="w-8 h-8 text-black" />
-                </div>
-                <div className="flex flex-col items-center justify-center gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black uppercase tracking-wider text-black/50">Username:</span>
-                    {isEditingUsername ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={editUsernameVal}
-                          onChange={(e) => setEditUsernameVal(e.target.value)}
-                          placeholder="Enter new username"
-                          className="bg-black/5 border border-black/10 rounded-xl px-3 py-1.5 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
-                        />
-                        <button
-                          onClick={handleSaveUsername}
-                          disabled={isSavingUsername}
-                          className="bg-black text-white px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1 cursor-pointer shadow-sm"
-                        >
-                          {isSavingUsername && <Loader2 className="w-3 h-3 animate-spin" />}
-                          Save
-                        </button>
-                        <button
-                          onClick={() => {
-                            setIsEditingUsername(false);
-                            setUsernameSaveError(null);
-                          }}
-                          disabled={isSavingUsername}
-                          className="bg-black/5 hover:bg-black/10 text-black px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl font-black text-black">
-                          {profile?.username && profile.username.trim() !== '' ? profile.username : (user?.user_metadata?.username && user.user_metadata.username.trim() !== '' ? user.user_metadata.username : 'xxx')}
-                        </span>
-                        <button
-                          onClick={() => {
-                            setEditUsernameVal(profile?.username || user?.user_metadata?.username || '');
-                            setUsernameSaveError(null);
-                            setIsEditingUsername(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                          title="Edit username"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          <span>Edit</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {usernameSaveError && (
-                    <p className="text-xs text-red-600 font-semibold">{usernameSaveError}</p>
-                  )}
-                </div>
-                <h2 className="text-4xl md:text-5xl font-sans font-black text-black uppercase tracking-tighter">
-                  My Skin Profile
-                </h2>
-              </header>
-
-              {(() => {
-                const hasCompletedQuiz = Boolean(userProfile?.skin_type && userProfile.skin_type.trim() !== '');
-                return !hasCompletedQuiz;
-              })() ? (
-                <div className="clean-card bg-white border border-black/10 rounded-3xl p-8 shadow-sm text-center space-y-6">
-                  <div className="max-w-sm mx-auto space-y-2">
-                    <p className="text-xs md:text-sm font-bold text-black">
-                      No info yet.{' '}
-                      <button
-                        onClick={() => setAppState(AppState.ONBOARDING_DETAILS)}
-                        className="text-venus-accent underline cursor-pointer hover:opacity-80 transition-opacity font-black"
-                      >
-                        Complete the skin quiz here
-                      </button>
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Skin Type & Burn Risk (Grid) */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Skin Type Card */}
-                    <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm relative overflow-hidden flex flex-col justify-between">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-venus-accent/[0.03] rounded-full -mr-6 -mt-6" />
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <FlaskConical className="w-5 h-5 text-venus-accent" />
-                          <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block">Skin Type</span>
-                        </div>
-                        {!isEditingSkinType && (
-                          <button
-                            onClick={() => {
-                              setEditSkinTypeVal(userProfile?.skin_type || 'normal');
-                              setSkinTypeSaveError(null);
-                              setIsEditingSkinType(true);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                            title="Edit skin type"
-                          >
-                            <Pencil className="w-3 h-3" />
-                            <span>Edit</span>
-                          </button>
-                        )}
-                      </div>
-
-                      {isEditingSkinType ? (
-                        <div className="space-y-3 pt-1">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
-                            How does your skin feel right after washing?
-                          </label>
-                          <select
-                            value={editSkinTypeVal}
-                            onChange={(e) => setEditSkinTypeVal(e.target.value)}
-                            className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
-                          >
-                            <option value="dry">Dry and tight</option>
-                            <option value="oily">Oily all over</option>
-                            <option value="combination">Oily forehead and nose, but dry cheeks (Combination)</option>
-                            <option value="normal">Comfortable / Balanced (Normal)</option>
-                          </select>
-
-                          {skinTypeSaveError && (
-                            <p className="text-xs text-red-600 font-semibold">{skinTypeSaveError}</p>
-                          )}
-
-                          <div className="flex items-center gap-2 pt-1">
-                            <button
-                              onClick={handleSaveSkinType}
-                              disabled={isSavingSkinType}
-                              className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                            >
-                              {isSavingSkinType && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                              Save Skin Type
-                            </button>
-                            <button
-                              onClick={() => {
-                                setIsEditingSkinType(false);
-                                setSkinTypeSaveError(null);
-                              }}
-                              disabled={isSavingSkinType}
-                              className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <h3 className="text-2xl font-black text-black uppercase tracking-tight capitalize">
-                            {userProfile.skin_type || 'Unknown'}
-                          </h3>
-                          <p className="text-[11px] text-black/60 font-medium mt-3">
-                            {userProfile.skin_type === 'dry' && 'Your skin produces less sebum than normal, which can lead to tightness, flaking, or a dull complexion.'}
-                            {userProfile.skin_type === 'oily' && 'Your skin has overactive sebaceous glands, producing excess sebum, which can result in shine and breakouts.'}
-                            {userProfile.skin_type === 'combination' && 'Your skin has an oily T-zone (forehead, nose, chin) but is normal or dry on the cheeks.'}
-                            {userProfile.skin_type === 'normal' && 'Your skin is well-balanced, with just the right amount of moisture and sebum, and is less prone to sensitivities.'}
-                            {!['dry', 'oily', 'combination', 'normal'].includes(userProfile.skin_type?.toLowerCase()) && 'Your primary skin barrier classification.'}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Burn Risk Card */}
-                    <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm relative overflow-hidden flex flex-col justify-between">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-yellow-400/[0.03] rounded-full -mr-6 -mt-6" />
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <Sun className="w-5 h-5 text-yellow-500" />
-                          <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block">UV Burn Risk</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-2xl font-black text-black uppercase tracking-tight capitalize">
-                            {userProfile.burn_risk || 'Medium'}
-                          </h3>
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                            userProfile.burn_risk?.toLowerCase() === 'high' ? 'bg-red-100 text-red-700' :
-                            userProfile.burn_risk?.toLowerCase() === 'low' ? 'bg-green-100 text-green-700' :
-                            'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {userProfile.burn_risk?.toLowerCase() === 'high' ? 'High Risk' :
-                             userProfile.burn_risk?.toLowerCase() === 'low' ? 'Minimal' : 'Moderate'}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-black/60 font-medium mt-3">
-                        {userProfile.burn_risk?.toLowerCase() === 'high' && 'Highly sensitive to UV. Burns easily, tans minimally. Essential to use daily SPF 50+ and limit direct sun.'}
-                        {userProfile.burn_risk?.toLowerCase() === 'medium' && 'Moderately sensitive to UV. May burn initially, then tan. Daily SPF 30+ recommended.'}
-                        {userProfile.burn_risk?.toLowerCase() === 'low' && 'High melanin resilience. Burns rarely, tans easily. Standard daily SPF 30 is recommended for protection.'}
-                        {!['high', 'medium', 'low'].includes(userProfile.burn_risk?.toLowerCase()) && 'Your skin reactivity to solar radiation.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Barrier Risk Card */}
-                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm relative overflow-hidden">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block mb-1">Skin Barrier Status Score</span>
-                        <div className="flex items-center gap-3">
-                          <span className="text-3xl font-black text-black">
-                            {userProfile.barrier_status !== null && userProfile.barrier_status !== undefined ? userProfile.barrier_status : '0'}
-                          </span>
-                          <div className="flex flex-col">
-                            <span className={`text-[10px] font-black uppercase tracking-wider ${
-                              Number(userProfile.barrier_status) >= 6 ? 'text-red-600' :
-                              Number(userProfile.barrier_status) >= 3 ? 'text-yellow-600' :
-                              'text-green-600'
-                            }`}>
-                              {Number(userProfile.barrier_status) >= 6 ? 'Compromised / High Sensitivity' :
-                               Number(userProfile.barrier_status) >= 3 ? 'Moderate Sensitivity Risk' :
-                               'Strong Barrier / Healthy'}
-                            </span>
-                            <span className="text-[9px] text-black/40">Based on self-reported skin characteristics</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Award className="w-8 h-8 text-black/10" />
-                        {!isEditingBarrier && (
-                          <button
-                            onClick={() => {
-                              setEditSensitivity(Array.isArray(userProfile?.sensitivity) ? userProfile.sensitivity : []);
-                              setEditReaction(userProfile?.new_product_reaction === 3 ? 'Almost everything irritates my skin' : userProfile?.new_product_reaction === 2 ? 'Often get redness, bumps, or burning' : userProfile?.new_product_reaction === 1 ? 'Sometimes sensitive' : 'Very good, no problems');
-                              setBarrierSaveError(null);
-                              setIsEditingBarrier(true);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                            title="Edit skin barrier status"
-                          >
-                            <Pencil className="w-3 h-3" />
-                            <span>Edit</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {isEditingBarrier ? (
-                      <div className="space-y-4 pt-2 border-t border-black/5">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
-                            Skin Sensitivity Issues (Select all that apply)
-                          </label>
-                          {[
-                            'Burning or stinging from products',
-                            'Redness',
-                            'Itching',
-                            'Flaking or peeling',
-                            'Tightness even after moisturizing'
-                          ].map((symptom) => {
-                            const checked = editSensitivity.includes(symptom);
-                            return (
-                              <label key={symptom} className="flex items-center gap-2 text-xs font-medium text-black/80 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setEditSensitivity([...editSensitivity, symptom]);
-                                    } else {
-                                      setEditSensitivity(editSensitivity.filter(s => s !== symptom));
-                                    }
-                                  }}
-                                  className="rounded border-black/20 text-black focus:ring-black w-4 h-4"
-                                />
-                                <span>{symptom}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
-                            How does your skin react to new products?
-                          </label>
-                          <select
-                            value={editReaction}
-                            onChange={(e) => setEditReaction(e.target.value)}
-                            className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
-                          >
-                            <option value="Very good, no problems">Very good, no problems</option>
-                            <option value="Sometimes sensitive">Sometimes sensitive</option>
-                            <option value="Often get redness, bumps, or burning">Often get redness, bumps, or burning</option>
-                            <option value="Almost everything irritates my skin">Almost everything irritates my skin</option>
-                          </select>
-                        </div>
-
-                        {barrierSaveError && (
-                          <p className="text-xs text-red-600 font-semibold">{barrierSaveError}</p>
-                        )}
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            onClick={handleSaveBarrier}
-                            disabled={isSavingBarrier}
-                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                          >
-                            {isSavingBarrier && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                            Save Barrier Status
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsEditingBarrier(false);
-                              setBarrierSaveError(null);
-                            }}
-                            disabled={isSavingBarrier}
-                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        {/* Progress Bar representation */}
-                        <div className="w-full bg-black/5 h-2 rounded-full overflow-hidden mb-4">
-                          <div 
-                            className={`h-full rounded-full transition-all duration-1000 ${
-                              Number(userProfile.barrier_status) >= 6 ? 'bg-red-500' :
-                              Number(userProfile.barrier_status) >= 3 ? 'bg-yellow-500' :
-                              'bg-green-500'
-                            }`}
-                            style={{ width: `${Math.min(100, Math.max(5, (Number(userProfile.barrier_status) || 0) * 10))}%` }}
-                          />
-                        </div>
-                        
-                        <p className="text-[11px] text-black/60 font-medium">
-                          A higher score indicates a highly reactive skin barrier. Avoid introducing multiple new active serums concurrently, and prioritize barrier support ingredients like ceramides, hyaluronic acid, and niacinamide.
-                        </p>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Skin Goals Card */}
-                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
-                        <Heart className="w-4 h-4 text-venus-accent" />
-                        Target Skin Goals
-                      </h4>
-                      {!isEditingGoals && (
-                        <button
-                          onClick={() => {
-                            setEditMainConcern(userProfile?.main_concern ? Number(userProfile.main_concern) : 12);
-                            setEditScndConcern(userProfile?.scnd_concern ? Number(userProfile.scnd_concern) : 12);
-                            setGoalsSaveError(null);
-                            setIsEditingGoals(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                          title="Edit skincare goals"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          <span>Edit</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {isEditingGoals ? (
-                      <div className="space-y-4 pt-1">
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
-                            Main Concern
-                          </label>
-                          <select
-                            value={editMainConcern}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setEditMainConcern(val);
-                              if (val === 1 || editScndConcern === 1) {
-                                setEditBreakoutTypes(prev => prev.slice(0, 1));
-                              }
-                            }}
-                            className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
-                          >
-                            {SKIN_CONCERN_OPTIONS.map((c) => (
-                              <option key={`edit-main-${c.id}`} value={c.id}>
-                                {c.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-black/60 block">
-                            Secondary Concern (Optional)
-                          </label>
-                          <select
-                            value={editScndConcern}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setEditScndConcern(val);
-                              if (val === 1 || editMainConcern === 1) {
-                                setEditBreakoutTypes(prev => prev.slice(0, 1));
-                              }
-                            }}
-                            className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
-                          >
-                            {SKIN_CONCERN_OPTIONS.map((c) => (
-                              <option key={`edit-scnd-${c.id}`} value={c.id}>
-                                {c.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {goalsSaveError && (
-                          <p className="text-xs text-red-600 font-semibold">{goalsSaveError}</p>
-                        )}
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            onClick={handleSaveGoals}
-                            disabled={isSavingGoals}
-                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                          >
-                            {isSavingGoals && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                            Save Goals
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsEditingGoals(false);
-                              setGoalsSaveError(null);
-                            }}
-                            disabled={isSavingGoals}
-                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      (() => {
-                        const mainLabel = getSkinConcernLabel(userProfile?.main_concern);
-                        const scndLabel = getSkinConcernLabel(userProfile?.scnd_concern);
-                        const legacyGoals = Array.isArray(userProfile?.goals) 
-                          ? userProfile.goals 
-                          : typeof userProfile?.goals === 'string' && userProfile.goals.trim() !== '' 
-                          ? [userProfile.goals] 
-                          : [];
-
-                        const hasAnyGoals = Boolean(mainLabel || (scndLabel && scndLabel !== mainLabel) || legacyGoals.length > 0);
-
-                        if (!hasAnyGoals) {
-                          return <p className="text-xs text-black/40 italic">No specific skincare goals chosen</p>;
-                        }
-
-                        return (
-                          <div className="flex flex-wrap gap-2">
-                            {mainLabel && (
-                              <span className="text-xs bg-black text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-venus-pink" />
-                                <span>{mainLabel}</span>
-                                <span className="text-[9px] text-white/50 font-normal ml-1">Main</span>
-                              </span>
-                            )}
-                            {scndLabel && scndLabel !== mainLabel && (
-                              <span className="text-xs bg-black text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-venus-pink" />
-                                <span>{scndLabel}</span>
-                                <span className="text-[9px] text-white/50 font-normal ml-1">Secondary</span>
-                              </span>
-                            )}
-                            {legacyGoals.map((g: string, idx: number) => (
-                              <span 
-                                key={g + idx} 
-                                className="text-xs bg-black text-white px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 text-venus-pink" />
-                                {g}
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })()
-                    )}
-                  </div>
-
-                  {/* Breakout Types Card */}
-                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
-                    {(() => {
-                      const isBreakoutGoalActive = Boolean(
-                        (isEditingGoals ? (editMainConcern === 1 || editScndConcern === 1) : (userProfile?.main_concern === 1 || userProfile?.scnd_concern === 1)) ||
-                        userProfile?.main_concern === 1 ||
-                        userProfile?.scnd_concern === 1
-                      );
-
-                      return (
-                        <>
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
-                              <Shield className="w-4 h-4 text-purple-500" />
-                              Breakout Characteristics
-                            </h4>
-                            {!isEditingBreakout && (
-                              <button
-                                onClick={() => {
-                                  const raw = Array.isArray(userProfile?.breakout_type) ? userProfile.breakout_type : (userProfile?.breakout_type ? [userProfile.breakout_type] : []);
-                                  const normalized = raw.map((b: any) => typeof b === 'number' ? b : parseInt(String(b), 10)).filter((n: number) => !isNaN(n));
-                                  setEditBreakoutTypes(isBreakoutGoalActive && normalized.length > 1 ? normalized.slice(0, 1) : normalized);
-                                  setBreakoutSaveError(null);
-                                  setIsEditingBreakout(true);
-                                }}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                                title="Edit breakout types"
-                              >
-                                <Pencil className="w-3 h-3" />
-                                <span>Edit</span>
-                              </button>
-                            )}
-                          </div>
-
-                          {isEditingBreakout ? (
-                            <div className="space-y-4 pt-1">
-                              <p className="text-xs text-black/60 font-medium">
-                                {isBreakoutGoalActive 
-                                  ? 'Select the one that best resembles your breakouts' 
-                                  : 'Select all breakout characteristics that apply to your skin'}
-                              </p>
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                {BREAKOUT_PHOTO_OPTIONS.map((opt) => {
-                                  const isSelected = editBreakoutTypes.includes(opt.value);
-                                  return (
-                                    <button
-                                      key={opt.value}
-                                      type="button"
-                                      onClick={() => {
-                                        if (isBreakoutGoalActive) {
-                                          if (isSelected) {
-                                            setEditBreakoutTypes([]);
-                                          } else {
-                                            setEditBreakoutTypes([opt.value]);
-                                          }
-                                        } else {
-                                          if (isSelected) {
-                                            setEditBreakoutTypes(editBreakoutTypes.filter(v => v !== opt.value));
-                                          } else {
-                                            setEditBreakoutTypes([...editBreakoutTypes, opt.value]);
-                                          }
-                                        }
-                                      }}
-                                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                                        isSelected ? 'border-purple-600 bg-purple-50/50 ring-2 ring-purple-500/20' : 'border-black/10 hover:bg-black/[0.02]'
-                                      }`}
-                                    >
-                                      {opt.img && (
-                                        <img src={opt.img} alt={opt.title} className="w-full h-20 object-cover rounded-lg mb-2 border border-black/5" />
-                                      )}
-                                      <span className="text-xs font-black text-black">{opt.title}</span>
-                                      {isSelected && <Check className="w-4 h-4 text-purple-600 mt-1 self-end" />}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-
-                              {breakoutSaveError && (
-                                <p className="text-xs text-red-600 font-semibold">{breakoutSaveError}</p>
-                              )}
-
-                              <div className="flex items-center gap-2 pt-2">
-                                <button
-                                  onClick={handleSaveBreakout}
-                                  disabled={isSavingBreakout}
-                                  className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                                >
-                                  {isSavingBreakout && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                                  Save Breakout Types
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setIsEditingBreakout(false);
-                                    setBreakoutSaveError(null);
-                                  }}
-                                  disabled={isSavingBreakout}
-                                  className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            Array.isArray(userProfile.breakout_type) && userProfile.breakout_type.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {(isBreakoutGoalActive ? userProfile.breakout_type.slice(0, 1) : userProfile.breakout_type).map((b: any, idx: number) => (
-                                  <span 
-                                    key={String(b) + idx} 
-                                    className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
-                                  >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                                    {getBreakoutTitle(b)}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : typeof userProfile.breakout_type === 'number' || (typeof userProfile.breakout_type === 'string' && userProfile.breakout_type.trim() !== '') ? (
-                              <span className="text-xs bg-purple-50 text-purple-900 border border-purple-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm inline-block">
-                                <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                                {getBreakoutTitle(userProfile.breakout_type)}
-                              </span>
-                            ) : (
-                              <p className="text-xs text-black/40 italic">No specific breakout characteristics specified.</p>
-                            )
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Pregnancy Status Card */}
-                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
-                        <Heart className="w-4 h-4 text-pink-500" />
-                        Pregnant or Breastfeeding Status
-                      </h4>
-                      {!isEditingPregnant && (
-                        <button
-                          onClick={() => {
-                            setEditPregnantVal(userProfile?.pregnant || 'No');
-                            setPregnantSaveError(null);
-                            setIsEditingPregnant(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                          title="Edit pregnancy status"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          <span>Edit</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {isEditingPregnant ? (
-                      <div className="space-y-4 pt-1">
-                        <select
-                          value={editPregnantVal}
-                          onChange={(e) => setEditPregnantVal(e.target.value)}
-                          className="w-full bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
-                        >
-                          <option value="Yes">Yes</option>
-                          <option value="No">No</option>
-                          <option value="Prefer not to say">Prefer not to say</option>
-                        </select>
-
-                        {pregnantSaveError && (
-                          <p className="text-xs text-red-600 font-semibold">{pregnantSaveError}</p>
-                        )}
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            onClick={handleSavePregnant}
-                            disabled={isSavingPregnant}
-                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                          >
-                            {isSavingPregnant && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                            Save Status
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsEditingPregnant(false);
-                              setPregnantSaveError(null);
-                            }}
-                            disabled={isSavingPregnant}
-                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-xs bg-pink-50 text-pink-900 border border-pink-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider inline-block shadow-sm">
-                        {userProfile?.pregnant || 'No'}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Actives Used Card */}
-                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
-                        <FlaskConical className="w-4 h-4 text-amber-500" />
-                        Active Skincare Ingredients Used
-                      </h4>
-                      {!isEditingActives && (
-                        <button
-                          onClick={() => {
-                            const currentActives = getActivesSelectedIds(userProfile?.actives_used);
-                            setEditActivesVal(currentActives);
-                            setActivesSaveError(null);
-                            setIsEditingActives(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                          title="Edit actives used"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          <span>Edit</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {isEditingActives ? (
-                      <div className="space-y-4 pt-1">
-                        <p className="text-xs text-black/60 font-medium">Select active ingredients you currently use:</p>
-                        <div className="space-y-2">
-                          {ACTIVE_SKINCARE_OPTIONS.map((opt) => {
-                            const isSelected = editActivesVal.includes(opt.id);
-                            return (
-                              <label key={opt.id} className="flex items-center gap-2.5 text-xs font-bold text-black/85 cursor-pointer select-none py-1">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      if (opt.id === 4) {
-                                        setEditActivesVal([4]);
-                                      } else {
-                                        setEditActivesVal([...editActivesVal.filter(id => id !== 4 && id !== opt.id), opt.id]);
-                                      }
-                                    } else {
-                                      setEditActivesVal(editActivesVal.filter(id => id !== opt.id));
-                                    }
-                                  }}
-                                  className="rounded border-black/20 text-black focus:ring-black w-4 h-4 cursor-pointer"
-                                />
-                                <span>{opt.label}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-
-                        {activesSaveError && (
-                          <p className="text-xs text-red-600 font-semibold">{activesSaveError}</p>
-                        )}
-
-                        <div className="flex items-center gap-2 pt-2">
-                          <button
-                            onClick={handleSaveActives}
-                            disabled={isSavingActives}
-                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                          >
-                            {isSavingActives && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                            Save Actives Used
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsEditingActives(false);
-                              setActivesSaveError(null);
-                            }}
-                            disabled={isSavingActives}
-                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      (() => {
-                        const selectedIds = getActivesSelectedIds(userProfile?.actives_used);
-                        if (selectedIds.length === 0) {
-                          return <p className="text-xs text-black/40 italic">No actives currently specified.</p>;
-                        }
-                        return (
-                          <div className="flex flex-wrap gap-2">
-                            {selectedIds.map((id) => {
-                              const opt = ACTIVE_SKINCARE_OPTIONS.find(o => o.id === id);
-                              const displayText = opt ? opt.label : (ACTIVES_TEXT_MAP[id] || `Active #${id}`);
-                              return (
-                                <span 
-                                  key={id} 
-                                  className="text-xs bg-amber-50 text-amber-900 border border-amber-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
-                                >
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                  {displayText}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()
-                    )}
-                  </div>
-
-                  {/* Past Problems / Ingredients to Avoid Card */}
-                  <div className="clean-card bg-white border border-black/10 rounded-2xl p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-xs font-black uppercase tracking-wider text-black/50 flex items-center gap-1.5">
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                        Past Problems / Ingredients to Avoid
-                      </h4>
-                      {!isEditingPastProblems && (
-                        <button
-                          onClick={() => {
-                            const parsedList = parseAvoidedIngredients(userProfile?.past_problems);
-                            const listWithNames = parsedList.map(item => {
-                              if (item.id && avoidedIngredientNames[item.id]) {
-                                return { id: item.id, name: avoidedIngredientNames[item.id] };
-                              }
-                              return item;
-                            });
-                            setEditPastProblemsVal(listWithNames);
-                            setNewProblemInput('');
-                            setIngredientSuggestions([]);
-                            setPastProblemsSaveError(null);
-                            setIsEditingPastProblems(true);
-
-                            const neededIds = listWithNames
-                              .map(p => p.id)
-                              .filter((id): id is number => typeof id === 'number' && !avoidedIngredientNames[id]);
-                            if (neededIds.length > 0) {
-                              supabase
-                                .from('ingredient_scores')
-                                .select('id, ingredient')
-                                .in('id', neededIds)
-                                .then(({ data }) => {
-                                  if (data && data.length > 0) {
-                                    setAvoidedIngredientNames(prev => {
-                                      const next = { ...prev };
-                                      data.forEach((d: any) => {
-                                        if (d.id && d.ingredient) next[d.id] = d.ingredient;
-                                      });
-                                      return next;
-                                    });
-                                    setEditPastProblemsVal(prev => prev.map(item => {
-                                      if (item.id) {
-                                        const match = data.find(d => d.id === item.id);
-                                        if (match && match.ingredient) return { id: item.id, name: match.ingredient };
-                                      }
-                                      return item;
-                                    }));
-                                  }
-                                });
-                            }
-
-                            const missing = listWithNames.filter(p => p.id === null).map(p => p.name);
-                            if (missing.length > 0) {
-                              supabase
-                                .from('ingredient_scores')
-                                .select('id, ingredient')
-                                .in('ingredient', missing)
-                                .then(({ data }) => {
-                                  if (data && data.length > 0) {
-                                    setEditPastProblemsVal(prev => prev.map(item => {
-                                      if (item.id === null) {
-                                        const match = data.find(d => d.ingredient.toLowerCase() === item.name.toLowerCase());
-                                        if (match) return { id: match.id, name: match.ingredient };
-                                      }
-                                      return item;
-                                    }));
-                                  }
-                                });
-                            }
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider bg-black/5 hover:bg-black/10 text-black rounded-lg transition-colors cursor-pointer"
-                          title="Edit past problems"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          <span>Edit</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {isEditingPastProblems ? (
-                      <div className="space-y-4 pt-1">
-                        <p className="text-xs text-black/60 font-medium">Add or remove ingredients you wish to avoid because of past skin issues:</p>
-                        
-                        <div className="relative">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={newProblemInput}
-                              onChange={(e) => setNewProblemInput(e.target.value)}
-                              onFocus={() => {
-                                if (ingredientSuggestions.length > 0) setIsIngredientSuggestionsOpen(true);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleAddProblemIngredient();
-                                }
-                              }}
-                              placeholder="Search ingredient (e.g. Salicylic acid)..."
-                              className="flex-1 bg-black/5 border border-black/10 rounded-xl px-3 py-2 text-xs font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleAddProblemIngredient}
-                              className="bg-black text-white px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors cursor-pointer"
-                            >
-                              Add
-                            </button>
-                          </div>
-
-                          {isIngredientSuggestionsOpen && ingredientSuggestions.length > 0 && (
-                            <div className="absolute left-0 right-12 top-full mt-1 bg-white border border-black/10 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto">
-                              {ingredientSuggestions.map((sug) => (
-                                <button
-                                  key={(sug.id ?? sug.name) + sug.name}
-                                  type="button"
-                                  onClick={() => {
-                                    if (!editPastProblemsVal.some(p => (sug.id !== null && p.id === sug.id) || p.name.toLowerCase() === sug.name.toLowerCase())) {
-                                      setEditPastProblemsVal([...editPastProblemsVal, sug]);
-                                    }
-                                    setNewProblemInput('');
-                                    setIngredientSuggestions([]);
-                                    setIsIngredientSuggestionsOpen(false);
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-xs font-bold text-black hover:bg-black/5 transition-colors border-b border-black/5 last:border-b-0 cursor-pointer flex items-center justify-between"
-                                >
-                                  <span>{sug.name}</span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 pt-2">
-                          {editPastProblemsVal.map((prob, idx) => {
-                            const displayName = (prob.id && avoidedIngredientNames[prob.id]) ? avoidedIngredientNames[prob.id] : prob.name;
-                            return (
-                              <span
-                                key={(prob.id ? String(prob.id) : prob.name) + idx}
-                                className="text-xs bg-red-50 text-red-900 border border-red-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-2 shadow-sm"
-                              >
-                                <span>{displayName}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditPastProblemsVal(editPastProblemsVal.filter((_, i) => i !== idx))}
-                                  className="w-4 h-4 rounded-full bg-red-200/60 hover:bg-red-300 text-red-800 flex items-center justify-center cursor-pointer transition-colors"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </span>
-                            );
-                          })}
-                          {editPastProblemsVal.length === 0 && (
-                            <p className="text-xs text-black/40 italic">No ingredients added yet.</p>
-                          )}
-                        </div>
-
-                        {pastProblemsSaveError && (
-                          <p className="text-xs text-red-600 font-semibold">{pastProblemsSaveError}</p>
-                        )}
-
-                        <div className="flex items-center gap-2 pt-2">
-                          <button
-                            onClick={handleSavePastProblems}
-                            disabled={isSavingPastProblems}
-                            className="bg-black text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                          >
-                            {isSavingPastProblems && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                            Save Ingredients to Avoid
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsEditingPastProblems(false);
-                              setPastProblemsSaveError(null);
-                            }}
-                            disabled={isSavingPastProblems}
-                            className="bg-black/5 hover:bg-black/10 text-black px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      (() => {
-                        const problemsList = parseAvoidedIngredients(userProfile?.past_problems);
-
-                        if (problemsList.length === 0) {
-                          return <p className="text-xs text-black/40 italic">No specific past problem ingredients specified.</p>;
-                        }
-
-                        return (
-                          <div className="flex flex-wrap gap-2">
-                            {problemsList.map((prob, idx) => {
-                              const displayName = (prob.id && avoidedIngredientNames[prob.id]) ? avoidedIngredientNames[prob.id] : prob.name;
-                              return (
-                                <span 
-                                  key={(prob.id ? String(prob.id) : prob.name) + idx} 
-                                  className="text-xs bg-red-50 text-red-900 border border-red-200/50 px-3 py-1.5 rounded-xl font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm"
-                                >
-                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                                  <span>{displayName}</span>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()
-                    )}
-                  </div>
-
-                  <div className="pt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
-                    <button
-                      onClick={handleSignOut}
-                      className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-black/70 hover:text-black transition-colors bg-black/5 px-6 py-3 rounded-xl border border-black/10 cursor-pointer shadow-sm"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Log Out
-                    </button>
-                    <button
-                      onClick={() => navigateTo(AppState.DELETE_ACCOUNT, '/delete-account')}
-                      className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-red-600 hover:text-red-700 transition-colors bg-red-50 px-6 py-3 rounded-xl border border-red-200/50 cursor-pointer shadow-sm"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Delete Account
-                    </button>
-                  </div>
-                </div>
-              )}
-            </motion.div>
+            <ProfileView
+              user={user}
+              profile={profile}
+              userProfile={userProfile}
+              setUserProfile={setUserProfile}
+              setProfile={setProfile}
+              setAppState={setAppState}
+              navigateTo={navigateTo}
+              handleSignOut={handleSignOut}
+            />
           )}
 
 
@@ -8163,27 +5712,20 @@ const WEB_ROW_2_LETTERS = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'
       />
 
       {/* Global Analysis/Scanning Backdrop Loader */}
-      {(isLandingScanning || isNavScanning || isDashboardScanning || isLandingEvaluating) && (
+      {(isNavScanning || isDashboardScanning) && (
         <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/65 backdrop-blur-md">
           <div className="bg-white p-8 rounded-3xl flex flex-col items-center gap-4 shadow-2xl max-w-xs text-center border-2 border-black/5">
             <Loader2 className="w-10 h-10 animate-spin text-venus-accent" />
             <div>
               <p className="text-sm font-black uppercase tracking-wider text-black">
-                {isLandingEvaluating ? "Evaluating Skin Fit..." : "Analyzing Photo..."}
+                Analyzing Photo...
               </p>
-              {isLandingEvaluating && (
-                <p className="text-xs text-black/50 mt-1 font-mono">
-                  Running compatibility checks
-                </p>
-              )}
             </div>
             <button
               type="button"
               onClick={() => {
-                setIsLandingScanning(false);
                 setIsNavScanning(false);
                 setIsDashboardScanning(false);
-                setIsLandingEvaluating(false);
               }}
               className="mt-1 text-xs text-black/40 hover:text-black font-semibold underline cursor-pointer"
             >

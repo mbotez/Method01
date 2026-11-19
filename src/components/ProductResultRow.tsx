@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { MatchedProduct } from './photo_search';
 import { ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Shield, ShoppingBag } from 'lucide-react';
 import { computeProductKeyBenefits, computeProductPotentialIrritants, getMetricNamesForFlag } from './ProductCard';
+import { getScoreColorConfig } from '../utils/scoreColors';
 
 interface ProductResultRowProps {
   product: MatchedProduct;
@@ -76,7 +77,8 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
 
             const effComp = {
               ...(rpcData.compatibility || {
-                skinTypeFit: 'Compatible Formula',
+                scoreDisplay: 'Score could not be calculated',
+                compatibilityScore: null,
                 conflicts: []
               }),
               benefits: formulaBenefits,
@@ -388,30 +390,31 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
           <div className="text-[10px] font-black uppercase tracking-wider text-black/40 animate-pulse pt-1">
             Analyzing product properties & compatibility...
           </div>
-        ) : compatibility ? (
-          <div className="bg-black/[0.03] border border-black/10 rounded-xl p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Skin Compatibility</span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${
-                compatibility.skinTypeFit === 'Good Fit' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                compatibility.skinTypeFit === 'Bad Fit' ? 'bg-red-100 text-red-800 border-red-300' : 
-                'bg-amber-100 text-amber-800 border-amber-300'
-              }`}>
-                {compatibility.skinTypeFit || 'Compatible'}
-              </span>
-            </div>
-
-            {compatibility.conflicts && compatibility.conflicts.length > 0 && (
-              <div className="flex flex-wrap gap-1 pt-0.5">
-                {compatibility.conflicts.map((conflict: string, idx: number) => (
-                  <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
-                    <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
-                  </span>
-                ))}
+        ) : compatibility ? (() => {
+          const compScoreConfig = getScoreColorConfig(compatibility.compatibilityScore);
+          return (
+            <div className={`border rounded-xl p-3 space-y-2 transition-all ${compatibility.compatibilityScore != null ? `${compScoreConfig.cardBorder} ${compScoreConfig.cardBg}` : 'bg-black/[0.03] border-black/10'}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Skin Compatibility Score</span>
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border transition-colors ${
+                  compatibility.compatibilityScore != null ? compScoreConfig.pillClasses : 'bg-neutral-100 text-neutral-600 border-neutral-200'
+                }`}>
+                  {compatibility.scoreDisplay || (compatibility.compatibilityScore !== undefined && compatibility.compatibilityScore !== null ? `${compatibility.compatibilityScore} / 100` : 'Score could not be calculated')}
+                </span>
               </div>
-            )}
-          </div>
-        ) : null
+
+              {compatibility.conflicts && compatibility.conflicts.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {compatibility.conflicts.map((conflict: string, idx: number) => (
+                    <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold flex items-center gap-1">
+                      <Shield className="w-2.5 h-2.5 text-red-600" /> {conflict}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })() : null
       )}
 
       {ingredients && (

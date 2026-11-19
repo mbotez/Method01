@@ -171,7 +171,8 @@ export const TrackerNewProductModal: React.FC<TrackerNewProductModalProps> = ({
             if (hasBreakoutRisk) {
               breakoutReasons = comp.safetyConcerns;
             }
-            productVerdict = comp.skinTypeFit === 'Bad Fit' ? 'Avoid' : comp.skinTypeFit === 'Good Fit' ? 'Recommended' : 'Caution';
+            const score = comp.compatibilityScore ?? 70;
+            productVerdict = score < 50 ? 'Avoid' : score >= 75 ? 'Recommended' : 'Caution';
             }
         }
       } catch (err) {
