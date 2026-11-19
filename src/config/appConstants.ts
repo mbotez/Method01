@@ -79,6 +79,10 @@ export const DEFAULT_LANDING_ARTICLES = [
     readTime: '4 min read',
     article_content: 'Master the exact order of application from thinnest water-based textures to richest lipid creams to guarantee maximum dermal absorption without pilling or flushing.',
     image_url: '/assets/g1.jpg',
+    collage_cards: [
+      { image_url: '/assets/g1.jpg', caption: 'Cleanse & prep' },
+      { image_url: '/assets/g2.jpg', caption: '48-72 hr shed' }
+    ],
     created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
     article_link: '#'
   },
@@ -89,6 +93,10 @@ export const DEFAULT_LANDING_ARTICLES = [
     readTime: '5 min read',
     article_content: 'The go-to reference table explaining which dermatological actives can be combined in the same regimen, and which combinations cause chemical degradation or micro-inflammation.',
     image_url: '/assets/g2.jpg',
+    collage_cards: [
+      { image_url: '/assets/g2.jpg', caption: 'Active check' },
+      { image_url: '/assets/g3.jpg', caption: 'Barrier lock' }
+    ],
     created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
     article_link: '#'
   },
@@ -99,6 +107,10 @@ export const DEFAULT_LANDING_ARTICLES = [
     readTime: '4 min read',
     article_content: 'How to identify an acid-mantle breakdown, eliminate micro-irritants, and rapidly restore compromised skin using physiological 3:1:1:1 lipid ratios.',
     image_url: '/assets/g3.jpg',
+    collage_cards: [
+      { image_url: '/assets/g3.jpg', caption: 'Physiological lipids' },
+      { image_url: '/assets/g4.jpg', caption: 'Deep repair' }
+    ],
     created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
     article_link: '#'
   }

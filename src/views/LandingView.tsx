@@ -297,53 +297,60 @@ export const LandingView: React.FC<LandingViewProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 w-full">
-                {landingArticles.slice(0, 3).map((article, idx) => (
-                  <article 
-                    key={article.id || article.article_id || idx}
-                    onClick={() => {
-                      resetHeaderSearchState();
-                      setSelectedArticle?.(article);
-                      setAppState(AppState.SOCIAL);
-                      setSocialActiveMainTab('articles');
-                      setIsFollowsOpen(false);
-                    }}
-                    className="clean-card bg-white border border-black/10 hover:border-black p-5 rounded-2xl transition-all duration-300 hover:shadow-lg cursor-pointer flex flex-col justify-between group h-full"
-                  >
-                    <div className="space-y-3">
-                      <div className="rounded-xl overflow-hidden border border-black/5 bg-[#F5F4F0] aspect-[16/10] w-full relative">
-                        <img 
-                          src={article.image_url || `/assets/g${(idx % 6) + 1}.jpg`} 
-                          alt={article.title} 
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            target.src = `/assets/g${(idx % 6) + 1}.jpg`;
-                          }}
-                        />
+                {landingArticles.slice(0, 3).map((article, idx) => {
+                  const validCollages = Array.isArray(article.collage_cards)
+                    ? article.collage_cards.filter((c: any) => c && typeof c.image_url === 'string' && c.image_url.trim() !== '')
+                    : [];
+                  const articleImgUrl = validCollages[1]?.image_url || validCollages[0]?.image_url || article.image_url || `/assets/g${(idx % 6) + 1}.jpg`;
+
+                  return (
+                    <article 
+                      key={article.id || article.article_id || idx}
+                      onClick={() => {
+                        resetHeaderSearchState();
+                        setSelectedArticle?.(article);
+                        setAppState(AppState.SOCIAL);
+                        setSocialActiveMainTab('articles');
+                        setIsFollowsOpen(false);
+                      }}
+                      className="clean-card bg-white border border-black/10 hover:border-black p-5 rounded-2xl transition-all duration-300 hover:shadow-lg cursor-pointer flex flex-col justify-between group h-full"
+                    >
+                      <div className="space-y-3">
+                        <div className="rounded-xl overflow-hidden border border-black/5 bg-[#F5F4F0] aspect-[16/10] w-full relative">
+                          <img 
+                            src={articleImgUrl} 
+                            alt={article.title} 
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            onError={(e) => {
+                              const target = e.currentTarget;
+                              target.src = validCollages[0]?.image_url || `/assets/g${(idx % 6) + 1}.jpg`;
+                            }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-black/50">
+                          <span className="font-black uppercase tracking-wider text-[10px] text-venus-accent">
+                            {article.category || 'Editorial'}
+                          </span>
+                        </div>
+                        <h3 className="text-sm md:text-base font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2 leading-snug">
+                          {article.title}
+                        </h3>
+                        <p className="text-xs text-black/70 font-medium leading-relaxed line-clamp-3">
+                          {article.article_content || article.summary}
+                        </p>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-black/50">
-                        <span className="font-black uppercase tracking-wider text-[10px] text-venus-accent">
-                          {article.category || 'Editorial'}
+
+                      <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-end text-xs font-black uppercase tracking-wider text-black">
+                        <span className="group-hover:underline flex items-center gap-1.5">
+                          Read
+                          <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
                         </span>
                       </div>
-                      <h3 className="text-sm md:text-base font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2 leading-snug">
-                        {article.title}
-                      </h3>
-                      <p className="text-xs text-black/70 font-medium leading-relaxed line-clamp-3">
-                        {article.article_content || article.summary}
-                      </p>
-                    </div>
-
-                    <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-end text-xs font-black uppercase tracking-wider text-black">
-                      <span className="group-hover:underline flex items-center gap-1.5">
-                        Read
-                        <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
-                      </span>
-                    </div>
-                  </article>
-                ))}
-              </div>
+                    </article>
+                  );
+                })}
+            </div>
             </section>
 
             {/* SECTION 2: BROWSE PRODUCTS (ONE ROW) */}
@@ -360,7 +367,6 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   >
                     Browse Products
                   </h2>
-                  <span className="text-xs text-black/40 font-medium hidden sm:inline">Skin-matched catalog</span>
                 </div>
                 <button 
                   onClick={() => {

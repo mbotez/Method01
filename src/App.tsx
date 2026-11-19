@@ -3516,12 +3516,12 @@ export default function App() {
       
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#EAE9E5]">
-        <div className="flex justify-between items-center px-3 sm:px-4 md:px-6 h-14 sm:h-16 gap-2 sm:gap-4 max-w-7xl mx-auto">
+        <div className="flex justify-between items-center px-3 sm:px-4 md:px-6 h-14 sm:h-16 gap-1.5 sm:gap-4 max-w-7xl mx-auto">
           {/* Top Left: Canonic brand and Nav Links */}
-          <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-4 md:gap-6 shrink-0">
             <button 
               onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} 
-              className={`p-1.5 -ml-1 text-[#171717] hover:bg-[#F4F3F0] rounded-lg cursor-pointer transition-colors ${user ? 'block' : 'block md:hidden'}`}
+              className={`p-1.5 -ml-1 text-[#171717] hover:bg-[#F4F3F0] rounded-lg cursor-pointer transition-colors shrink-0 whitespace-nowrap ${user ? 'block' : 'block md:hidden'}`}
               aria-label="Toggle navigation menu"
               title="Navigation menu"
             >
@@ -3529,7 +3529,7 @@ export default function App() {
             </button>
             <button 
               onClick={() => { resetHeaderSearchState(); setAppState(user ? AppState.DASHBOARD : AppState.LANDING); }} 
-              className="font-bubble text-xl sm:text-2xl md:text-3xl text-[#171717] cursor-pointer tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap"
+              className="font-bubble text-xl sm:text-2xl md:text-3xl text-[#171717] cursor-pointer tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap shrink-0"
             >
               Canonic
             </button>
@@ -3551,12 +3551,12 @@ export default function App() {
 
           {/* Header search bar (pill) */}
           <div ref={headerSearchContainerRef} className="flex-1 min-w-0 max-w-md mx-1 sm:mx-4">
-            <div className="relative w-full">
-              <Search className="absolute left-2.5 sm:left-3.5 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#73716C] pointer-events-none" />
+            <div className="flex items-center w-full bg-[#F4F3F0] border border-[#E5E4E0] px-2.5 sm:px-3.5 py-1.5 sm:py-2 gap-1.5 rounded-full transition-colors focus-within:border-[#CFCBC2]">
+              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#73716C] shrink-0 pointer-events-none" />
               <input 
                 type="text" 
-                placeholder="Search products..."
-                className="w-full bg-[#F4F3F0] border border-[#E5E4E0] py-1.5 sm:py-2 pl-8 sm:pl-10 pr-7 sm:pr-9 rounded-full text-xs font-medium uppercase tracking-wider text-[#171717] placeholder:text-[#73716C] outline-none focus:border-[#CFCBC2] transition-colors"
+                placeholder="SEARCH"
+                className="w-full min-w-0 bg-transparent border-none p-0 text-[11px] sm:text-xs font-medium uppercase tracking-wide sm:tracking-wider text-[#171717] placeholder:text-[#73716C] outline-none"
                 value={headerSearchQuery}
                 onChange={(e) => {
                   setHeaderSearchQuery(e.target.value);
@@ -3567,7 +3567,7 @@ export default function App() {
               {headerSearchQuery && (
                 <button 
                   onClick={() => resetHeaderSearchState()}
-                  className="absolute right-2 sm:right-3.5 top-1/2 transform -translate-y-1/2 p-0.5 rounded-full hover:bg-[#E5E4E0] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer"
+                  className="shrink-0 p-0.5 rounded-full hover:bg-[#E5E4E0] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer"
                   title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -3581,13 +3581,13 @@ export default function App() {
               <>
                 <button 
                   onClick={() => { resetHeaderSearchState(); setIsSignUp(false); setAppState(AppState.AUTH); }}
-                  className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.08em] sm:tracking-[0.14em] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap px-1 sm:px-0"
+                  className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide sm:tracking-[0.14em] text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap px-1 sm:px-0 shrink-0"
                 >
                   Sign In
                 </button>
                 <button 
                   onClick={() => { resetHeaderSearchState(); setIsSignUp(true); setAppState(AppState.AUTH); }}
-                  className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.08em] sm:tracking-[0.14em] text-[#171717] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full border border-[#E5E4E0]"
+                  className="text-[11px] sm:text-xs font-semibold uppercase tracking-wide sm:tracking-[0.14em] text-[#171717] hover:text-[#171717] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full border border-[#E5E4E0] shrink-0"
                 >
                   Join
                 </button>
@@ -3595,9 +3595,9 @@ export default function App() {
             ) : (
               <button 
                 onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); }}
-                className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-semibold uppercase tracking-[0.08em] sm:tracking-[0.14em] text-[#171717] hover:text-[#73716C] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] p-1.5 sm:px-3.5 sm:py-1.5 rounded-full border border-[#E5E4E0]"
+                className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-semibold uppercase tracking-wide sm:tracking-[0.14em] text-[#171717] hover:text-[#73716C] transition-colors cursor-pointer whitespace-nowrap bg-[#F4F3F0] p-1.5 sm:px-3.5 sm:py-1.5 rounded-full border border-[#E5E4E0] shrink-0"
               >
-                <UserIcon className="w-3.5 h-3.5 text-[#171717]" />
+                <UserIcon className="w-3.5 h-3.5 text-[#171717] shrink-0" />
                 <span className="hidden sm:inline">{user?.username || 'Profile'}</span>
               </button>
             )}

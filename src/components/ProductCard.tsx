@@ -1797,7 +1797,7 @@ export const ProductCardContent = ({
         return (
           <div className={`border rounded-xl p-3 space-y-2 transition-all ${comp.compatibilityScore != null ? `${compScoreConfig.cardBorder} ${compScoreConfig.cardBg}` : 'bg-black/[0.03] border-black/10'}`}>
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Skin Compatibility Score</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-black/60">Compatibility Score</span>
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border transition-colors ${
                 comp.compatibilityScore != null ? compScoreConfig.pillClasses : 'bg-neutral-100 text-neutral-600 border-neutral-200'
               }`}>

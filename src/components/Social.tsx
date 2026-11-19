@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
+import { EditorialArticleModal } from './EditorialArticleModal';
 
 interface Product {
   id: string;
@@ -844,32 +845,44 @@ export const Social = ({
                 <p className="text-xs text-black/40 font-bold uppercase italic">No articles match your search query</p>
               </div>
             ) : (
-              filteredArticles.map(article => (
-                <div 
-                  key={article.article_id || article.id} 
-                  onClick={() => setSelectedArticle(article)}
-                  className="clean-card bg-white border border-black/5 p-4 md:p-6 rounded-2xl hover:border-black/25 hover:shadow-sm transition-all space-y-3 cursor-pointer group flex flex-col justify-between"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-[10px] text-black/40">
-                      <span className="font-black uppercase tracking-wider text-venus-accent">Editorial</span>
-                      <span>{article.created_at ? new Date(article.created_at).toLocaleDateString() : ''}</span>
+              filteredArticles.map(article => {
+                const validCollages = Array.isArray(article.collage_cards)
+                  ? article.collage_cards.filter((c: any) => c && typeof c.image_url === 'string' && c.image_url.trim() !== '')
+                  : [];
+                const secondCollageImageUrl = validCollages[1]?.image_url;
+
+                return (
+                  <div 
+                    key={article.article_id || article.id} 
+                    onClick={() => setSelectedArticle(article)}
+                    className="clean-card bg-white border border-black/5 p-4 md:p-6 rounded-2xl hover:border-black/25 hover:shadow-sm transition-all space-y-3 cursor-pointer group flex flex-col justify-between"
+                  >
+                    <div className="space-y-3">
+                      {secondCollageImageUrl && (
+                        <div className="w-full h-40 rounded-xl overflow-hidden mb-3 border border-black/5 bg-black/5">
+                          <img src={secondCollageImageUrl} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between text-[10px] text-black/40">
+                        <span className="font-black uppercase tracking-wider text-venus-accent">Editorial</span>
+                        <span>{article.created_at ? new Date(article.created_at).toLocaleDateString() : ''}</span>
+                      </div>
+                      <h3 className="text-xs md:text-sm font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2">
+                        {article.title}
+                      </h3>
+                      <p className="text-[10px] md:text-xs text-black/70 leading-relaxed font-medium">
+                        {article.excerpt || article.article_content || article.summary}
+                      </p>
                     </div>
-                    <h3 className="text-xs md:text-sm font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2">
-                      {article.title}
-                    </h3>
-                    <p className="text-[10px] md:text-xs text-black/70 leading-relaxed font-medium line-clamp-2">
-                      {article.excerpt || article.article_content || article.summary}
-                    </p>
+                    <div className="pt-3 mt-3 border-t border-black/5 flex items-center justify-end text-[10px] font-black uppercase tracking-wider text-black">
+                      <span className="group-hover:underline flex items-center gap-1">
+                        Read
+                        <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-0.5" />
+                      </span>
+                    </div>
                   </div>
-                  <div className="pt-3 mt-3 border-t border-black/5 flex items-center justify-end text-[10px] font-black uppercase tracking-wider text-black">
-                    <span className="group-hover:underline flex items-center gap-1">
-                      Read
-                      <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         ) : (
@@ -955,127 +968,7 @@ export const Social = ({
         )}
 
       {/* Article Detail Modal */}
-      <AnimatePresence>
-        {selectedArticle && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedArticle(null)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative bg-white rounded-3xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 md:p-8 shadow-2xl z-10 border border-black/10 space-y-6"
-            >
-              <div className="flex items-start justify-between gap-4 border-b border-black/5 pb-4">
-                <div>
-                  <div className="flex items-center gap-2 text-xs text-black/50 mb-1">
-                    <span className="font-black uppercase tracking-wider text-venus-accent text-[10px]">Editorial</span>
-                    <span>·</span>
-                    <span>{new Date(selectedArticle.created_at).toLocaleDateString()}</span>
-                  </div>
-                  <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black">
-                    {selectedArticle.title}
-                  </h2>
-                </div>
-                <button
-                  onClick={() => setSelectedArticle(null)}
-                  className="w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 text-black flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {selectedArticle.image_url && (
-                <div className="rounded-2xl overflow-hidden border border-black/5 max-h-72">
-                  <img src={selectedArticle.image_url} alt={selectedArticle.title} className="w-full h-full object-cover" />
-                </div>
-              )}
-
-              <div className="text-xs md:text-sm text-black/80 leading-relaxed font-medium space-y-4">
-                {typeof selectedArticle.content === 'string' ? (
-                  <p className="whitespace-pre-line">{selectedArticle.content}</p>
-                ) : Array.isArray(selectedArticle.content) ? (
-                  selectedArticle.content.map((block: any, idx: number) => {
-                    if (typeof block === 'string') {
-                      return <p key={idx} className="whitespace-pre-line">{block}</p>;
-                    }
-                    if (block.type === 'heading' || block.text === '5 Cult-Favorite & Trending Products to Try') {
-                      return (
-                        <h3 key={idx} className="text-base md:text-lg font-black uppercase tracking-tight text-black mt-6 mb-3">
-                          {block.text}
-                        </h3>
-                      );
-                    }
-                    if (block.type === 'product_card') {
-                      const photoUrl = articleProductPhotos[block.product_id];
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => {
-                            if (block.product_id) {
-                              openProductCard(block.product_id);
-                            }
-                          }}
-                          className="my-4 p-4 rounded-2xl bg-white border border-black/10 hover:border-venus-accent transition-all cursor-pointer shadow-sm flex items-start gap-4 group"
-                        >
-                          {photoUrl ? (
-                            <img src={photoUrl} alt={block.name} className="w-16 h-16 rounded-xl object-cover border border-black/5 shrink-0 group-hover:scale-105 transition-transform" />
-                          ) : (
-                            <div className="w-16 h-16 rounded-xl bg-black/5 flex items-center justify-center text-xs font-black text-black/40 shrink-0">
-                              {block.name?.charAt(0) || 'P'}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2 mb-1">
-                              <span className="text-[10px] font-black uppercase tracking-widest text-venus-accent">{block.price_point || 'Skincare Staple'}</span>
-                            </div>
-                            <h4 className="text-sm md:text-base font-black text-black group-hover:text-venus-accent transition-colors">
-                              {block.name}
-                            </h4>
-                            {block.best_for && (
-                              <p className="text-xs text-black/60 font-semibold mt-1">
-                                <span className="font-bold text-black/80">Best for:</span> {block.best_for}
-                              </p>
-                            )}
-                            {block.why_it_fits && (
-                              <p className="text-xs text-black/70 font-medium mt-1.5 leading-relaxed">
-                                {block.why_it_fits}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return (
-                      <p key={idx} className="whitespace-pre-line">
-                        {block.text || block.content || JSON.stringify(block)}
-                      </p>
-                    );
-                  })
-                ) : selectedArticle.content && typeof selectedArticle.content === 'object' ? (
-                  <p className="whitespace-pre-line">{selectedArticle.content.text || JSON.stringify(selectedArticle.content)}</p>
-                ) : (
-                  <p className="whitespace-pre-line">{selectedArticle.article_content || selectedArticle.excerpt || JSON.stringify(selectedArticle.content || '')}</p>
-                )}
-              </div>
-
-              <div className="pt-4 border-t border-black/5 flex items-center justify-end">
-                <button
-                  onClick={() => setSelectedArticle(null)}
-                  className="py-2.5 px-6 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors cursor-pointer"
-                >
-                  Close Article
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <EditorialArticleModal article={selectedArticle} onClose={() => setSelectedArticle(null)} />
       </div>
 
       {/* Guide Detail Modal */}
