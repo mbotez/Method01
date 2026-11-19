@@ -27,6 +27,7 @@ export interface LandingViewProps {
   triggerPhotoScan: (fileInputRef: React.RefObject<HTMLInputElement>) => void;
   isWeb: boolean;
   isNativePlatform: () => boolean;
+  setSelectedArticle?: (article: any) => void;
 }
 
 export const LandingView: React.FC<LandingViewProps> = ({
@@ -48,6 +49,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   triggerPhotoScan,
   isWeb,
   isNativePlatform,
+  setSelectedArticle,
 }) => {
   const [landingArticles, setLandingArticles] = useState<any[]>(DEFAULT_LANDING_ARTICLES);
   const landingFileInputRef = useRef<HTMLInputElement>(null);
@@ -300,6 +302,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
                     key={article.id || article.article_id || idx}
                     onClick={() => {
                       resetHeaderSearchState();
+                      setSelectedArticle?.(article);
                       setAppState(AppState.SOCIAL);
                       setSocialActiveMainTab('articles');
                       setIsFollowsOpen(false);

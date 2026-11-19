@@ -24,8 +24,7 @@ export const getOAuthRedirectUrl = (): string => {
   if (isNativePlatform()) {
     return 'com.daybreak.canonic://auth-callback';
   }
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  return `${origin}/auth/callback`;
+  return window.location.origin + '/auth/callback';
 };
 
 /**

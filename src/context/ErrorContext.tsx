@@ -111,7 +111,6 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   useEffect(() => {
     const handleGlobalError = (event: ErrorEvent) => {
-      console.error('Global window error:', event.error || event.message, event.filename, event.lineno);
       const msg = (event.message || '').toLowerCase();
       if (
         msg.includes('websocket') ||
@@ -126,13 +125,13 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       ) {
         return;
       }
+      console.error('Global window error:', event.error || event.message, event.filename, event.lineno);
       if (event.error || event.message) {
         showError(event.error || event.message, 500, event.filename ? `at ${event.filename}:${event.lineno}` : undefined);
       }
     };
 
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      console.error('Global unhandled rejection:', event.reason);
       const reasonStr = String(event.reason || '').toLowerCase();
       if (
         reasonStr.includes('websocket') ||
@@ -147,6 +146,7 @@ export const ErrorProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       ) {
         return;
       }
+      console.error('Global unhandled rejection:', event.reason);
       if (event.reason) {
         showError(event.reason, 500);
       }

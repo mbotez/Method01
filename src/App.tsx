@@ -105,6 +105,12 @@ const ErrorModal = ({ error, onClose }: { error: string, onClose: () => void }) 
 // --- Main App Logic ---
 
 export default function App() {
+  const [isAuthLoading, setIsAuthLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.pathname.startsWith('/auth/callback') || window.location.search.includes('code=') || window.location.hash.includes('code=');
+    }
+    return false;
+  });
   const [isWeb, setIsWeb] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 640);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -860,6 +866,7 @@ export default function App() {
     }
   };
   const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'articles' | 'guides' | 'community'>('videos');
+  const [selectedArticle, setSelectedArticle] = useState<any>(null);
   const [latestVideos, setLatestVideos] = useState<any[]>([]);
   const [lastPost, setLastPost] = useState<any>(null);
   const [loadingLatestVideos, setLoadingLatestVideos] = useState(true);
@@ -1834,12 +1841,14 @@ export default function App() {
     // Also handle web OAuth callback if redirected to /auth/callback or hash tokens
     handleWebAuthCallback(
       () => {
+        setIsAuthLoading(false);
         setAppState(AppState.DASHBOARD);
         if (typeof window !== 'undefined') {
           window.history.replaceState(null, '', '/dashboard');
         }
       },
       (errorMessage) => {
+        setIsAuthLoading(false);
         setError(`Authentication error: ${errorMessage}`);
         setAppState(AppState.AUTH);
       }
@@ -3286,6 +3295,14 @@ export default function App() {
     </div>
   );
 
+  if (isAuthLoading) return (
+    <div className="fixed inset-0 bg-[#FAF9F6] z-[99999] flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-16 h-16 border-4 border-black/10 border-t-black rounded-full animate-spin mb-6" />
+      <h2 className="text-xl font-black text-gray-900 tracking-tight mb-2">Signing you in…</h2>
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Please wait while we set up your session</p>
+    </div>
+  );
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-b from-[#FAF9F6] to-[#F3F2EE] space-y-4">
       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-8 h-8 border-2 border-venus-accent border-t-transparent rounded-full" />
@@ -3684,7 +3701,7 @@ export default function App() {
       
       <main className={
         appState === AppState.LANDING 
-          ? 'p-0 m-0 w-full h-[calc(100dvh-65px)] overflow-hidden' 
+          ? 'p-0 m-0 w-full min-h-screen' 
           : `pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`
       }>
         {successMessage && (
@@ -3752,6 +3769,7 @@ export default function App() {
                 setIsFollowsOpen={setIsFollowsOpen}
                 activeMainTab={socialActiveMainTab}
                 setActiveMainTab={setSocialActiveMainTab}
+                initialSelectedArticle={selectedArticle}
               />
             </motion.div>
           )}
@@ -3792,6 +3810,7 @@ export default function App() {
               triggerPhotoScan={triggerPhotoScan}
               isWeb={isWeb}
               isNativePlatform={isNativePlatform}
+              setSelectedArticle={setSelectedArticle}
             />
           )}
 

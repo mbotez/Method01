@@ -233,6 +233,7 @@ interface SocialProps {
   setIsFollowsOpen?: (open: boolean) => void;
   activeMainTab?: 'videos' | 'articles' | 'guides' | 'community';
   setActiveMainTab?: (tab: 'videos' | 'articles' | 'guides' | 'community') => void;
+  initialSelectedArticle?: any;
 }
 
 export const Social = ({
@@ -240,6 +241,7 @@ export const Social = ({
   setIsFollowsOpen: externalSetIsFollowsOpen,
   activeMainTab: externalActiveMainTab,
   setActiveMainTab: externalSetActiveMainTab,
+  initialSelectedArticle,
 }: SocialProps) => {
   const { openProductCard } = useProductCard();
   const [internalIsFollowsOpen, internalSetIsFollowsOpen] = useState(false);
@@ -323,7 +325,13 @@ export const Social = ({
   const [guideCategoryFilter, setGuideCategoryFilter] = useState<string>('All');
   const [isGuideCategoryDropdownOpen, setIsGuideCategoryDropdownOpen] = useState(false);
   const [selectedGuide, setSelectedGuide] = useState<SkincareGuide | null>(null);
-  const [selectedArticle, setSelectedArticle] = useState<any | null>(null);
+  const [selectedArticle, setSelectedArticle] = useState<any | null>(initialSelectedArticle || null);
+
+  useEffect(() => {
+    if (initialSelectedArticle) {
+      setSelectedArticle(initialSelectedArticle);
+    }
+  }, [initialSelectedArticle]);
   const [articleProductPhotos, setArticleProductPhotos] = useState<Record<string, string>>({});
   const [savedGuideIds, setSavedGuideIds] = useState<string[]>([]);
   const [guides, setGuides] = useState<SkincareGuide[]>(SKINCARE_GUIDES);
