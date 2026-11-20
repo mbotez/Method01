@@ -3916,7 +3916,13 @@ export default function App() {
                     <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-black">
                       {selectedInspirationCategory === 'Moisturiser' ? 'Moisturisers' : 
                                    selectedInspirationCategory === 'Treatment' ? 'Serums' : 
-                                   selectedInspirationCategory === 'Cleanser' ? 'Cleansers' : 'Sunscreens'}
+                                   selectedInspirationCategory === 'Cleanser' ? 'Cleansers' : 
+                                   selectedInspirationCategory === 'SPF' ? 'Sunscreens' :
+                                   selectedInspirationCategory === 'Glass skin essentials' ? 'Glass Skin' :
+                                   selectedInspirationCategory === 'Soothe sensitive skin' ? 'Sensitivity' :
+                                   selectedInspirationCategory === 'Barrier repair' ? 'Barrier Repair' :
+                                   selectedInspirationCategory === 'Anti-aging' ? 'Anti-Aging' :
+                                   selectedInspirationCategory}
                     </h2>
                     <button
                       onClick={() => setSelectedInspirationCategory(null)}

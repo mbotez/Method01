@@ -114,6 +114,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN0YnBlcnpsbW1zbHJrZHBxYXd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNjk5ODMsImV4cCI6MjA5Mjk0NTk4M30.37UW8BgKqbuw8XfcfY3zWWxkVv44_A0nJng0yDsudx8';
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+    const ptLower = (productType || '').toLowerCase();
+    const mappedProductType = (() => {
+      if (!productType || productType === 'all') return null;
+      if (ptLower.includes('glass') || ptLower.includes('sensitive') || ptLower.includes('soothe') || ptLower.includes('barrier') || ptLower.includes('aging')) {
+        return null;
+      }
+      if (ptLower.includes('spf') || ptLower.includes('sun')) return 'SPF';
+      if (ptLower.includes('moistur')) return 'Moisturiser';
+      if (ptLower.includes('treatment') || ptLower.includes('serum')) return 'Treatment';
+      if (ptLower.includes('clean')) return 'Cleanser';
+      return productType;
+    })();
+
     // EXECUTE RPC CALL WITH DIRECT QUERY FALLBACK
     let rawProducts: any[] | null = null;
     let rawLockedProducts: any[] | null = null;
@@ -126,7 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         p_scnd_concern: secondary_concern ?? null,
         p_barrier_risk: Number(barrierVal) || 0,
         p_new_product_reaction: Number(reactionVal) || 0,
-        p_product_type: productType ?? null,
+        p_product_type: mappedProductType ?? null,
         p_cat3: cat3 != null ? String(cat3) : null,
         p_breakout_type: (breakout_type || []).map(String),
         p_scan_acne_type: (scan_breakout_type || []).map(String),
@@ -167,8 +180,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .from('products')
           .select('id, brand, name, type, photo_url, product_scores!inner(*)');
         
-        if (productType && productType !== 'all') {
-          baseQuery = baseQuery.ilike('type', `%${productType}%`);
+        if (ptLower.includes('glass')) {
+          baseQuery = baseQuery.or('product_scores.cat2.ilike.%glass%,name.ilike.%glass%');
+        } else if (ptLower.includes('sensitive') || ptLower.includes('soothe')) {
+          baseQuery = baseQuery.not('product_scores.has_high_irritation', 'eq', true);
+        } else if (ptLower.includes('barrier')) {
+          baseQuery = baseQuery.or('product_scores.cat2.ilike.%barrier%,product_scores.cat2.ilike.%moisturiser%,type.ilike.%cream%,type.ilike.%moist%');
+        } else if (ptLower.includes('aging')) {
+          baseQuery = baseQuery.or('product_scores.cat2.ilike.%anti-aging%,name.ilike.%retinol%,name.ilike.%peptide%');
+        } else if (mappedProductType) {
+          baseQuery = baseQuery.ilike('type', `%${mappedProductType}%`);
         }
         if (cat3 !== null && cat3 !== undefined) {
           baseQuery = baseQuery.eq('product_scores.cat3', cat3);
