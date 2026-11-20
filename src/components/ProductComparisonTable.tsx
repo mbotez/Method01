@@ -15,14 +15,14 @@ import {
   FileText,
   FlaskConical,
   List,
-  Star
+  Star,
+  Plus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { 
   computeProductKeyBenefits, 
   computeProductPotentialIrritants, 
-  getMetricNamesForFlag, 
-  RatingSlider 
+  getMetricNamesForFlag 
 } from './ProductCard';
 import { Login } from './Login';
 import { getScoreColorConfig } from '../utils/scoreColors';
@@ -37,6 +37,8 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
   const [culprits, setCulprits] = useState<any[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [ratings, setRatings] = useState({ dwis: 0, price_value: 0, feel: 0, layer: 0 });
+  const [globalRatingsSummary, setGlobalRatingsSummary] = useState({ avg: 0, dwis: 0, price_value: 0, feel: 0, layer: 0, count: 0 });
+  const [isRatingsDropdownOpen, setIsRatingsDropdownOpen] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [localSize, setLocalSize] = useState(trackerItem?.size || '');
   const [localNotes, setLocalNotes] = useState(trackerItem?.notes || '');
@@ -55,13 +57,22 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
     try {
       await supabase.from('tracker').update({ [field]: value }).eq('id', trackerItem.id);
     } catch {
-      // silent error catch
+      // silent
     } finally {
       setIsUpdating(false);
     }
   };
 
   const handleUpdateRating = async (field: string, value: number) => {
+    const newRatings = {
+      dwis: field === 'dwis' ? value : ratings.dwis || 0,
+      price_value: field === 'price_value' ? value : ratings.price_value || 0,
+      feel: field === 'feel' ? value : ratings.feel || 0,
+      layer: field === 'layer' ? value : ratings.layer || 0
+    };
+    const validScores = [newRatings.dwis, newRatings.price_value, newRatings.feel, newRatings.layer].filter(v => v > 0);
+    const avgScore = validScores.length > 0 ? Number((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(2)) : null;
+
     setRatings(prev => ({ ...prev, [field]: value }));
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id || !productId) return;
@@ -79,14 +90,51 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
         .upsert({
           product_id: effectiveProductId,
           user_id: session.user.id,
-          dwis: field === 'dwis' ? value : ratings.dwis || null,
-          price_value: field === 'price_value' ? value : ratings.price_value || null,
-          feel: field === 'feel' ? value : ratings.feel || null,
-          layer: field === 'layer' ? value : ratings.layer || null,
+          dwis: newRatings.dwis || null,
+          price_value: newRatings.price_value || null,
+          feel: newRatings.feel || null,
+          layer: newRatings.layer || null,
+          avg: avgScore,
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'product_id, user_id'
         });
+
+      // Refresh global ratings summary immediately
+      const { data: allRatingsData } = await supabase
+        .from('product_user_ratings')
+        .select('dwis, price_value, feel, layer, avg')
+        .eq('product_id', effectiveProductId);
+
+      if (allRatingsData && allRatingsData.length > 0) {
+        let sumAvg = 0, countAvg = 0;
+        let sumDw = 0, countDw = 0;
+        let sumPrice = 0, countPrice = 0;
+        let sumFeel = 0, countFeel = 0;
+        let sumLayer = 0, countLayer = 0;
+
+        allRatingsData.forEach((r: any) => {
+          const metrics = [r.dwis, r.price_value, r.feel, r.layer].filter(v => v != null && Number(v) > 0);
+          const rowAvg = r.avg != null && Number(r.avg) > 0 ? Number(r.avg) : (metrics.length > 0 ? metrics.reduce((a, b) => a + Number(b), 0) / metrics.length : 0);
+          if (rowAvg > 0) {
+            sumAvg += rowAvg;
+            countAvg++;
+          }
+          if (r.dwis != null && Number(r.dwis) > 0) { sumDw += Number(r.dwis); countDw++; }
+          if (r.price_value != null && Number(r.price_value) > 0) { sumPrice += Number(r.price_value); countPrice++; }
+          if (r.feel != null && Number(r.feel) > 0) { sumFeel += Number(r.feel); countFeel++; }
+          if (r.layer != null && Number(r.layer) > 0) { sumLayer += Number(r.layer); countLayer++; }
+        });
+
+        setGlobalRatingsSummary({
+          avg: countAvg > 0 ? Number((sumAvg / countAvg).toFixed(1)) : 0,
+          dwis: countDw > 0 ? Number((sumDw / countDw).toFixed(1)) : 0,
+          price_value: countPrice > 0 ? Number((sumPrice / countPrice).toFixed(1)) : 0,
+          feel: countFeel > 0 ? Number((sumFeel / countFeel).toFixed(1)) : 0,
+          layer: countLayer > 0 ? Number((sumLayer / countLayer).toFixed(1)) : 0,
+          count: allRatingsData.length
+        });
+      }
     } catch {
       // silent
     }
@@ -373,6 +421,53 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
         } else {
           setRatings({ dwis: 0, price_value: 0, feel: 0, layer: 0 });
         }
+
+        // Fetch all ratings for product across all users to compute community average & breakdown
+        const allRatingsRes = await (async () => {
+          try {
+            return await supabase
+              .from('product_user_ratings')
+              .select('dwis, price_value, feel, layer, avg')
+              .eq('product_id', effectiveProductId)
+              .abortSignal(signal);
+          } catch {
+            return { data: [] };
+          }
+        })();
+
+        if (!active || signal.aborted) return;
+        const allRatingsData = allRatingsRes?.data;
+        if (allRatingsData && allRatingsData.length > 0) {
+          let sumAvg = 0, countAvg = 0;
+          let sumDw = 0, countDw = 0;
+          let sumPrice = 0, countPrice = 0;
+          let sumFeel = 0, countFeel = 0;
+          let sumLayer = 0, countLayer = 0;
+
+          allRatingsData.forEach((r: any) => {
+            const metrics = [r.dwis, r.price_value, r.feel, r.layer].filter(v => v != null && Number(v) > 0);
+            const rowAvg = r.avg != null && Number(r.avg) > 0 ? Number(r.avg) : (metrics.length > 0 ? metrics.reduce((a, b) => a + Number(b), 0) / metrics.length : 0);
+            if (rowAvg > 0) {
+              sumAvg += rowAvg;
+              countAvg++;
+            }
+            if (r.dwis != null && Number(r.dwis) > 0) { sumDw += Number(r.dwis); countDw++; }
+            if (r.price_value != null && Number(r.price_value) > 0) { sumPrice += Number(r.price_value); countPrice++; }
+            if (r.feel != null && Number(r.feel) > 0) { sumFeel += Number(r.feel); countFeel++; }
+            if (r.layer != null && Number(r.layer) > 0) { sumLayer += Number(r.layer); countLayer++; }
+          });
+
+          setGlobalRatingsSummary({
+            avg: countAvg > 0 ? Number((sumAvg / countAvg).toFixed(1)) : 0,
+            dwis: countDw > 0 ? Number((sumDw / countDw).toFixed(1)) : 0,
+            price_value: countPrice > 0 ? Number((sumPrice / countPrice).toFixed(1)) : 0,
+            feel: countFeel > 0 ? Number((sumFeel / countFeel).toFixed(1)) : 0,
+            layer: countLayer > 0 ? Number((sumLayer / countLayer).toFixed(1)) : 0,
+            count: allRatingsData.length
+          });
+        } else {
+          setGlobalRatingsSummary({ avg: 0, dwis: 0, price_value: 0, feel: 0, layer: 0, count: 0 });
+        }
       } catch (err: any) {
         if (err?.name === 'AbortError' || signal.aborted) return;
       } finally {
@@ -396,6 +491,9 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
     rpcErrorObj,
     culprits,
     ratings,
+    globalRatingsSummary,
+    isRatingsDropdownOpen,
+    setIsRatingsDropdownOpen,
     handleUpdateRating,
     isAuthenticated,
     setIsAuthenticated,
@@ -411,82 +509,78 @@ export function useProductDetail(productId: string | null, trackerItem?: any) {
 }
 
 interface ProductComparisonTableProps {
-  productId1: string;
-  productId2: string;
-  trackerItem1?: any;
-  trackerItem2?: any;
+  productIds: string[];
+  trackerItems?: Record<string, any>;
   onClose: () => void;
-  onCloseProduct1: () => void;
-  onCloseProduct2: () => void;
-  onSwapProduct: (targetSlot: 'product1' | 'product2', newProductId: string) => void;
+  onRemoveProduct: (productId: string) => void;
+  onUpdateProduct: (index: number, newProductId: string) => void;
+  onAddProduct: (newProductId: string) => void;
 }
 
+const PRODUCT_LETTERS = ['A', 'B', 'C', 'D', 'E'];
+
 export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
-  productId1,
-  productId2,
-  trackerItem1,
-  trackerItem2,
+  productIds,
+  trackerItems,
   onClose,
-  onCloseProduct1,
-  onCloseProduct2,
-  onSwapProduct
+  onRemoveProduct,
+  onUpdateProduct,
+  onAddProduct
 }) => {
-  const p1 = useProductDetail(productId1, trackerItem1);
-  const p2 = useProductDetail(productId2, trackerItem2);
+  const p1 = useProductDetail(productIds[0] || null, trackerItems?.[productIds[0]]);
+  const p2 = useProductDetail(productIds[1] || null, trackerItems?.[productIds[1]]);
+  const p3 = useProductDetail(productIds[2] || null, trackerItems?.[productIds[2]]);
+  const p4 = useProductDetail(productIds[3] || null, trackerItems?.[productIds[3]]);
+  const p5 = useProductDetail(productIds[4] || null, trackerItems?.[productIds[4]]);
 
-  // Expanded culprits flags
-  const [expandedBenefit1, setExpandedBenefit1] = useState<string | null>(null);
-  const [expandedBenefit2, setExpandedBenefit2] = useState<string | null>(null);
-  const [expandedIrritant1, setExpandedIrritant1] = useState<string | null>(null);
-  const [expandedIrritant2, setExpandedIrritant2] = useState<string | null>(null);
+  const allDetails = [p1, p2, p3, p4, p5];
+  const activeDetails = allDetails.slice(0, productIds.length);
 
-  // Ingredients expansion
-  const [expandIngredients1, setExpandIngredients1] = useState(false);
-  const [expandIngredients2, setExpandIngredients2] = useState(false);
+  const [expandedBenefits, setExpandedBenefits] = useState<Record<number, string | null>>({});
+  const [expandedIrritants, setExpandedIrritants] = useState<Record<number, string | null>>({});
+  const [expandIngredientsMap, setExpandIngredientsMap] = useState<Record<number, boolean>>({});
 
-  // Mobile scroll & active tab state
   const tableContainerRef = useRef<HTMLDivElement>(null);
-  const [activeMobileProduct, setActiveMobileProduct] = useState<'product1' | 'product2'>('product1');
+  const [activeMobileIndex, setActiveMobileIndex] = useState(0);
 
-  const scrollToProduct = (slot: 'product1' | 'product2') => {
-    setActiveMobileProduct(slot);
+  const scrollToProduct = (index: number) => {
+    setActiveMobileIndex(index);
     if (!tableContainerRef.current) return;
-    if (slot === 'product1') {
-      tableContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+    const container = tableContainerRef.current;
+    if (index === 0) {
+      container.scrollTo({ left: 0, behavior: 'smooth' });
     } else {
-      const container = tableContainerRef.current;
-      const targetScroll = Math.max(container.clientWidth - 65, 250);
+      const targetScroll = Math.max((container.clientWidth - 70) * index, 250 * index);
       container.scrollTo({ left: targetScroll, behavior: 'smooth' });
     }
   };
 
   const handleTableScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const scrollLeft = e.currentTarget.scrollLeft;
-    if (scrollLeft > 60) {
-      if (activeMobileProduct !== 'product2') setActiveMobileProduct('product2');
-    } else {
-      if (activeMobileProduct !== 'product1') setActiveMobileProduct('product1');
+    const itemWidth = 280;
+    const calculatedIndex = Math.min(Math.max(Math.round(scrollLeft / itemWidth), 0), productIds.length - 1);
+    if (calculatedIndex !== activeMobileIndex) {
+      setActiveMobileIndex(calculatedIndex);
     }
   };
 
-  // Comparison popup controls
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [isAuthModalSignUp, setIsAuthModalSignUp] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
-  const [searchTargetSlot, setSearchTargetSlot] = useState<'product1' | 'product2'>('product2');
+  const [searchTargetIndex, setSearchTargetIndex] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [initialSuggestions, setInitialSuggestions] = useState<any[]>([]);
 
-  const loadInitialSuggestions = async (excludeId: string) => {
+  const loadInitialSuggestions = async () => {
     try {
       const { data } = await supabase
         .from('products')
         .select('id, brand, name, type, photo_url')
         .order('id', { ascending: false })
-        .limit(10);
-      const filtered = (data || []).filter(item => String(item.id) !== String(excludeId));
+        .limit(15);
+      const excludedIds = productIds.map(String);
+      const filtered = (data || []).filter(item => !excludedIds.includes(String(item.id)));
       setInitialSuggestions(filtered);
       if (!searchQuery.trim()) {
         setSearchResults(filtered);
@@ -496,16 +590,15 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
     }
   };
 
-  const handleCompareClick = async (targetSlot: 'product1' | 'product2') => {
-    setSearchTargetSlot(targetSlot);
+  const handleCompareClick = async (targetIndex: number) => {
+    setSearchTargetIndex(targetIndex);
     const { data: { session } } = await supabase.auth.getSession();
     const authed = !!session?.user?.id;
     if (!authed) {
       setShowAuthModal(true);
     } else {
       setShowSearchModal(true);
-      const currentIdToExclude = targetSlot === 'product1' ? productId1 : productId2;
-      loadInitialSuggestions(currentIdToExclude);
+      loadInitialSuggestions();
     }
   };
 
@@ -557,9 +650,15 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
         }
       }
 
-      const otherProductId = searchTargetSlot === 'product1' ? productId2 : productId1;
-      const filtered = (results || []).filter(item => String(item.id) !== String(otherProductId));
-      setSearchResults(filtered);
+      const excludedIds = productIds.map(String);
+      if (searchTargetIndex < productIds.length) {
+        const currentAtTarget = String(productIds[searchTargetIndex]);
+        const filtered = (results || []).filter(item => !excludedIds.includes(String(item.id)) || String(item.id) === currentAtTarget);
+        setSearchResults(filtered);
+      } else {
+        const filtered = (results || []).filter(item => !excludedIds.includes(String(item.id)));
+        setSearchResults(filtered);
+      }
     } catch {
       // silent
     } finally {
@@ -577,7 +676,11 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
 
   const handleSelectProduct = (chosenId: string | number) => {
     setShowSearchModal(false);
-    onSwapProduct(searchTargetSlot, String(chosenId));
+    if (searchTargetIndex < productIds.length) {
+      onUpdateProduct(searchTargetIndex, String(chosenId));
+    } else {
+      onAddProduct(String(chosenId));
+    }
   };
 
   const getIngredientsForFlag = (flagName: string, culprits: any[]) => {
@@ -593,11 +696,11 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
     });
   };
 
-  const isAnyUnauthed = !p1.isAuthenticated || !p2.isAuthenticated;
+  const isAnyUnauthed = activeDetails.some(d => !d.isAuthenticated);
 
   return (
     <div 
-      className="w-full max-w-5xl bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[94vh] sm:max-h-[92vh] overflow-hidden my-auto"
+      className="w-full max-w-6xl bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-100 flex flex-col max-h-[94vh] sm:max-h-[92vh] overflow-hidden my-auto"
       onClick={(e) => e.stopPropagation()}
     >
       {/* Top Header Bar */}
@@ -607,11 +710,23 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
             <ArrowLeftRight className="w-3.5 h-3.5" />
           </div>
           <div>
-            <h2 className="text-xs font-black uppercase tracking-wider text-black">Side-by-Side Comparison</h2>
+            <h2 className="text-xs font-black uppercase tracking-wider text-black">
+              Product Comparison ({productIds.length}/5)
+            </h2>
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {productIds.length < 5 && (
+            <button
+              type="button"
+              onClick={() => handleCompareClick(productIds.length)}
+              className="px-2.5 py-1 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-black/80 transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Product</span>
+            </button>
+          )}
           <button
             type="button"
             aria-label="Close comparison modal"
@@ -624,36 +739,37 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
       </div>
 
       {/* Mobile Product Quick Tab Bar */}
-      <div className="sm:hidden flex items-center justify-between bg-gray-100/90 border-b border-gray-200 px-2.5 py-1.5 flex-shrink-0">
+      <div className="sm:hidden flex items-center justify-between bg-gray-100/90 border-b border-gray-200 px-2.5 py-1.5 flex-shrink-0 overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          <button
-            type="button"
-            onClick={() => scrollToProduct('product1')}
-            className={`flex-1 py-1 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer truncate ${
-              activeMobileProduct === 'product1'
-                ? 'bg-black text-white shadow-xs'
-                : 'bg-white text-black/60 hover:text-black border border-gray-200/80'
-            }`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"></span>
-            <span className="truncate">{p1.product?.name ? `Product A (${p1.product.name})` : 'Product A'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollToProduct('product2')}
-            className={`flex-1 py-1 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer truncate ${
-              activeMobileProduct === 'product2'
-                ? 'bg-black text-white shadow-xs'
-                : 'bg-white text-black/60 hover:text-black border border-gray-200/80'
-            }`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"></span>
-            <span className="truncate">{p2.product?.name ? `Product B (${p2.product.name})` : 'Product B'}</span>
-          </button>
-        </div>
-        <div className="pl-2 text-[9px] text-black/40 font-bold uppercase tracking-wider flex items-center gap-0.5 select-none shrink-0">
-          <ArrowLeftRight className="w-2.5 h-2.5 text-purple-600" />
-          <span>Swipe</span>
+          {productIds.map((id, index) => {
+            const detail = activeDetails[index];
+            const letter = PRODUCT_LETTERS[index] || String(index + 1);
+            return (
+              <button
+                type="button"
+                key={id}
+                onClick={() => scrollToProduct(index)}
+                className={`py-1 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer truncate shrink-0 ${
+                  activeMobileIndex === index
+                    ? 'bg-black text-white shadow-xs'
+                    : 'bg-white text-black/60 hover:text-black border border-gray-200/80'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0"></span>
+                <span className="truncate">{detail?.product?.name ? `${letter} (${detail.product.name})` : letter}</span>
+              </button>
+            );
+          })}
+          {productIds.length < 5 && (
+            <button
+              type="button"
+              onClick={() => handleCompareClick(productIds.length)}
+              className="py-1 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-900 border border-purple-200 hover:bg-purple-100 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+            >
+              <Plus className="w-3 h-3 text-purple-600" />
+              <span>Add</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -693,920 +809,607 @@ export const ProductComparisonTable: React.FC<ProductComparisonTableProps> = ({
       <div 
         ref={tableContainerRef}
         onScroll={handleTableScroll}
-        className="overflow-y-auto overflow-x-auto flex-1 snap-x snap-mandatory sm:snap-none scroll-smooth scroll-pl-[70px] sm:scroll-pl-24 md:scroll-pl-32"
+        className="overflow-y-auto overflow-x-auto sm:overflow-x-visible flex-1 snap-x snap-mandatory sm:snap-none scroll-smooth"
       >
-        <table className="w-max sm:w-full border-collapse text-left table-fixed">
+        <table className="w-full border-collapse text-left table-fixed">
           <colgroup>
-            <col className="w-[70px] sm:w-24 md:w-32" />
-            <col className="w-[calc(100vw-86px)] max-w-[340px] sm:w-[calc(50%-3rem)] md:w-[calc(50%-4rem)]" />
-            <col className="w-[calc(100vw-86px)] max-w-[340px] sm:w-[calc(50%-3rem)] md:w-[calc(50%-4rem)]" />
+            <col className="w-[60px] sm:w-20 md:w-24" />
+            {productIds.map((_, i) => (
+              <col key={i} className={`w-[calc(100vw-70px)] sm:w-[calc((100%-6rem)/${productIds.length})] max-w-[280px]`} />
+            ))}
+            {productIds.length < 5 && <col className="w-[120px] sm:w-36" />}
           </colgroup>
           <tbody>
             {/* ROW 1: PRODUCT HEADER & SUMMARY */}
             <tr className="border-b border-gray-200/80 bg-gray-50/40">
-              <td className="px-1.5 py-3 sm:px-3 sm:py-4 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1.5">
-                  <div className="w-5 h-5 rounded-md bg-black/5 flex items-center justify-center text-black/60 sm:hidden">
-                    <ShoppingBag className="w-2.5 h-2.5" />
+              <td className="px-1.5 py-2.5 sm:px-2.5 sm:py-3 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1">
+                  <div className="w-4 h-4 rounded-md bg-black/5 flex items-center justify-center text-black/60 sm:hidden">
+                    <ShoppingBag className="w-2 h-2" />
                   </div>
-                  <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tight text-black/60 leading-tight">
+                  <span className="font-black text-[8px] sm:text-[9.5px] uppercase tracking-tight text-black/60 leading-tight">
                     Product
                   </span>
                 </div>
               </td>
-              {/* Product 1 Header */}
-              <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-purple-700 bg-purple-50 border border-purple-200/80 px-2 py-0.5 rounded-md">
-                    Product A
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="Remove Product A"
-                    onClick={onCloseProduct1}
-                    className="w-6 h-6 rounded-full bg-gray-100 hover:bg-red-50 hover:text-red-600 flex items-center justify-center text-gray-400 transition-colors cursor-pointer"
-                    title="Remove and keep Product B"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {p1.loading ? (
-                  <div className="flex items-center gap-2 py-6 text-gray-400 text-xs">
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
-                    <span>Loading Product A...</span>
-                  </div>
-                ) : p1.product ? (
-                  <div className="flex items-start gap-2.5 sm:gap-3">
-                    {p1.product.photo_url && !p1.imageError ? (
-                      <img
-                        src={p1.product.photo_url}
-                        alt={p1.product.name}
-                        referrerPolicy="no-referrer"
-                        onError={() => p1.setImageError(true)}
-                        className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-xl sm:rounded-2xl flex-shrink-0 border border-black/5 bg-gray-50 shadow-xs"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-400 border border-black/5">
-                        <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-black/40 block truncate">
-                        {p1.product.brand || 'Brand'}
-                      </span>
-                      <h3 className="text-xs sm:text-sm font-black text-black leading-snug break-words line-clamp-2">
-                        {p1.product.name}
-                      </h3>
-                      {p1.product.type && (
-                        <span className="text-[8px] sm:text-[9px] font-bold text-black/60 bg-gray-100 px-1.5 sm:px-2 py-0.5 rounded-md inline-block mt-1 truncate max-w-full">
-                          {p1.product.type}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-xs text-red-500 font-bold">Failed to load product.</div>
-                )}
-              </td>
 
-              {/* Product 2 Header */}
-              <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-purple-700 bg-purple-50 border border-purple-200/80 px-2 py-0.5 rounded-md">
-                    Product B
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="Remove Product B"
-                    onClick={onCloseProduct2}
-                    className="w-6 h-6 rounded-full bg-gray-100 hover:bg-red-50 hover:text-red-600 flex items-center justify-center text-gray-400 transition-colors cursor-pointer"
-                    title="Remove and keep Product A"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {p2.loading ? (
-                  <div className="flex items-center gap-2 py-6 text-gray-400 text-xs">
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
-                    <span>Loading Product B...</span>
-                  </div>
-                ) : p2.product ? (
-                  <div className="flex items-start gap-2.5 sm:gap-3">
-                    {p2.product.photo_url && !p2.imageError ? (
-                      <img
-                        src={p2.product.photo_url}
-                        alt={p2.product.name}
-                        referrerPolicy="no-referrer"
-                        onError={() => p2.setImageError(true)}
-                        className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-xl sm:rounded-2xl flex-shrink-0 border border-black/5 bg-gray-50 shadow-xs"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-400 border border-black/5">
-                        <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-black/40 block truncate">
-                        {p2.product.brand || 'Brand'}
+              {productIds.map((id, index) => {
+                const detail = activeDetails[index];
+                const letter = PRODUCT_LETTERS[index];
+                return (
+                  <td key={id} className="p-2 sm:p-2.5 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[8.5px] sm:text-[9px] font-black uppercase tracking-widest text-purple-700 bg-purple-50 border border-purple-200/80 px-1.5 py-0.5 rounded-md">
+                        Product {letter}
                       </span>
-                      <h3 className="text-xs sm:text-sm font-black text-black leading-snug break-words line-clamp-2">
-                        {p2.product.name}
-                      </h3>
-                      {p2.product.type && (
-                        <span className="text-[8px] sm:text-[9px] font-bold text-black/60 bg-gray-100 px-1.5 sm:px-2 py-0.5 rounded-md inline-block mt-1 truncate max-w-full">
-                          {p2.product.type}
-                        </span>
+                      {productIds.length > 2 && (
+                        <button
+                          type="button"
+                          aria-label={`Remove Product ${letter}`}
+                          onClick={() => onRemoveProduct(id)}
+                          className="w-5 h-5 rounded-full bg-gray-100 hover:bg-red-50 hover:text-red-600 flex items-center justify-center text-gray-400 transition-colors cursor-pointer"
+                          title={`Remove Product ${letter}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
                       )}
                     </div>
-                  </div>
-                ) : (
-                  <div className="text-xs text-red-500 font-bold">Failed to load product.</div>
-                )}
-              </td>
+                    {detail.loading ? (
+                      <div className="flex items-center gap-2 py-4 text-gray-400 text-xs">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" />
+                        <span className="text-[10px]">Loading...</span>
+                      </div>
+                    ) : detail.product ? (
+                      <div className="flex items-start gap-2">
+                        {detail.product.photo_url && !detail.imageError ? (
+                          <img
+                            src={detail.product.photo_url}
+                            alt={detail.product.name}
+                            referrerPolicy="no-referrer"
+                            onError={() => detail.setImageError(true)}
+                            className="w-10 h-10 sm:w-12 sm:h-12 object-cover rounded-xl flex-shrink-0 border border-black/5 bg-gray-50 shadow-xs"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-400 border border-black/5">
+                            <ShoppingBag className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[8.5px] sm:text-[9px] font-black uppercase tracking-widest text-black/40 block truncate">
+                            {detail.product.brand || 'Brand'}
+                          </span>
+                          <h3 className="text-[11px] sm:text-xs font-black text-black leading-snug break-words line-clamp-2">
+                            {detail.product.name}
+                          </h3>
+                          {detail.product.type && (
+                            <span className="text-[8px] font-bold text-black/60 bg-gray-100 px-1.5 py-0.5 rounded-md inline-block mt-0.5 truncate max-w-full">
+                              {detail.product.type}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-red-500 font-bold">Failed to load product.</div>
+                    )}
+                  </td>
+                );
+              })}
+
+              {productIds.length < 5 && (
+                <td className="p-3 align-middle bg-gray-50/50 text-center">
+                  <button
+                    type="button"
+                    onClick={() => handleCompareClick(productIds.length)}
+                    className="w-full h-full min-h-[100px] border-2 border-dashed border-gray-300 hover:border-purple-500 hover:bg-purple-50/30 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 text-gray-500 hover:text-purple-700 transition-all cursor-pointer group"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-white shadow-xs border border-gray-200 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Plus className="w-3.5 h-3.5 text-purple-600" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-wider">Add Product</span>
+                    <span className="text-[8.5px] text-gray-400 font-medium">Up to 5</span>
+                  </button>
+                </td>
+              )}
             </tr>
 
-            {/* ROW 2: DESCRIPTION + DISCRETE COMPARE BUTTON */}
+            {/* ROW 2: DESCRIPTION + CHANGE BUTTON */}
             <tr className="border-b border-gray-100 hover:bg-gray-50/30 transition-colors">
-              <td className="px-1.5 py-3 sm:px-3 sm:py-4 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1.5">
-                  <div className="w-5 h-5 rounded-md bg-black/5 flex items-center justify-center text-black/60 sm:hidden">
-                    <FileText className="w-2.5 h-2.5" />
+              <td className="px-1.5 py-2.5 sm:px-2.5 sm:py-3 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1">
+                  <div className="w-4 h-4 rounded-md bg-black/5 flex items-center justify-center text-black/60 sm:hidden">
+                    <FileText className="w-2 h-2" />
                   </div>
-                  <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tight text-black/60 leading-tight">
-                    <span className="sm:hidden">Details</span>
-                    <span className="hidden sm:inline">Description</span>
+                  <span className="font-black text-[8px] sm:text-[9.5px] uppercase tracking-tight text-black/60 leading-tight">
+                    Description
                   </span>
                 </div>
               </td>
-              {/* Product 1 Description */}
-              <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative space-y-2 min-w-0">
-                <p className="text-[11px] sm:text-xs text-black/70 leading-relaxed break-words min-h-[32px]">
-                  {p1.product?.description || <span className="text-black/30 italic">No description provided</span>}
-                </p>
-                <div className="pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => handleCompareClick('product1')}
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 hover:text-black rounded-lg transition-colors border border-gray-200/80 cursor-pointer shadow-2xs group"
-                    title="Change or compare Product A with another product"
-                  >
-                    <ArrowLeftRight className="w-3 h-3 text-gray-500 group-hover:text-black transition-colors" />
-                    <span>Compare</span>
-                  </button>
-                </div>
-              </td>
-              {/* Product 2 Description */}
-              <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative space-y-2 min-w-0">
-                <p className="text-[11px] sm:text-xs text-black/70 leading-relaxed break-words min-h-[32px]">
-                  {p2.product?.description || <span className="text-black/30 italic">No description provided</span>}
-                </p>
-                <div className="pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => handleCompareClick('product2')}
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] sm:text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 hover:text-black rounded-lg transition-colors border border-gray-200/80 cursor-pointer shadow-2xs group"
-                    title="Change or compare Product B with another product"
-                  >
-                    <ArrowLeftRight className="w-3 h-3 text-gray-500 group-hover:text-black transition-colors" />
-                    <span>Compare</span>
-                  </button>
-                </div>
-              </td>
+
+              {productIds.map((id, index) => {
+                const detail = activeDetails[index];
+                const letter = PRODUCT_LETTERS[index];
+                return (
+                  <td key={id} className="p-2 sm:p-2.5 align-top border-r border-gray-100 bg-white snap-start relative space-y-1.5 min-w-0">
+                    <p className="text-[10px] sm:text-[11px] text-black/70 leading-relaxed break-words line-clamp-3">
+                      {detail.product?.description || <span className="text-black/30 italic">No description</span>}
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => handleCompareClick(index)}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[9.5px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 hover:text-black rounded-lg transition-colors border border-gray-200/80 cursor-pointer group"
+                        title={`Change Product ${letter}`}
+                      >
+                        <ArrowLeftRight className="w-2.5 h-2.5 text-gray-500 group-hover:text-black transition-colors" />
+                        <span>Change</span>
+                      </button>
+                    </div>
+                  </td>
+                );
+              })}
+
+              {productIds.length < 5 && <td className="bg-gray-50/30"></td>}
             </tr>
 
             {/* ROW 3: SKIN COMPATIBILITY */}
             <tr className="border-b border-gray-100 hover:bg-gray-50/30 transition-colors">
-              <td className="px-1.5 py-3 sm:px-3 sm:py-4 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1.5">
-                  <div className="w-5 h-5 rounded-md bg-purple-50 flex items-center justify-center text-purple-600 sm:hidden">
-                    <Shield className="w-2.5 h-2.5" />
+              <td className="px-1.5 py-2.5 sm:px-2.5 sm:py-3 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1">
+                  <div className="w-4 h-4 rounded-md bg-purple-50 flex items-center justify-center text-purple-600 sm:hidden">
+                    <Shield className="w-2 h-2" />
                   </div>
-                  <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tight text-black/60 leading-tight">
+                  <span className="font-black text-[8px] sm:text-[9.5px] uppercase tracking-tight text-black/60 leading-tight">
                     Skin Fit
                   </span>
                 </div>
               </td>
-              {/* Product 1 Compatibility */}
-              <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                {Number(p1.product?.cat3) === 11 || Number(p1.scores?.cat3) === 11 ? (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">N/A (Lipcare)</span>
-                ) : p1.isAuthenticated && p1.comp ? (() => {
-                  const p1ScoreConfig = getScoreColorConfig(p1.comp.compatibilityScore);
-                  return (
-                    <div className="space-y-1.5">
-                      <span className={`inline-block px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wide border transition-colors ${
-                        p1.comp.compatibilityScore != null ? p1ScoreConfig.pillClasses : 'bg-gray-100 text-gray-700 border-gray-200'
-                      }`}>
-                        {p1.comp.scoreDisplay || (p1.comp.compatibilityScore !== undefined && p1.comp.compatibilityScore !== null ? `${p1.comp.compatibilityScore} / 100` : 'Score could not be calculated')}
-                      </span>
-                      {p1.comp.conflicts && p1.comp.conflicts.length > 0 ? (
-                        <div className="flex flex-wrap gap-1 pt-0.5">
-                          {p1.comp.conflicts.map((conflict: string, idx: number) => (
-                            <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1">
-                              <Shield className="w-2.5 h-2.5 text-red-600 flex-shrink-0" /> <span className="break-words">{conflict}</span>
-                            </span>
-                          ))}
+
+              {productIds.map((id, index) => {
+                const detail = activeDetails[index];
+                return (
+                  <td key={id} className="p-2 sm:p-2.5 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
+                    {Number(detail.product?.cat3) === 11 || Number(detail.scores?.cat3) === 11 ? (
+                      <span className="text-[10px] text-black/40 italic">N/A (Lipcare)</span>
+                    ) : detail.isAuthenticated && detail.comp ? (() => {
+                      const scoreConfig = getScoreColorConfig(detail.comp.compatibilityScore);
+                      return (
+                        <div className="space-y-1">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wide border transition-colors ${
+                            detail.comp.compatibilityScore != null ? scoreConfig.pillClasses : 'bg-gray-100 text-gray-700 border-gray-200'
+                          }`}>
+                            {detail.comp.scoreDisplay || (detail.comp.compatibilityScore !== undefined && detail.comp.compatibilityScore !== null ? `${detail.comp.compatibilityScore} / 100` : 'N/A')}
+                          </span>
+                          {detail.comp.conflicts && detail.comp.conflicts.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {detail.comp.conflicts.map((conflict: string, idx: number) => (
+                                <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[8px] font-bold flex items-center gap-1">
+                                  <Shield className="w-2.5 h-2.5 text-red-600 flex-shrink-0" /> <span className="break-words">{conflict}</span>
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[9px] text-emerald-700 font-semibold pt-0.5">No conflicts detected</p>
+                          )}
                         </div>
-                      ) : (
-                        <p className="text-[9.5px] sm:text-[10px] text-emerald-700 font-semibold pt-0.5">No ingredient conflicts detected</p>
-                      )}
-                    </div>
-                  );
-                })() : (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">Log in to view compatibility</span>
-                )}
-              </td>
-              {/* Product 2 Compatibility */}
-              <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                {Number(p2.product?.cat3) === 11 || Number(p2.scores?.cat3) === 11 ? (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">N/A (Lipcare)</span>
-                ) : p2.isAuthenticated && p2.comp ? (() => {
-                  const p2ScoreConfig = getScoreColorConfig(p2.comp.compatibilityScore);
-                  return (
-                    <div className="space-y-1.5">
-                      <span className={`inline-block px-2 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-wide border transition-colors ${
-                        p2.comp.compatibilityScore != null ? p2ScoreConfig.pillClasses : 'bg-gray-100 text-gray-700 border-gray-200'
-                      }`}>
-                        {p2.comp.scoreDisplay || (p2.comp.compatibilityScore !== undefined && p2.comp.compatibilityScore !== null ? `${p2.comp.compatibilityScore} / 100` : 'Score could not be calculated')}
-                      </span>
-                      {p2.comp.conflicts && p2.comp.conflicts.length > 0 ? (
-                        <div className="flex flex-wrap gap-1 pt-0.5">
-                          {p2.comp.conflicts.map((conflict: string, idx: number) => (
-                            <span key={idx} className="bg-red-50 text-red-900 border border-red-200/60 rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1">
-                              <Shield className="w-2.5 h-2.5 text-red-600 flex-shrink-0" /> <span className="break-words">{conflict}</span>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-[9.5px] sm:text-[10px] text-emerald-700 font-semibold pt-0.5">No ingredient conflicts detected</p>
-                      )}
-                    </div>
-                  );
-                })() : (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">Log in to view compatibility</span>
-                )}
-              </td>
+                      );
+                    })() : (
+                      <span className="text-[9.5px] text-black/40 italic">Log in to view fit</span>
+                    )}
+                  </td>
+                );
+              })}
+
+              {productIds.length < 5 && <td className="bg-gray-50/30"></td>}
             </tr>
 
             {/* ROW 4: KEY BENEFITS */}
             <tr className="border-b border-gray-100 hover:bg-gray-50/30 transition-colors">
-              <td className="px-1.5 py-3 sm:px-3 sm:py-4 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1.5">
-                  <div className="w-5 h-5 rounded-md bg-purple-50 flex items-center justify-center text-purple-600 sm:hidden">
-                    <CheckCircle2 className="w-2.5 h-2.5" />
+              <td className="px-1.5 py-2.5 sm:px-2.5 sm:py-3 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1">
+                  <div className="w-4 h-4 rounded-md bg-purple-50 flex items-center justify-center text-purple-600 sm:hidden">
+                    <CheckCircle2 className="w-2 h-2" />
                   </div>
-                  <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tight text-black/60 leading-tight">
-                    <span className="sm:hidden">Benefits</span>
-                    <span className="hidden sm:inline">Key Benefits</span>
+                  <span className="font-black text-[8px] sm:text-[9.5px] uppercase tracking-tight text-black/60 leading-tight">
+                    Benefits
                   </span>
                 </div>
               </td>
-              {/* Product 1 Key Benefits */}
-              <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                {p1.comp?.benefits && p1.comp.benefits.length > 0 ? (
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap gap-1">
-                      {p1.comp.benefits.map((benefit: string, idx: number) => {
-                        const matched = getIngredientsForFlag(benefit, p1.culprits);
-                        const isClickable = matched.length > 0;
-                        const isExpanded = expandedBenefit1 === benefit;
 
-                        return (
-                          <button
-                            type="button"
-                            key={idx}
-                            onClick={() => isClickable && setExpandedBenefit1(isExpanded ? null : benefit)}
-                            className={`border rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
-                              isExpanded
-                                ? 'bg-purple-100 text-purple-950 border-purple-400 shadow-xs'
-                                : 'bg-purple-50 text-purple-900 border-purple-200/60'
-                            } ${isClickable ? 'cursor-pointer hover:bg-purple-100' : 'cursor-default'}`}
-                          >
-                            <CheckCircle2 className="w-2.5 h-2.5 text-purple-600 flex-shrink-0" />
-                            <span>{benefit}</span>
-                            {isClickable && (
-                              <span className="flex items-center gap-0.5 ml-0.5 text-[8px] text-purple-700 bg-purple-200/70 px-1 py-0.1 rounded font-mono font-bold">
-                                {matched.length}
-                                {isExpanded ? <ChevronUp className="w-2 h-2" /> : <ChevronDown className="w-2 h-2" />}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {/* Drawer for Benefit 1 */}
-                    {expandedBenefit1 && (() => {
-                      const ings = getIngredientsForFlag(expandedBenefit1, p1.culprits);
-                      if (ings.length === 0) return null;
-                      return (
-                        <div className="p-2 bg-purple-50/80 border border-purple-200/80 rounded-xl space-y-1">
-                          <div className="text-[9px] font-black uppercase text-purple-900">
-                            {expandedBenefit1} ({ings.length} Active Ingredients)
-                          </div>
-                          <div className="max-h-36 overflow-y-auto space-y-1 pr-0.5">
-                            {ings.map((item: any, iIdx: number) => (
-                              <div key={iIdx} className="bg-white px-2 py-1 rounded text-[10px] font-semibold text-gray-800 flex justify-between shadow-2xs">
-                                <span className="truncate">{item.ingredient_name}</span>
-                                {item.position != null && <span className="text-[8px] font-mono text-purple-700 font-bold">#{item.position}</span>}
-                              </div>
-                            ))}
-                          </div>
+              {productIds.map((id, index) => {
+                const detail = activeDetails[index];
+                const currentExpandedBenefit = expandedBenefits[index] || null;
+                return (
+                  <td key={id} className="p-2 sm:p-2.5 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
+                    {detail.comp?.benefits && detail.comp.benefits.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap gap-1">
+                          {detail.comp.benefits.map((benefit: string, idx: number) => {
+                            const matched = getIngredientsForFlag(benefit, detail.culprits);
+                            const isClickable = matched.length > 0;
+                            const isExpanded = currentExpandedBenefit === benefit;
+
+                            return (
+                              <button
+                                type="button"
+                                key={idx}
+                                onClick={() => isClickable && setExpandedBenefits(prev => ({ ...prev, [index]: isExpanded ? null : benefit }))}
+                                className={`border rounded-md px-1.5 py-0.5 text-[8px] sm:text-[8.5px] font-bold flex items-center gap-1 transition-all text-left ${
+                                  isExpanded
+                                    ? 'bg-purple-100 text-purple-950 border-purple-400 shadow-xs'
+                                    : 'bg-purple-50 text-purple-900 border-purple-200/60'
+                                } ${isClickable ? 'cursor-pointer hover:bg-purple-100' : 'cursor-default'}`}
+                              >
+                                <CheckCircle2 className="w-2.5 h-2.5 text-purple-600 flex-shrink-0" />
+                                <span>{benefit}</span>
+                                {isClickable && (
+                                  <span className="flex items-center gap-0.5 ml-0.5 text-[7.5px] text-purple-700 bg-purple-200/70 px-1 py-0.1 rounded font-mono font-bold">
+                                    {matched.length}
+                                    {isExpanded ? <ChevronUp className="w-2 h-2" /> : <ChevronDown className="w-2 h-2" />}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">No specific benefits flagged</span>
-                )}
-              </td>
-
-              {/* Product 2 Key Benefits */}
-              <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                {p2.comp?.benefits && p2.comp.benefits.length > 0 ? (
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap gap-1">
-                      {p2.comp.benefits.map((benefit: string, idx: number) => {
-                        const matched = getIngredientsForFlag(benefit, p2.culprits);
-                        const isClickable = matched.length > 0;
-                        const isExpanded = expandedBenefit2 === benefit;
-
-                        return (
-                          <button
-                            type="button"
-                            key={idx}
-                            onClick={() => isClickable && setExpandedBenefit2(isExpanded ? null : benefit)}
-                            className={`border rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
-                              isExpanded
-                                ? 'bg-purple-100 text-purple-950 border-purple-400 shadow-xs'
-                                : 'bg-purple-50 text-purple-900 border-purple-200/60'
-                            } ${isClickable ? 'cursor-pointer hover:bg-purple-100' : 'cursor-default'}`}
-                          >
-                            <CheckCircle2 className="w-2.5 h-2.5 text-purple-600 flex-shrink-0" />
-                            <span>{benefit}</span>
-                            {isClickable && (
-                              <span className="flex items-center gap-0.5 ml-0.5 text-[8px] text-purple-700 bg-purple-200/70 px-1 py-0.1 rounded font-mono font-bold">
-                                {matched.length}
-                                {isExpanded ? <ChevronUp className="w-2 h-2" /> : <ChevronDown className="w-2 h-2" />}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {/* Drawer for Benefit 2 */}
-                    {expandedBenefit2 && (() => {
-                      const ings = getIngredientsForFlag(expandedBenefit2, p2.culprits);
-                      if (ings.length === 0) return null;
-                      return (
-                        <div className="p-2 bg-purple-50/80 border border-purple-200/80 rounded-xl space-y-1">
-                          <div className="text-[9px] font-black uppercase text-purple-900">
-                            {expandedBenefit2} ({ings.length} Active Ingredients)
-                          </div>
-                          <div className="max-h-36 overflow-y-auto space-y-1 pr-0.5">
-                            {ings.map((item: any, iIdx: number) => (
-                              <div key={iIdx} className="bg-white px-2 py-1 rounded text-[10px] font-semibold text-gray-800 flex justify-between shadow-2xs">
-                                <span className="truncate">{item.ingredient_name}</span>
-                                {item.position != null && <span className="text-[8px] font-mono text-purple-700 font-bold">#{item.position}</span>}
+                        {currentExpandedBenefit && (() => {
+                          const ings = getIngredientsForFlag(currentExpandedBenefit, detail.culprits);
+                          if (ings.length === 0) return null;
+                          return (
+                            <div className="p-2 bg-purple-50/80 border border-purple-200/80 rounded-xl space-y-1">
+                              <div className="text-[9px] font-black uppercase text-purple-900">
+                                {currentExpandedBenefit} ({ings.length})
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">No specific benefits flagged</span>
-                )}
-              </td>
+                              <div className="space-y-1">
+                                {ings.map((item: any, iIdx: number) => (
+                                  <div key={iIdx} className="text-[8.5px] text-black/80 bg-white/90 border border-purple-100 px-1.5 py-0.5 rounded-lg">
+                                    <span className="font-bold text-black">{item.ingredient_name}</span>
+                                    {item.position && (
+                                      <span className="text-[7.5px] text-black/50 ml-1">#{item.position}</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <span className="text-[9.5px] text-black/40 italic">None listed</span>
+                    )}
+                  </td>
+                );
+              })}
+
+              {productIds.length < 5 && <td className="bg-gray-50/30"></td>}
             </tr>
 
             {/* ROW 5: POTENTIAL IRRITANTS */}
             <tr className="border-b border-gray-100 hover:bg-gray-50/30 transition-colors">
-              <td className="px-1.5 py-3 sm:px-3 sm:py-4 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1.5">
-                  <div className="w-5 h-5 rounded-md bg-amber-50 flex items-center justify-center text-amber-600 sm:hidden">
-                    <AlertTriangle className="w-2.5 h-2.5" />
+              <td className="px-1.5 py-2.5 sm:px-2.5 sm:py-3 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1">
+                  <div className="w-4 h-4 rounded-md bg-amber-50 flex items-center justify-center text-amber-600 sm:hidden">
+                    <AlertTriangle className="w-2 h-2" />
                   </div>
-                  <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tight text-black/60 leading-tight">
-                    <span className="sm:hidden">Irritants</span>
-                    <span className="hidden sm:inline">Potential Irritants</span>
+                  <span className="font-black text-[8px] sm:text-[9.5px] uppercase tracking-tight text-black/60 leading-tight">
+                    Irritants
                   </span>
                 </div>
               </td>
-              {/* Product 1 Irritants */}
-              <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                {p1.comp?.safetyConcerns && p1.comp.safetyConcerns.length > 0 ? (
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap gap-1">
-                      {p1.comp.safetyConcerns.map((concern: string, idx: number) => {
-                        const matched = getIngredientsForFlag(concern, p1.culprits);
-                        const isClickable = matched.length > 0;
-                        const isExpanded = expandedIrritant1 === concern;
 
-                        return (
-                          <button
-                            type="button"
-                            key={idx}
-                            onClick={() => isClickable && setExpandedIrritant1(isExpanded ? null : concern)}
-                            className={`border rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
-                              isExpanded
-                                ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-xs'
-                                : 'bg-amber-50 text-amber-900 border-amber-200/60'
-                            } ${isClickable ? 'cursor-pointer hover:bg-amber-100' : 'cursor-default'}`}
-                          >
-                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
-                            <span>{concern}</span>
-                            {isClickable && (
-                              <span className="flex items-center gap-0.5 ml-0.5 text-[8px] text-amber-800 bg-amber-200/70 px-1 py-0.1 rounded font-mono font-bold">
-                                {matched.length}
-                                {isExpanded ? <ChevronUp className="w-2 h-2" /> : <ChevronDown className="w-2 h-2" />}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {/* Drawer for Irritant 1 */}
-                    {expandedIrritant1 && (() => {
-                      const ings = getIngredientsForFlag(expandedIrritant1, p1.culprits);
-                      if (ings.length === 0) return null;
-                      return (
-                        <div className="p-2 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-1">
-                          <div className="text-[9px] font-black uppercase text-amber-900">
-                            {expandedIrritant1} ({ings.length} Trigger Ingredients)
-                          </div>
-                          <div className="max-h-36 overflow-y-auto space-y-1 pr-0.5">
-                            {ings.map((item: any, iIdx: number) => (
-                              <div key={iIdx} className="bg-white px-2 py-1 rounded text-[10px] font-semibold text-gray-800 flex justify-between shadow-2xs">
-                                <span className="truncate">{item.ingredient_name}</span>
-                                {item.position != null && <span className="text-[8px] font-mono text-amber-800 font-bold">#{item.position}</span>}
-                              </div>
-                            ))}
-                          </div>
+              {productIds.map((id, index) => {
+                const detail = activeDetails[index];
+                const currentExpandedIrritant = expandedIrritants[index] || null;
+                return (
+                  <td key={id} className="p-2 sm:p-2.5 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
+                    {detail.comp?.safetyConcerns && detail.comp.safetyConcerns.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap gap-1">
+                          {detail.comp.safetyConcerns.map((concern: string, idx: number) => {
+                            const matched = getIngredientsForFlag(concern, detail.culprits);
+                            const isClickable = matched.length > 0;
+                            const isExpanded = currentExpandedIrritant === concern;
+
+                            return (
+                              <button
+                                type="button"
+                                key={idx}
+                                onClick={() => isClickable && setExpandedIrritants(prev => ({ ...prev, [index]: isExpanded ? null : concern }))}
+                                className={`border rounded-md px-1.5 py-0.5 text-[8px] sm:text-[8.5px] font-bold flex items-center gap-1 transition-all text-left ${
+                                  isExpanded
+                                    ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-xs'
+                                    : 'bg-amber-50 text-amber-900 border-amber-200/60'
+                                } ${isClickable ? 'cursor-pointer hover:bg-amber-100' : 'cursor-default'}`}
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
+                                <span>{concern}</span>
+                                {isClickable && (
+                                  <span className="flex items-center gap-0.5 ml-0.5 text-[7.5px] text-amber-700 bg-amber-200/70 px-1 py-0.1 rounded font-mono font-bold">
+                                    {matched.length}
+                                    {isExpanded ? <ChevronUp className="w-2 h-2" /> : <ChevronDown className="w-2 h-2" />}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <span className="text-[10px] sm:text-[11px] text-emerald-700 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> None detected
-                  </span>
-                )}
-              </td>
-
-              {/* Product 2 Irritants */}
-              <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                {p2.comp?.safetyConcerns && p2.comp.safetyConcerns.length > 0 ? (
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap gap-1">
-                      {p2.comp.safetyConcerns.map((concern: string, idx: number) => {
-                        const matched = getIngredientsForFlag(concern, p2.culprits);
-                        const isClickable = matched.length > 0;
-                        const isExpanded = expandedIrritant2 === concern;
-
-                        return (
-                          <button
-                            type="button"
-                            key={idx}
-                            onClick={() => isClickable && setExpandedIrritant2(isExpanded ? null : concern)}
-                            className={`border rounded-md px-1.5 py-0.5 text-[8.5px] sm:text-[9px] font-bold flex items-center gap-1 transition-all text-left ${
-                              isExpanded
-                                ? 'bg-amber-100 text-amber-950 border-amber-400 shadow-xs'
-                                : 'bg-amber-50 text-amber-900 border-amber-200/60'
-                            } ${isClickable ? 'cursor-pointer hover:bg-amber-100' : 'cursor-default'}`}
-                          >
-                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
-                            <span>{concern}</span>
-                            {isClickable && (
-                              <span className="flex items-center gap-0.5 ml-0.5 text-[8px] text-amber-800 bg-amber-200/70 px-1 py-0.1 rounded font-mono font-bold">
-                                {matched.length}
-                                {isExpanded ? <ChevronUp className="w-2 h-2" /> : <ChevronDown className="w-2 h-2" />}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {/* Drawer for Irritant 2 */}
-                    {expandedIrritant2 && (() => {
-                      const ings = getIngredientsForFlag(expandedIrritant2, p2.culprits);
-                      if (ings.length === 0) return null;
-                      return (
-                        <div className="p-2 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-1">
-                          <div className="text-[9px] font-black uppercase text-amber-900">
-                            {expandedIrritant2} ({ings.length} Trigger Ingredients)
-                          </div>
-                          <div className="max-h-36 overflow-y-auto space-y-1 pr-0.5">
-                            {ings.map((item: any, iIdx: number) => (
-                              <div key={iIdx} className="bg-white px-2 py-1 rounded text-[10px] font-semibold text-gray-800 flex justify-between shadow-2xs">
-                                <span className="truncate">{item.ingredient_name}</span>
-                                {item.position != null && <span className="text-[8px] font-mono text-amber-800 font-bold">#{item.position}</span>}
+                        {currentExpandedIrritant && (() => {
+                          const ings = getIngredientsForFlag(currentExpandedIrritant, detail.culprits);
+                          if (ings.length === 0) return null;
+                          return (
+                            <div className="p-2 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-1">
+                              <div className="text-[9px] font-black uppercase text-amber-900">
+                                {currentExpandedIrritant} ({ings.length})
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <span className="text-[10px] sm:text-[11px] text-emerald-700 font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> None detected
-                  </span>
-                )}
-              </td>
+                              <div className="space-y-1">
+                                {ings.map((item: any, iIdx: number) => (
+                                  <div key={iIdx} className="text-[8.5px] text-black/80 bg-white/90 border border-amber-100 px-1.5 py-0.5 rounded-lg">
+                                    <span className="font-bold text-black">{item.ingredient_name}</span>
+                                    {item.position && (
+                                      <span className="text-[7.5px] text-black/50 ml-1">#{item.position}</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <span className="text-[9.5px] text-emerald-700 font-semibold">None detected</span>
+                    )}
+                  </td>
+                );
+              })}
+
+              {productIds.length < 5 && <td className="bg-gray-50/30"></td>}
             </tr>
 
-            {/* ROW 6: FORMULA PROPERTIES */}
+            {/* ROW 6: INGREDIENTS LIST */}
             <tr className="border-b border-gray-100 hover:bg-gray-50/30 transition-colors">
-              <td className="px-1.5 py-3 sm:px-3 sm:py-4 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1.5">
-                  <div className="w-5 h-5 rounded-md bg-black/5 flex items-center justify-center text-black/60 sm:hidden">
-                    <FlaskConical className="w-2.5 h-2.5" />
+              <td className="px-1.5 py-2.5 sm:px-2.5 sm:py-3 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1">
+                  <div className="w-4 h-4 rounded-md bg-black/5 flex items-center justify-center text-black/60 sm:hidden">
+                    <FlaskConical className="w-2 h-2" />
                   </div>
-                  <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tight text-black/60 leading-tight">
-                    <span className="sm:hidden">Formula</span>
-                    <span className="hidden sm:inline">Formula Properties</span>
-                  </span>
-                </div>
-              </td>
-              {/* Product 1 Properties */}
-              <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                {p1.scores ? (
-                  <div className="grid grid-cols-2 gap-1 sm:gap-1.5 text-[9px] sm:text-[10px]">
-                    <div className="flex items-center justify-between bg-gray-50 px-1.5 sm:px-2 py-1 rounded border border-black/5 min-w-0">
-                      <span className="text-gray-500 truncate mr-1">Oil-Free</span>
-                      <span className={`font-bold shrink-0 ${p1.scores.oil_free ? 'text-emerald-600' : 'text-gray-400'}`}>
-                        {p1.scores.oil_free ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between bg-gray-50 px-1.5 sm:px-2 py-1 rounded border border-black/5 min-w-0">
-                      <span className="text-gray-500 truncate mr-1">Sulfate-Free</span>
-                      <span className={`font-bold shrink-0 ${p1.scores.sulfate_free ? 'text-emerald-600' : 'text-gray-400'}`}>
-                        {p1.scores.sulfate_free ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between bg-gray-50 px-1.5 sm:px-2 py-1 rounded border border-black/5 min-w-0">
-                      <span className="text-gray-500 truncate mr-1">Fragrance-Free</span>
-                      <span className={`font-bold shrink-0 ${(!p1.scores.contains_frag && !p1.scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-amber-700'}`}>
-                        {(!p1.scores.contains_frag && !p1.scores.has_fragrance_top50) ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between bg-gray-50 px-1.5 sm:px-2 py-1 rounded border border-black/5 min-w-0">
-                      <span className="text-gray-500 truncate mr-1">Malassezia Safe</span>
-                      <span className={`font-bold shrink-0 ${!p1.scores.has_yeast_trigger ? 'text-emerald-600' : 'text-gray-400'}`}>
-                        {!p1.scores.has_yeast_trigger ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">Properties loading...</span>
-                )}
-              </td>
-
-              {/* Product 2 Properties */}
-              <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                {p2.scores ? (
-                  <div className="grid grid-cols-2 gap-1 sm:gap-1.5 text-[9px] sm:text-[10px]">
-                    <div className="flex items-center justify-between bg-gray-50 px-1.5 sm:px-2 py-1 rounded border border-black/5 min-w-0">
-                      <span className="text-gray-500 truncate mr-1">Oil-Free</span>
-                      <span className={`font-bold shrink-0 ${p2.scores.oil_free ? 'text-emerald-600' : 'text-gray-400'}`}>
-                        {p2.scores.oil_free ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between bg-gray-50 px-1.5 sm:px-2 py-1 rounded border border-black/5 min-w-0">
-                      <span className="text-gray-500 truncate mr-1">Sulfate-Free</span>
-                      <span className={`font-bold shrink-0 ${p2.scores.sulfate_free ? 'text-emerald-600' : 'text-gray-400'}`}>
-                        {p2.scores.sulfate_free ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between bg-gray-50 px-1.5 sm:px-2 py-1 rounded border border-black/5 min-w-0">
-                      <span className="text-gray-500 truncate mr-1">Fragrance-Free</span>
-                      <span className={`font-bold shrink-0 ${(!p2.scores.contains_frag && !p2.scores.has_fragrance_top50) ? 'text-emerald-600' : 'text-amber-700'}`}>
-                        {(!p2.scores.contains_frag && !p2.scores.has_fragrance_top50) ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between bg-gray-50 px-1.5 sm:px-2 py-1 rounded border border-black/5 min-w-0">
-                      <span className="text-gray-500 truncate mr-1">Malassezia Safe</span>
-                      <span className={`font-bold shrink-0 ${!p2.scores.has_yeast_trigger ? 'text-emerald-600' : 'text-gray-400'}`}>
-                        {!p2.scores.has_yeast_trigger ? 'Yes' : 'No'}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">Properties loading...</span>
-                )}
-              </td>
-            </tr>
-
-            {/* ROW 7: INGREDIENTS LIST */}
-            <tr className="border-b border-gray-100 hover:bg-gray-50/30 transition-colors">
-              <td className="px-1.5 py-3 sm:px-3 sm:py-4 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1.5">
-                  <div className="w-5 h-5 rounded-md bg-black/5 flex items-center justify-center text-black/60 sm:hidden">
-                    <List className="w-2.5 h-2.5" />
-                  </div>
-                  <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tight text-black/60 leading-tight">
+                  <span className="font-black text-[8px] sm:text-[9.5px] uppercase tracking-tight text-black/60 leading-tight">
                     Ingredients
                   </span>
                 </div>
               </td>
-              {/* Product 1 Ingredients */}
-              <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                {p1.product?.ingredients && p1.product.ingredients.length > 0 ? (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setExpandIngredients1(!expandIngredients1)}
-                      className="flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black text-black uppercase underline cursor-pointer mb-1"
-                    >
-                      {expandIngredients1 ? 'Hide ingredients' : `View all ingredients (${p1.product.ingredients.length})`}
-                      {expandIngredients1 ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
-                    {expandIngredients1 ? (
-                      <p className="text-[10.5px] sm:text-xs text-black/70 bg-black/5 p-2 rounded-xl break-words leading-relaxed max-h-48 overflow-y-auto font-mono">
-                        {Array.isArray(p1.product.ingredients) ? p1.product.ingredients.join(', ') : p1.product.ingredients}
-                      </p>
-                    ) : (
-                      <p className="text-[10.5px] sm:text-xs text-black/60 truncate font-mono">
-                        {Array.isArray(p1.product.ingredients) ? p1.product.ingredients.slice(0, 4).join(', ') + '...' : p1.product.ingredients}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">No ingredient list available</span>
-                )}
-              </td>
 
-              {/* Product 2 Ingredients */}
-              <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                {p2.product?.ingredients && p2.product.ingredients.length > 0 ? (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setExpandIngredients2(!expandIngredients2)}
-                      className="flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black text-black uppercase underline cursor-pointer mb-1"
-                    >
-                      {expandIngredients2 ? 'Hide ingredients' : `View all ingredients (${p2.product.ingredients.length})`}
-                      {expandIngredients2 ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
-                    {expandIngredients2 ? (
-                      <p className="text-[10.5px] sm:text-xs text-black/70 bg-black/5 p-2 rounded-xl break-words leading-relaxed max-h-48 overflow-y-auto font-mono">
-                        {Array.isArray(p2.product.ingredients) ? p2.product.ingredients.join(', ') : p2.product.ingredients}
-                      </p>
+              {productIds.map((id, index) => {
+                const detail = activeDetails[index];
+                const isExpanded = !!expandIngredientsMap[index];
+                const ings = detail.product?.ingredients || [];
+                const ingsListText = Array.isArray(ings) ? ings.join(', ') : (typeof ings === 'string' ? ings : '');
+
+                return (
+                  <td key={id} className="p-2 sm:p-2.5 align-top border-r border-gray-100 bg-white snap-start relative min-w-0 space-y-1.5">
+                    {ingsListText ? (
+                      <div>
+                        <p className={`text-[10px] sm:text-[10.5px] text-black/70 leading-relaxed break-words ${isExpanded ? '' : 'line-clamp-3'}`}>
+                          {ingsListText}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setExpandIngredientsMap(prev => ({ ...prev, [index]: !isExpanded }))}
+                          className="mt-1 text-[9px] font-black uppercase tracking-wider text-purple-700 hover:text-purple-900 inline-flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <span>{isExpanded ? 'Less' : 'Full list'}</span>
+                          {isExpanded ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+                        </button>
+                      </div>
                     ) : (
-                      <p className="text-[10.5px] sm:text-xs text-black/60 truncate font-mono">
-                        {Array.isArray(p2.product.ingredients) ? p2.product.ingredients.slice(0, 4).join(', ') + '...' : p2.product.ingredients}
-                      </p>
+                      <span className="text-[9.5px] text-black/40 italic">Not available</span>
                     )}
-                  </div>
-                ) : (
-                  <span className="text-[10px] sm:text-[11px] text-black/40 italic">No ingredient list available</span>
-                )}
-              </td>
+                  </td>
+                );
+              })}
+
+              {productIds.length < 5 && <td className="bg-gray-50/30"></td>}
             </tr>
 
-            {/* ROW 8: RATINGS & TRACKER */}
+            {/* ROW 7: RATINGS (SUPABASE AVERAGE + DROPDOWN / "YOUR RATING" 1-5 SCALE) */}
             <tr className="hover:bg-gray-50/30 transition-colors">
-              <td className="px-1.5 py-3 sm:px-3 sm:py-4 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1.5">
-                  <div className="w-5 h-5 rounded-md bg-amber-50 flex items-center justify-center text-amber-600 sm:hidden">
-                    <Star className="w-2.5 h-2.5" />
+              <td className="px-1.5 py-2.5 sm:px-2.5 sm:py-3 align-top border-r border-gray-200/70 bg-gray-50/95 sticky left-0 z-20 backdrop-blur-md shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                <div className="flex flex-col items-center justify-center text-center gap-1 sm:items-start sm:text-left sm:gap-1">
+                  <div className="w-4 h-4 rounded-md bg-amber-50 flex items-center justify-center text-amber-600 sm:hidden">
+                    <Star className="w-2 h-2" />
                   </div>
-                  <span className="font-black text-[8px] sm:text-[10px] uppercase tracking-tight text-black/60 leading-tight">
-                    <span className="sm:hidden">Ratings</span>
-                    <span className="hidden sm:inline">User Ratings</span>
+                  <span className="font-black text-[8px] sm:text-[9.5px] uppercase tracking-tight text-black/60 leading-tight">
+                    Ratings
                   </span>
                 </div>
               </td>
-              {/* Product 1 Ratings */}
-              <td className="p-2.5 sm:p-4 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
-                <div className="space-y-1.5 bg-gray-50/80 p-2.5 rounded-xl border border-gray-100">
-                  {[
-                    { key: 'dwis', label: 'Does what it says' },
-                    { key: 'price_value', label: 'Price / Value' },
-                    { key: 'feel', label: 'Sensory Feel' },
-                    { key: 'layer', label: 'Layers Well' },
-                  ].map(metric => {
-                    const val = p1.ratings[metric.key as keyof typeof p1.ratings] || 0;
-                    return (
-                      <div key={metric.key} className="flex items-center justify-between text-[11px] bg-white px-2.5 py-1.5 rounded-xl border border-gray-200/60 shadow-2xs">
-                        <span className="text-black/70 font-bold">{metric.label}:</span>
-                        <span className="font-mono font-black text-black">
-                          {val > 0 ? `${val} / 5` : 'None'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {trackerItem1 && (
-                  <div className="mt-2 pt-2 border-t border-black/5 flex items-center gap-1.5 text-[9px] font-bold text-gray-500 uppercase flex-wrap">
-                    {trackerItem1.in_use && <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded flex items-center gap-0.5"><CheckCircle2 className="w-2.5 h-2.5" /> In Use</span>}
-                    {trackerItem1.is_liked && <span className="bg-red-100 text-red-800 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Heart className="w-2.5 h-2.5 fill-red-500" /> Liked</span>}
-                    {trackerItem1.repurchase && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded flex items-center gap-0.5"><RefreshCw className="w-2.5 h-2.5" /> Buy Again</span>}
-                  </div>
-                )}
-              </td>
 
-              {/* Product 2 Ratings */}
-              <td className="p-2.5 sm:p-4 align-top bg-white snap-start relative min-w-0">
-                <div className="space-y-1.5 bg-gray-50/80 p-2.5 rounded-xl border border-gray-100">
-                  {[
-                    { key: 'dwis', label: 'Does what it says' },
-                    { key: 'price_value', label: 'Price / Value' },
-                    { key: 'feel', label: 'Sensory Feel' },
-                    { key: 'layer', label: 'Layers Well' },
-                  ].map(metric => {
-                    const val = p2.ratings[metric.key as keyof typeof p2.ratings] || 0;
-                    return (
-                      <div key={metric.key} className="flex items-center justify-between text-[11px] bg-white px-2.5 py-1.5 rounded-xl border border-gray-200/60 shadow-2xs">
-                        <span className="text-black/70 font-bold">{metric.label}:</span>
-                        <span className="font-mono font-black text-black">
-                          {val > 0 ? `${val} / 5` : 'None'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {trackerItem2 && (
-                  <div className="mt-2 pt-2 border-t border-black/5 flex items-center gap-1.5 text-[9px] font-bold text-gray-500 uppercase flex-wrap">
-                    {trackerItem2.in_use && <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded flex items-center gap-0.5"><CheckCircle2 className="w-2.5 h-2.5" /> In Use</span>}
-                    {trackerItem2.is_liked && <span className="bg-red-100 text-red-800 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Heart className="w-2.5 h-2.5 fill-red-500" /> Liked</span>}
-                    {trackerItem2.repurchase && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded flex items-center gap-0.5"><RefreshCw className="w-2.5 h-2.5" /> Buy Again</span>}
-                  </div>
-                )}
-              </td>
+              {productIds.map((id, index) => {
+                const detail = activeDetails[index];
+                return (
+                  <td key={id} className="p-2 sm:p-2.5 align-top border-r border-gray-100 bg-white snap-start relative min-w-0">
+                    <div className="bg-purple-50/80 border border-purple-100 rounded-xl p-2 space-y-1.5">
+                      <button
+                        type="button"
+                        onClick={() => detail.setIsRatingsDropdownOpen(!detail.isRatingsDropdownOpen)}
+                        className="w-full flex items-center justify-between text-[11px] font-black text-purple-950 uppercase tracking-wider cursor-pointer"
+                      >
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <Star className="w-3.5 h-3.5 fill-purple-600 text-purple-600 flex-shrink-0" />
+                          {detail.globalRatingsSummary.avg > 0 || detail.globalRatingsSummary.count > 0 ? (
+                            <span className="truncate">Ratings: {detail.globalRatingsSummary.avg > 0 ? detail.globalRatingsSummary.avg : '3.0'} / 5</span>
+                          ) : (
+                            <span className="block text-center w-full font-black text-purple-950 uppercase tracking-wider text-[10px] leading-tight">
+                              Ratings: None yet<br />
+                              <span className="text-[9px] font-bold text-purple-900 normal-case">Be the first!</span>
+                            </span>
+                          )}
+                          {(detail.globalRatingsSummary.avg > 0 || detail.globalRatingsSummary.count > 0) && (
+                            <span className="text-[9px] text-black/40 font-normal lowercase font-mono flex-shrink-0">({detail.globalRatingsSummary.count})</span>
+                          )}
+                        </div>
+                        {detail.isRatingsDropdownOpen ? <ChevronUp className="w-3.5 h-3.5 text-purple-700 flex-shrink-0 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 text-purple-700 flex-shrink-0 ml-1" />}
+                      </button>
+
+                      {detail.isRatingsDropdownOpen && (
+                        <div className="space-y-2.5 pt-2 border-t border-purple-200/60">
+                          {detail.globalRatingsSummary.count > 0 && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+                              <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+                                <span className="text-black/60 font-bold truncate">Does What It Says:</span>
+                                <span className="font-mono font-black text-purple-900">{detail.globalRatingsSummary.dwis} / 5</span>
+                              </div>
+                              <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+                                <span className="text-black/60 font-bold truncate">Price & Value:</span>
+                                <span className="font-mono font-black text-purple-900">{detail.globalRatingsSummary.price_value} / 5</span>
+                              </div>
+                              <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+                                <span className="text-black/60 font-bold truncate">Texture & Feel:</span>
+                                <span className="font-mono font-black text-purple-900">{detail.globalRatingsSummary.feel} / 5</span>
+                              </div>
+                              <div className="flex justify-between bg-white px-2 py-1 rounded-lg border border-purple-100">
+                                <span className="text-black/60 font-bold truncate">Layerability:</span>
+                                <span className="font-mono font-black text-purple-900">{detail.globalRatingsSummary.layer} / 5</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Your rating Section */}
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-black text-[9px] uppercase tracking-widest text-black/75">Your rating</h4>
+                              {!detail.isAuthenticated && (
+                                <span className="text-[8.5px] text-black/40 font-bold italic">Log in to save</span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-1 gap-1.5 bg-white p-2 rounded-xl border border-purple-100">
+                              {[
+                                { key: 'dwis', label: 'Does What It Says' },
+                                { key: 'price_value', label: 'Price & Value' },
+                                { key: 'feel', label: 'Texture & Feel' },
+                                { key: 'layer', label: 'Layerability' },
+                              ].map(criterion => (
+                                <div key={criterion.key} className="flex flex-col gap-0.5">
+                                  <span className="text-[8.5px] font-bold text-black/70">{criterion.label}</span>
+                                  <div className="flex items-center gap-1">
+                                    {[1, 2, 3, 4, 5].map(star => {
+                                      const currentVal = detail.ratings[criterion.key as keyof typeof detail.ratings] || 0;
+                                      const isFilled = star <= currentVal;
+                                      return (
+                                        <button
+                                          key={star}
+                                          type="button"
+                                          onClick={() => detail.handleUpdateRating(criterion.key, star)}
+                                          className={`w-4 h-4 rounded flex items-center justify-center text-[9px] font-bold transition-all cursor-pointer ${
+                                            isFilled 
+                                              ? 'bg-black text-white shadow-xs' 
+                                              : 'bg-gray-50 text-black/40 border border-gray-200 hover:border-black/40 hover:text-black'
+                                          }`}
+                                        >
+                                          {star}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                );
+              })}
+
+              {productIds.length < 5 && <td className="bg-gray-50/30"></td>}
             </tr>
           </tbody>
         </table>
       </div>
 
-      {/* Unauthenticated Compare Auth Popup */}
+      {/* Unauthenticated Auth Modal */}
       {showAuthModal && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[250] flex items-center justify-center p-4 overflow-y-auto"
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowAuthModal(false);
-          }}
-        >
-          <div 
-            className="relative w-full max-w-md my-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-2 bg-black text-white py-2 px-4 rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ArrowLeftRight className="w-3.5 h-3.5 text-purple-400" />
-                <span>Sign in or Sign Up to compare products</span>
-              </div>
-              <button 
-                type="button" 
-                aria-label="Close" 
-                onClick={() => setShowAuthModal(false)}
-                className="w-6 h-6 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+        <div className="fixed inset-0 bg-black/60 z-[250] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full space-y-6 shadow-2xl relative">
+            <button
+              type="button"
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-black"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-black uppercase tracking-tight text-black">Sign in or Sign Up</h3>
+              <p className="text-xs text-black/60">Log in to search and compare products side by side</p>
             </div>
-            <div className="relative">
-              <button 
-                type="button" 
-                aria-label="Close" 
-                onClick={() => setShowAuthModal(false)}
-                className="absolute top-4 right-4 z-30 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-              <Login
-                isSignUp={isAuthModalSignUp}
-                setIsSignUp={setIsAuthModalSignUp}
-                onSuccess={() => {
-                  setShowAuthModal(false);
-                  setShowSearchModal(true);
-                  const currentIdToExclude = searchTargetSlot === 'product1' ? productId1 : productId2;
-                  loadInitialSuggestions(currentIdToExclude);
-                }}
-              />
-            </div>
+            <Login onSuccess={() => setShowAuthModal(false)} />
           </div>
         </div>
       )}
 
-      {/* Authenticated Compare Search Bar Popup (using fts_search) */}
+      {/* Search Product Catalog Modal */}
       {showSearchModal && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[250] flex items-center justify-center p-4"
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowSearchModal(false);
-          }}
-        >
-          <div 
-            className="bg-white rounded-3xl p-6 shadow-2xl max-w-lg w-full relative max-h-[85vh] flex flex-col border border-gray-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button 
-              type="button" 
-              aria-label="Close search" 
-              onClick={() => setShowSearchModal(false)}
-              className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="pr-8 mb-3">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0">
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                </div>
+        <div className="fixed inset-0 bg-black/60 z-[250] flex items-center justify-center p-4" onClick={() => setShowSearchModal(false)}>
+          <div className="bg-white rounded-3xl p-5 sm:p-6 max-w-lg w-full space-y-4 shadow-2xl relative max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-black">
-                  Compare Products
+                  {searchTargetIndex < productIds.length ? 'Change Product' : 'Add Product to Compare'}
                 </h3>
+                <p className="text-[11px] text-black/60">Search our skincare catalog</p>
               </div>
-              <p className="text-xs text-black/60">
-                Search our product catalog to compare side-by-side with{' '}
-                <span className="font-bold text-black">
-                  {searchTargetSlot === 'product1' ? (p2.product?.name || 'Product B') : (p1.product?.name || 'Product A')}
-                </span>
-              </p>
+              <button
+                type="button"
+                onClick={() => setShowSearchModal(false)}
+                className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-black"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Search Input Bar */}
-            <div className="relative mb-3">
-              <Search className="w-4 h-4 text-black/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-black/40" />
               <input
                 type="text"
-                autoFocus
+                placeholder="Search brand, product name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by brand or product name (fts_search)..."
-                className="w-full bg-black/5 border-2 border-transparent focus:border-black rounded-2xl pl-10 pr-9 py-2.5 text-xs font-semibold outline-none transition-all placeholder:text-black/40 text-black"
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-medium text-black focus:outline-none focus:border-purple-600 transition-colors"
+                autoFocus
               />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-black/40 hover:text-black p-0.5 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
 
-            {/* Live Search Results using fts_search */}
-            <div className="flex-1 overflow-y-auto space-y-1.5 min-h-[160px] max-h-[45vh] pr-1">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[50vh]">
               {isSearching ? (
-                <div className="py-12 flex flex-col items-center justify-center text-center gap-2 text-black/40">
-                  <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
-                  <span className="text-xs font-bold uppercase tracking-wider">Searching database...</span>
+                <div className="flex items-center justify-center py-10 text-gray-400 gap-2 text-xs">
+                  <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
+                  <span>Searching products...</span>
                 </div>
               ) : searchResults.length > 0 ? (
                 searchResults.map((item) => (
                   <button
-                    key={item.id}
                     type="button"
+                    key={item.id}
                     onClick={() => handleSelectProduct(item.id)}
-                    className="w-full p-2.5 bg-gray-50 hover:bg-purple-50/70 border border-gray-100 hover:border-purple-200 rounded-2xl flex items-center gap-3 transition-all text-left cursor-pointer group"
+                    className="w-full text-left p-2.5 sm:p-3 rounded-2xl hover:bg-purple-50/60 border border-gray-100 hover:border-purple-200 transition-all flex items-center gap-3 cursor-pointer group"
                   >
                     {item.photo_url ? (
-                      <img
-                        src={item.photo_url}
-                        alt={item.name}
-                        referrerPolicy="no-referrer"
-                        className="w-11 h-11 object-cover rounded-xl border border-black/5 flex-shrink-0 bg-white"
-                      />
+                      <img src={item.photo_url} alt={item.name} className="w-10 h-10 object-cover rounded-xl border border-black/5 bg-gray-50 shrink-0" referrerPolicy="no-referrer" />
                     ) : (
-                      <div className="w-11 h-11 rounded-xl bg-white border border-black/5 flex items-center justify-center flex-shrink-0 text-gray-400">
-                        <ShoppingBag className="w-4 h-4" />
+                      <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
+                        <ShoppingBag className="w-5 h-5" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block truncate">
-                        {item.brand || 'Brand'}
-                      </span>
-                      <h4 className="text-xs font-bold text-black truncate group-hover:text-purple-700 transition-colors">
-                        {item.name}
-                      </h4>
-                      {item.type && (
-                        <span className="text-[8px] font-bold text-black/60 bg-white border border-black/5 px-1.5 py-0.2 rounded-md inline-block mt-0.5">
-                          {item.type}
-                        </span>
-                      )}
+                      <span className="text-[9px] font-black uppercase tracking-widest text-black/40 block truncate">{item.brand}</span>
+                      <h4 className="text-xs font-bold text-black truncate group-hover:text-purple-900">{item.name}</h4>
                     </div>
-                    <div className="flex-shrink-0">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-100 group-hover:bg-purple-200 px-2.5 py-1 rounded-xl transition-colors">
-                        Select
-                      </span>
-                    </div>
+                    <span className="px-2.5 py-1 bg-gray-100 group-hover:bg-purple-600 group-hover:text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-colors shrink-0">
+                      Select
+                    </span>
                   </button>
                 ))
               ) : (
-                <div className="py-10 text-center text-black/40 text-xs font-medium">
-                  {searchQuery ? (
-                    <>No products found matching "{searchQuery}". Try searching for another brand or product name.</>
-                  ) : (
-                    <>Type a brand or product name to search...</>
-                  )}
-                </div>
+                <div className="text-center py-10 text-xs text-black/40">No products found.</div>
               )}
             </div>
           </div>

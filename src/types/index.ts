@@ -13,7 +13,8 @@ export enum AppState {
   PRIVACY_POLICY,
   DELETE_ACCOUNT,
   FEEDBACK,
-  BRANDS
+  BRANDS,
+  COMPARISON
 }
 
 export interface AvoidedIngredient {

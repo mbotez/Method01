@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
 import { Login } from './Login';
 import { ProductComparisonTable } from './ProductComparisonTable';
+import { CompareProductPicker } from './CompareProductPicker';
+import { CompareView } from './CompareView';
 import { getScoreColorConfig } from '../utils/scoreColors';
 
 // Concern ID mapping dictionary for displaying user-friendly text labels
@@ -513,7 +515,7 @@ export const ProductCardContent = ({
   comparedSide?: 'left' | 'right';
   onCompareWith?: (newCompareId: string) => void;
 }) => {
-  const { openComparison } = useProductCard();
+  const { openComparison, openComparisonPicker } = useProductCard();
   const [product, setProduct] = useState<any>(null);
   const [scores, setScores] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -528,25 +530,29 @@ export const ProductCardContent = ({
   const [isLoadingEnriched, setIsLoadingEnriched] = useState(false);
 
   const handleOpenIngredientCard = async (ingItem: any) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const authed = !!session?.user?.id;
+    setIsAuthenticated(authed);
+
+    const ingName = ingItem.ingredient || ingItem['Full name'] || ingItem.ingredient_name || ingItem;
+
+    if (!authed) {
+      setAuthModalTitle('Log in or Sign Up to access this feature');
+      setAuthModalIcon(<Shield className="w-3.5 h-3.5 text-purple-600" />);
+      setAuthModalSuccess(() => {
+        setShowAuthModal(false);
+        setIsAuthenticated(true);
+        handleOpenIngredientCard(ingItem);
+      });
+      setShowAuthModal(true);
+      setIsLoadingEnriched(false);
+      return;
+    }
+
     setSelectedIngredientModal(ingItem);
     setEnrichedIngrData(null);
     setIsLoadingEnriched(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const authed = !!session?.user?.id;
-      setIsAuthenticated(authed);
-
-      const ingName = ingItem.ingredient || ingItem['Full name'] || ingItem.ingredient_name || ingItem;
-
-      if (!authed) {
-        setIsLoadingEnriched(false);
-        setEnrichedIngrData({
-          needsAuth: true,
-          ingr_name: ingName
-        });
-        return;
-      }
-
       const ingId = ingItem.ingr_id ?? ingItem.ingredient_id;
 
       let queryData: any = null;
@@ -608,116 +614,36 @@ export const ProductCardContent = ({
 
   const [imageError, setImageError] = useState(false);
 
-  // Comparison popup states
+  // Comparison & Auth popup states
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isAuthModalSignUp, setIsAuthModalSignUp] = useState(false);
-  const [showSearchModal, setShowSearchModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [initialSuggestions, setInitialSuggestions] = useState<any[]>([]);
-
-  const loadInitialSuggestions = async () => {
-    try {
-      const { data } = await supabase
-        .from('products')
-        .select('id, brand, name, type, photo_url')
-        .order('id', { ascending: false })
-        .limit(10);
-      const filtered = (data || []).filter(item => String(item.id) !== String(productId));
-      setInitialSuggestions(filtered);
-      if (!searchQuery.trim()) {
-        setSearchResults(filtered);
-      }
-    } catch {
-      // silent
-    }
-  };
+  const [authModalTitle, setAuthModalTitle] = useState('Sign in or Sign Up to compare products');
+  const [authModalIcon, setAuthModalIcon] = useState<React.ReactNode>(<ArrowLeftRight className="w-3.5 h-3.5 text-purple-600" />);
+  const [authModalSuccess, setAuthModalSuccess] = useState<() => void>(() => () => {
+    setShowAuthModal(false);
+    setIsAuthenticated(true);
+    openComparisonPicker(String(productId), trackerItem);
+  });
 
   const handleCompareClick = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const authed = !!session?.user?.id;
     setIsAuthenticated(authed);
     if (!authed) {
+      setAuthModalTitle('Sign in or Sign Up to compare products');
+      setAuthModalIcon(<ArrowLeftRight className="w-3.5 h-3.5 text-purple-600" />);
+      setAuthModalSuccess(() => {
+        setShowAuthModal(false);
+        setIsAuthenticated(true);
+        openComparisonPicker(String(productId), trackerItem);
+      });
       setShowAuthModal(true);
     } else {
-      setShowSearchModal(true);
-      loadInitialSuggestions();
+      openComparisonPicker(String(productId), trackerItem);
     }
   };
 
-  const performSearch = async (queryText: string) => {
-    const q = queryText.trim();
-    if (!q) {
-      setSearchResults(initialSuggestions);
-      setIsSearching(false);
-      return;
-    }
 
-    setIsSearching(true);
-    try {
-      const words = q
-        .split(/\s+/)
-        .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
-        .filter(w => w.length > 0)
-        .map(w => `${w}:*`);
-
-      const formattedQuery = words.length > 0 ? words.join(' & ') : '';
-      let results: any[] = [];
-
-      if (formattedQuery) {
-        const { data, error } = await supabase
-          .from('products')
-          .select('id, brand, name, type, photo_url')
-          .textSearch('fts_search', formattedQuery, { config: 'english' })
-          .limit(15);
-        if (!error && data && data.length > 0) {
-          results = data;
-        }
-      }
-
-      if (results.length === 0) {
-        const { data: webData } = await supabase
-          .from('products')
-          .select('id, brand, name, type, photo_url')
-          .textSearch('fts_search', q, { config: 'english', type: 'websearch' })
-          .limit(15);
-        if (webData && webData.length > 0) {
-          results = webData;
-        } else {
-          const { data: ilikeData } = await supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url')
-            .or(`brand.ilike.%${q}%,name.ilike.%${q}%`)
-            .limit(15);
-          results = ilikeData || [];
-        }
-      }
-
-      const filtered = (results || []).filter(item => String(item.id) !== String(productId));
-      setSearchResults(filtered);
-    } catch (err) {
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!showSearchModal) return;
-    const timer = setTimeout(() => {
-      performSearch(searchQuery);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [searchQuery, showSearchModal]);
-
-  const handleSelectCompareProduct = (selectedId: string | number) => {
-    setShowSearchModal(false);
-    if (onCompareWith) {
-      onCompareWith(String(selectedId));
-    } else {
-      openComparison(String(productId), String(selectedId));
-    }
-  };
 
   useEffect(() => {
     if (trackerItem) {
@@ -993,6 +919,8 @@ export const ProductCardContent = ({
         }
 
         const tableProd = productTableResult?.data || null;
+        const descRes = targetProductId != null ? await supabase.from('product_description').select('description, ingredients_list').eq('id', targetProductId).maybeSingle() : { data: null };
+        const descData = descRes?.data || null;
         const fetchedCat2 = scoreTableResult?.data?.cat2 || tableProd?.cat2 || trackerItem?.cat2 || '';
         const fetchedCat3 = scoreTableResult?.data?.cat3 ??
           tableProd?.cat3 ??
@@ -1005,6 +933,9 @@ export const ProductCardContent = ({
         if (tableProd) {
           tableProd.cat2 = fetchedCat2;
           tableProd.cat3 = fetchedCat3;
+          if (descData?.description && !tableProd.description) {
+            tableProd.description = descData.description;
+          }
         }
 
         const rpcData = rpcResult?.data || null;
@@ -1143,11 +1074,11 @@ export const ProductCardContent = ({
               cat2: finalCat2,
               cat3: finalCat3,
               photo_url: p.photo_url || tableProd?.photo_url || trackerItem?.photo_url || null,
-              ingredients: p.ingredients || tableProd?.ingredients || [],
+              ingredients: p.ingredients || tableProd?.ingredients || descData?.ingredients_list || [],
               name: p.name || tableProd?.name || trackerItem?.product_name || 'Product Name',
               brand: p.brand || tableProd?.brand || trackerItem?.brand || 'Brand',
               type: p.type || tableProd?.type || trackerItem?.product_type || 'Skincare',
-              description: p.description || tableProd?.description || ''
+              description: p.description || tableProd?.description || descData?.description || trackerItem?.description || ''
             };
 
             setProduct(mergedProduct);
@@ -1670,7 +1601,16 @@ export const ProductCardContent = ({
 
         return (
           <div className="pt-1">
-            <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Potential Irritants</span>
+            <div className="flex items-center gap-1.5 group relative mb-1">
+              <span className="text-[9px] font-black uppercase tracking-wider text-black/40">Potential Irritants</span>
+              <div className="cursor-help text-black/40 hover:text-black/70 transition-colors">
+                <HelpCircle className="w-2.5 h-2.5" />
+              </div>
+              <div className="pointer-events-none absolute left-0 bottom-full mb-1.5 w-64 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-white text-[10px] px-2.5 py-1.5 rounded-lg shadow-xl z-30 whitespace-normal text-left font-normal leading-relaxed">
+                Flagged ingredients don't automatically cause issues. Concentration, the full formula, your routine, and your individual skin all count.
+                <div className="absolute top-full left-4 -ml-1 border-4 border-transparent border-t-slate-800"></div>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-1">
               {comp.safetyConcerns.map((concern: string, idx: number) => {
                 const matchedIngs = getIngredientsForFlag(concern);
@@ -2162,7 +2102,7 @@ export const ProductCardContent = ({
         </div>
       </div>
 
-      {/* Unauthenticated Compare Auth Popup */}
+      {/* Unauthenticated Auth Modal */}
       {showAuthModal && (
         <div 
           className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[250] flex items-center justify-center p-4 overflow-y-auto"
@@ -2175,16 +2115,16 @@ export const ProductCardContent = ({
             className="relative w-full max-w-md my-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-2 bg-black text-white py-2 px-4 rounded-2xl text-xs font-black uppercase tracking-wider shadow-lg flex items-center justify-between">
+            <div className="mb-2 bg-white text-black border border-black/10 py-2.5 px-4 rounded-2xl text-xs font-black uppercase tracking-wider shadow-sm flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ArrowLeftRight className="w-3.5 h-3.5 text-purple-400" />
-                <span>Sign in or Sign Up to compare products</span>
+                {authModalIcon}
+                <span>{authModalTitle}</span>
               </div>
               <button 
                 type="button" 
                 aria-label="Close" 
                 onClick={() => setShowAuthModal(false)}
-                className="w-6 h-6 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors cursor-pointer"
+                className="w-6 h-6 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -2201,136 +2141,13 @@ export const ProductCardContent = ({
               <Login
                 isSignUp={isAuthModalSignUp}
                 setIsSignUp={setIsAuthModalSignUp}
-                onSuccess={() => {
-                  setShowAuthModal(false);
-                  setIsAuthenticated(true);
-                  setShowSearchModal(true);
-                  loadInitialSuggestions();
-                }}
+                onSuccess={authModalSuccess}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* Authenticated Compare Search Bar Popup (using fts_search) */}
-      {showSearchModal && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[250] flex items-center justify-center p-4"
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowSearchModal(false);
-          }}
-        >
-          <div 
-            className="bg-white rounded-3xl p-6 shadow-2xl max-w-lg w-full relative max-h-[85vh] flex flex-col border border-gray-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button 
-              type="button" 
-              aria-label="Close search" 
-              onClick={() => setShowSearchModal(false)}
-              className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 flex items-center justify-center text-gray-500 hover:text-black transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="pr-8 mb-3">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0">
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                </div>
-                <h3 className="text-sm font-black uppercase tracking-wider text-black">
-                  Compare Products
-                </h3>
-              </div>
-              <p className="text-xs text-black/60">
-                Search our product catalog to compare side-by-side with <span className="font-bold text-black">{product?.name || 'this product'}</span>
-              </p>
-            </div>
-
-            {/* Search Input Bar */}
-            <div className="relative mb-3">
-              <Search className="w-4 h-4 text-black/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                autoFocus
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by brand or product name (fts_search)..."
-                className="w-full bg-black/5 border-2 border-transparent focus:border-black rounded-2xl pl-10 pr-9 py-2.5 text-xs font-semibold outline-none transition-all placeholder:text-black/40 text-black"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-black/40 hover:text-black p-0.5 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Live Search Results using fts_search */}
-            <div className="flex-1 overflow-y-auto space-y-1.5 min-h-[160px] max-h-[45vh] pr-1">
-              {isSearching ? (
-                <div className="py-12 flex flex-col items-center justify-center text-center gap-2 text-black/40">
-                  <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
-                  <span className="text-xs font-bold uppercase tracking-wider">Searching database...</span>
-                </div>
-              ) : searchResults.length > 0 ? (
-                searchResults.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleSelectCompareProduct(item.id)}
-                    className="w-full p-2.5 bg-gray-50 hover:bg-purple-50/70 border border-gray-100 hover:border-purple-200 rounded-2xl flex items-center gap-3 transition-all text-left cursor-pointer group"
-                  >
-                    {item.photo_url ? (
-                      <img
-                        src={item.photo_url}
-                        alt={item.name}
-                        referrerPolicy="no-referrer"
-                        className="w-11 h-11 object-cover rounded-xl border border-black/5 flex-shrink-0 bg-white"
-                      />
-                    ) : (
-                      <div className="w-11 h-11 rounded-xl bg-white border border-black/5 flex items-center justify-center flex-shrink-0 text-gray-400">
-                        <ShoppingBag className="w-4 h-4" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block truncate">
-                        {item.brand || 'Brand'}
-                      </span>
-                      <h4 className="text-xs font-bold text-black truncate group-hover:text-purple-700 transition-colors">
-                        {item.name}
-                      </h4>
-                      {item.type && (
-                        <span className="text-[8px] font-bold text-black/60 bg-white border border-black/5 px-1.5 py-0.2 rounded-md inline-block mt-0.5">
-                          {item.type}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-shrink-0">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-100 group-hover:bg-purple-200 px-2.5 py-1 rounded-xl transition-colors">
-                        Compare
-                      </span>
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div className="py-10 text-center text-black/40 text-xs font-medium">
-                  {searchQuery ? (
-                    <>No products found matching "{searchQuery}". Try searching for another brand or product name.</>
-                  ) : (
-                    <>Type a brand or product name to search...</>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -2340,11 +2157,13 @@ export const ProductCard = () => {
     isOpen, 
     closeProductCard, 
     productId, 
+    compareProductIds,
     compareProductId, 
     trackerItem,
-    closeComparison,
-    openProductCard,
-    openComparison
+    removeFromComparison,
+    comparisonStep,
+    setComparisonStep,
+    openComparisonView
   } = useProductCard();
 
   useEffect(() => {
@@ -2359,26 +2178,27 @@ export const ProductCard = () => {
 
   return (
     <div
-      className={`fixed inset-0 bg-black/50 backdrop-blur-xs z-[200] flex items-center justify-center ${
-        compareProductId ? 'p-1 sm:p-4' : 'p-3 sm:p-4'
-      } overflow-y-auto`}
+      className="fixed inset-0 bg-black/50 backdrop-blur-xs z-[200] flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
       onClick={closeProductCard}
     >
-      {compareProductId ? (
-        <ProductComparisonTable
-          productId1={String(productId)}
-          productId2={String(compareProductId)}
-          trackerItem1={trackerItem}
+      {comparisonStep === 'picker' ? (
+        <CompareProductPicker
+          isOpen={isOpen}
           onClose={closeProductCard}
-          onCloseProduct1={() => openProductCard(String(compareProductId))}
-          onCloseProduct2={closeComparison}
-          onSwapProduct={(targetSlot, newId) => {
-            if (targetSlot === 'product1') {
-              openComparison(newId, String(compareProductId));
-            } else {
-              openComparison(String(productId), newId);
-            }
+          initialProductId={productId}
+          trackerItems={trackerItem ? { [productId]: trackerItem } : undefined}
+          onStartCompare={(selectedIds) => {
+            openComparisonView(selectedIds);
           }}
+        />
+      ) : comparisonStep === 'view' ? (
+        <CompareView
+          productIds={[String(productId), ...compareProductIds]}
+          trackerItems={{ [String(productId)]: trackerItem }}
+          onClose={closeProductCard}
+          onRemoveProduct={removeFromComparison}
+          onAddProduct={() => setComparisonStep('picker')}
+          onBackToPicker={() => setComparisonStep('picker')}
         />
       ) : (
         <div className="w-full max-w-md flex justify-center" onClick={(e) => e.stopPropagation()}>

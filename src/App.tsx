@@ -53,6 +53,7 @@ import { ProductCard, ProductCardContent, computeProductKeyBenefits } from './co
 import { ProductLink } from './components/ProductLink';
 import { ComparisonModal } from './components/ComparisonModal';
 import { AiProductComparisonModal } from './components/AiProductComparisonModal';
+import { ProductComparisonTable } from './components/ProductComparisonTable';
 import { TrackerNewProductModal } from './components/TrackerNewProductModal';
 import { Social, SKINCARE_GUIDES } from './components/Social';
 import { ChatQuestionnaire } from './components/ChatQuestionnaire';
@@ -121,6 +122,7 @@ export default function App() {
       if (path.startsWith('/privacy')) return AppState.PRIVACY_POLICY;
       if (path.startsWith('/delete-account')) return AppState.DELETE_ACCOUNT;
       if (path.startsWith('/feedback')) return AppState.FEEDBACK;
+      if (path.startsWith('/comparison')) return AppState.COMPARISON;
       if (path.startsWith('/dashboard') || path.startsWith('/auth/callback') || hasHash) return AppState.DASHBOARD;
       if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
       if (path.startsWith('/tracker')) return AppState.TRACKER;
@@ -132,6 +134,20 @@ export default function App() {
     }
     return AppState.LANDING;
   });
+
+  const [comparisonProductIds, setComparisonProductIds] = useState<string[]>(['1', '2']);
+
+  useEffect(() => {
+    const handleNavigateComparison = (e: any) => {
+      if (e.detail?.productIds) {
+        setComparisonProductIds(e.detail.productIds);
+        setAppState(AppState.COMPARISON);
+        window.history.pushState(null, '', '/comparison');
+      }
+    };
+    window.addEventListener('navigate-to-comparison', handleNavigateComparison as EventListener);
+    return () => window.removeEventListener('navigate-to-comparison', handleNavigateComparison as EventListener);
+  }, []);
 
   const navigateTo = useCallback((newState: AppState, path?: string) => {
     setAppState(newState);
@@ -150,6 +166,7 @@ export default function App() {
         case AppState.PRIVACY_POLICY: urlPath = '/privacy'; break;
         case AppState.DELETE_ACCOUNT: urlPath = '/delete-account'; break;
         case AppState.FEEDBACK: urlPath = '/feedback'; break;
+        case AppState.COMPARISON: urlPath = '/comparison'; break;
       }
       if (path) urlPath = path;
       window.history.pushState(null, '', urlPath);
@@ -166,6 +183,8 @@ export default function App() {
           setAppState(AppState.DELETE_ACCOUNT);
         } else if (path.startsWith('/feedback')) {
           setAppState(AppState.FEEDBACK);
+        } else if (path.startsWith('/comparison')) {
+          setAppState(AppState.COMPARISON);
         } else if (path.startsWith('/dashboard') || path.startsWith('/auth/callback')) {
           setAppState(AppState.DASHBOARD);
         } else if (path.startsWith('/products') || path.startsWith('/rank')) {
@@ -907,8 +926,8 @@ export default function App() {
       });
     } else {
       setAuthPromptConfig({
-        title: "Log In or Sign Up to add this to your tracker",
-        description: "Create an account or log in to track your skincare routine, products, and skin progress.",
+        title: "Log In or Sign Up to use this feature",
+        description: "Create an account or log in to check ingredients, compare skincare products and track your routine.",
       });
     }
     setAuthPromptModalOpen(true);
@@ -1931,24 +1950,49 @@ export default function App() {
         }
 
         try {
-          let { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', currentUser.id)
-            .single();
+          let data: any = null;
+          let fetchError: any = null;
 
-          if (error || !data || !data.username) {
-            const generated = await generateUniqueUsername(supabase);
-            const { data: upsertedData, error: upsertError } = await supabase
+          // Retry reading user row from public.users up to 5 times with a 400ms delay (trigger may take a moment)
+          for (let attempt = 0; attempt < 5; attempt++) {
+            const res = await supabase
               .from('users')
-              .upsert({ id: currentUser.id, username: generated }, { onConflict: 'id' })
+              .select('*')
+              .eq('id', currentUser.id)
+              .maybeSingle();
+
+            data = res.data;
+            fetchError = res.error;
+
+            if (data && data.id) {
+              break;
+            }
+            if (attempt < 4) {
+              await new Promise(resolve => setTimeout(resolve, 400));
+            }
+          }
+
+          if (fetchError && !data) {
+            console.warn('Could not fetch user row from public.users after retries:', fetchError);
+          }
+
+          // Fallback: call generateUniqueUsername() ONLY if the row exists but username is null or empty, using UPDATE (never insert)
+          if (data && (!data.username || data.username.trim() === '')) {
+            const generated = await generateUniqueUsername(supabase);
+            const { data: updatedData, error: updateError } = await supabase
+              .from('users')
+              .update({ username: generated })
+              .eq('id', currentUser.id)
               .select()
               .single();
-            if (!upsertError && upsertedData) {
-              data = upsertedData;
-            } else if (!data) {
-              data = { id: currentUser.id, username: generated };
+
+            if (!updateError && updatedData) {
+              data = updatedData;
+            } else {
+              data.username = generated;
             }
+          } else if (!data) {
+            data = { id: currentUser.id, username: null };
           }
 
           if (data && mounted) {
@@ -2035,157 +2079,192 @@ export default function App() {
     });
   }, [userProfile?.id]);
 
-  useEffect(() => {
-    const buildProductQuery = () => {
-      if (primaryFilter === 'Pregnancy-safe') {
-        let q = supabase
-          .from('products')
-          .select('id, brand, name, type, photo_url, products_filter!inner(preg_safe), product_scores(cat2, cat3)')
-          .eq('products_filter.preg_safe', true)
-          .limit(100);
+  const [totalProductCount, setTotalProductCount] = useState<number>(0);
+  const [productOffset, setProductOffset] = useState<number>(0);
+  const productPageSize = 24;
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
 
-        if (subFilter && subFilter !== 'All' && subFilter !== 'all') {
-          q = q.ilike('type', `%${subFilter}%`);
-        }
-        return q;
-      } else if (primaryFilter === 'Trending') {
-        const sub = (subFilter || '').toLowerCase();
-        if (sub === 'k-beauty') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(k_beauty), product_scores(cat2, cat3)')
-            .eq('products_filter.k_beauty', true)
-            .limit(100);
-        } else if (sub === 'j-beauty') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(j_beauty), product_scores(cat2, cat3)')
-            .eq('products_filter.j_beauty', true)
-            .limit(100);
-        } else if (sub === 'glass skin') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(glass), product_scores(cat2, cat3)')
-            .eq('products_filter.glass', true)
-            .limit(100);
-        } else if (sub === 'pdrn') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(c_pdrn), product_scores(cat2, cat3)')
-            .eq('products_filter.c_pdrn', true)
-            .limit(100);
-        } else if (sub === 'natural') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(natural), product_scores(cat2, cat3)')
-            .eq('products_filter.natural', true)
-            .limit(100);
-        } else {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)')
-            .limit(500);
-        }
-      } else if (primaryFilter === 'By Concern') {
-        const sub = (subFilter || '').toLowerCase();
-        if (sub === 'redness') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(red), product_scores(cat2, cat3)')
-            .eq('products_filter.red', true)
-            .limit(100);
-        } else if (sub === 'dry skin') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(dry), product_scores(cat2, cat3)')
-            .eq('products_filter.dry', true)
-            .limit(100);
-        } else if (sub === 'aging skin') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(aging), product_scores(cat2, cat3)')
-            .eq('products_filter.aging', true)
-            .limit(100);
-        } else if (sub === 'blemish-prone skin') {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter!inner(blem_prone), product_scores(cat2, cat3)')
-            .eq('products_filter.blem_prone', true)
-            .limit(100);
-        } else {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)')
-            .limit(500);
-        }
-      } else if (primaryFilter === 'By Ingredient') {
-        const sub = (subFilter || '').toLowerCase();
-        const ingredientColumnMap: Record<string, string> = {
-          'retinols': 'c_retinol',
-          'retinol': 'c_retinol',
-          'hyaluronic acid': 'c_ha',
-          'ha': 'c_ha',
-          'pdrn': 'c_pdrn',
-          'collagen': 'c_collagen',
-          'niacinamide': 'c_niac',
-          'salicylic acid': 'c_salicylic',
-          'salicylic': 'c_salicylic',
-          'vitamin c': 'c_vitc',
-          'vit c': 'c_vitc',
-          'vitamin e': 'c_vite',
-          'vit e': 'c_vite',
-          'glycolic acid': 'c_glycolic',
-          'glycolic': 'c_glycolic',
-          'peptides': 'c_peptides',
-          'peptide': 'c_peptides',
-          'ceramides': 'c_ceramide',
-          'ceramide': 'c_ceramide',
-          'aha/bha': 'c_ahabha',
-        };
-        const col = ingredientColumnMap[sub];
-        if (col) {
-          return supabase
-            .from('products')
-            .select(`id, brand, name, type, photo_url, products_filter!inner(${col}), product_scores(cat2, cat3)`)
-            .eq(`products_filter.${col}`, true)
-            .limit(100);
-        } else {
-          return supabase
-            .from('products')
-            .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)')
-            .limit(500);
-        }
+  const buildProductQuery = (offsetNum: number = 0, limitNum: number = 24) => {
+    const rangeEnd = offsetNum + limitNum - 1;
+    let query;
+    if (primaryFilter === 'By Type') {
+      const sub = (subFilter || '').toLowerCase();
+      if (sub === 'retinol') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(c_retinol), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.c_retinol', true);
       } else {
-        return supabase
+        query = supabase
           .from('products')
-          .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)')
-          .limit(500);
+          .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)', { count: 'exact' });
       }
-    };
+    } else if (primaryFilter === 'Pregnancy-safe') {
+      let q = supabase
+        .from('products')
+        .select('id, brand, name, type, photo_url, products_filter!inner(preg_safe), product_scores(cat2, cat3)', { count: 'exact' })
+        .eq('products_filter.preg_safe', true);
 
+      if (subFilter && subFilter !== 'All' && subFilter !== 'all') {
+        q = q.ilike('type', `%${subFilter}%`);
+      }
+      query = q;
+    } else if (primaryFilter === 'Trending') {
+      const sub = (subFilter || '').toLowerCase();
+      if (sub === 'k-beauty') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(k_beauty), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.k_beauty', true);
+      } else if (sub === 'j-beauty') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(j_beauty), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.j_beauty', true);
+      } else if (sub === 'glass skin') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(glass), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.glass', true);
+      } else if (sub === 'pdrn') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(c_pdrn), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.c_pdrn', true);
+      } else if (sub === 'natural') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(natural), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.natural', true);
+      } else {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)', { count: 'exact' });
+      }
+    } else if (primaryFilter === 'By Concern') {
+      const sub = (subFilter || '').toLowerCase();
+      if (sub === 'redness') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(red), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.red', true);
+      } else if (sub === 'dry skin') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(dry), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.dry', true);
+      } else if (sub === 'aging skin') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(aging), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.aging', true);
+      } else if (sub === 'blemish-prone skin') {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter!inner(blem_prone), product_scores(cat2, cat3)', { count: 'exact' })
+          .eq('products_filter.blem_prone', true);
+      } else {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)', { count: 'exact' });
+      }
+    } else if (primaryFilter === 'By Ingredient') {
+      const sub = (subFilter || '').toLowerCase();
+      const ingredientColumnMap: Record<string, string> = {
+        'retinols': 'c_retinol',
+        'retinol': 'c_retinol',
+        'hyaluronic acid': 'c_ha',
+        'ha': 'c_ha',
+        'pdrn': 'c_pdrn',
+        'collagen': 'c_collagen',
+        'niacinamide': 'c_niac',
+        'salicylic acid': 'c_salicylic',
+        'salicylic': 'c_salicylic',
+        'vitamin c': 'c_vitc',
+        'vit c': 'c_vitc',
+        'vitamin e': 'c_vite',
+        'vit e': 'c_vite',
+        'glycolic acid': 'c_glycolic',
+        'glycolic': 'c_glycolic',
+        'peptides': 'c_peptides',
+        'peptide': 'c_peptides',
+        'ceramides': 'c_ceramide',
+        'ceramide': 'c_ceramide',
+        'aha/bha': 'c_ahabha',
+      };
+      const col = ingredientColumnMap[sub];
+      if (col) {
+        query = supabase
+          .from('products')
+          .select(`id, brand, name, type, photo_url, products_filter!inner(${col}), product_scores(cat2, cat3)`, { count: 'exact' })
+          .eq(`products_filter.${col}`, true);
+      } else {
+        query = supabase
+          .from('products')
+          .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)', { count: 'exact' });
+      }
+    } else {
+      query = supabase
+        .from('products')
+        .select('id, brand, name, type, photo_url, products_filter(preg_safe, k_beauty, j_beauty, glass, c_pdrn, pdrn, natural, red, dry, aging, blem_prone, men, winter, c_retinol, c_ha, c_collagen, c_vitc, c_vite, c_salicylic, c_niac, c_glycolic, c_ceramide, c_peptides, c_ahabha), product_scores(cat2, cat3)', { count: 'exact' });
+    }
+
+    return query.order('id', { ascending: true }).range(offsetNum, rangeEnd);
+  };
+
+  const handleLoadMoreProducts = async () => {
+    if (isLoadingMore) return;
+    const nextOffset = productOffset + productPageSize;
+    if (nextOffset >= totalProductCount) return;
+
+    setIsLoadingMore(true);
+    try {
+      const query = buildProductQuery(nextOffset, productPageSize);
+      const { data, error } = await query;
+      if (error) {}
+      if (data && data.length > 0) {
+        setProducts(prev => [...prev, ...data]);
+        setProductOffset(nextOffset);
+      }
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  useEffect(() => {
     let isMounted = true;
     const abortController = new AbortController();
 
-    const fetchFilteredProducts = async () => {
+    const fetchInitialProducts = async () => {
+      setProductOffset(0);
       try {
-        const query = buildProductQuery();
-        const { data, error } = await query.abortSignal(abortController.signal);
+        const query = buildProductQuery(0, productPageSize);
+        const { data, count, error } = await query.abortSignal(abortController.signal);
         if (error) { }
-        if (data && isMounted && !abortController.signal.aborted) setProducts(data);
+        if (data && isMounted && !abortController.signal.aborted) {
+          setProducts(data);
+          setTotalProductCount(count ?? data.length);
+        }
       } catch (err: any) {
         if (err?.name === 'AbortError' || abortController.signal.aborted) return;
       }
     };
 
-    fetchFilteredProducts();
+    fetchInitialProducts();
 
     const channelId = `products-sync-${Date.now()}`;
     const productsChannel = supabase.channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async () => {
         try {
-          const query = buildProductQuery();
-          const { data } = await query;
-          if (data && isMounted) setProducts(data);
+          const query = buildProductQuery(0, productPageSize);
+          const { data, count } = await query;
+          if (data && isMounted) {
+            setProducts(data);
+            setTotalProductCount(count ?? data.length);
+            setProductOffset(0);
+          }
         } catch {}
       })
       .subscribe();
@@ -3174,55 +3253,6 @@ export default function App() {
 
                     {check && (
                       <div className="p-3.5 rounded-xl bg-[#FAFAFA] border border-[#EAE9E5] space-y-3 text-left">
-                        <div className="flex items-center justify-between border-b border-[#EAE9E5] pb-2">
-                          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#171717]">Routine Analysis</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              refreshRoutines();
-                            }}
-                            disabled={isRefreshingRoutines}
-                            className="inline-flex items-center gap-1 text-[10px] font-medium text-[#73716C] hover:text-[#171717] transition-colors cursor-pointer"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${isRefreshingRoutines ? 'animate-spin text-[#7A6332]' : ''}`} />
-                            <span>{isRefreshingRoutines ? 'Syncing...' : 'Re-evaluate'}</span>
-                          </button>
-                        </div>
-
-                        {/* Routine Score Card with 5-tier color scale (0-20, 20-40, 40-60, 60-80, 80-100) */}
-                        <div className={`p-3 rounded-xl border ${scoreConfig.cardBorder} ${scoreConfig.cardBg} transition-all`}>
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center text-white ${scoreConfig.barBg} shadow-xs shrink-0`}>
-                                <span className="text-base font-black leading-none">{score !== undefined ? score : '—'}</span>
-                                <span className="text-[8px] font-medium opacity-80 leading-none mt-0.5">/ 100</span>
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-bold uppercase tracking-wider text-[#171717]">Score Card</span>
-                                  <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${scoreConfig.badgeBg}`}>
-                                    {scoreConfig.statusLabel} ({scoreConfig.rangeLabel})
-                                  </span>
-                                </div>
-                                <span className="text-[10px] text-[#73716C] block mt-0.5">
-                                  Color-coded rating based on compatibility, barrier tolerance & ingredient synergy.
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 self-stretch sm:self-center shrink-0 bg-white/80 px-3 py-1.5 rounded-lg border border-black/5">
-                              <div className="w-24 sm:w-28 h-2 bg-black/10 rounded-full overflow-hidden">
-                                <div 
-                                  className={`h-full ${scoreConfig.barBg} rounded-full transition-all duration-300`}
-                                  style={{ width: `${score !== undefined ? Math.min(Math.max(score, 5), 100) : 0}%` }}
-                                />
-                              </div>
-                              <span className="text-[11px] font-black text-[#171717]">
-                                {score !== undefined ? `${score}%` : '...'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
 
                         {check.debug && (
                           <div className="grid grid-cols-2 gap-3 bg-white border border-[#EAE9E5] p-2.5 rounded-lg">
@@ -3747,6 +3777,55 @@ export default function App() {
               setAppState={setAppState}
               navigateTo={navigateTo}
             />
+          )}
+
+          {appState === AppState.COMPARISON && (
+            <motion.div
+              key="comparison"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="w-full max-w-7xl mx-auto py-4 px-2 sm:px-4"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-black">Product Comparison</h1>
+                  <p className="text-xs text-black/60">Compare ingredients, skin fit, and community ratings side-by-side</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAppState(AppState.RANK);
+                    window.history.pushState(null, '', '/products');
+                  }}
+                  className="px-4 py-2 bg-black text-white rounded-2xl text-xs font-black uppercase tracking-wider hover:bg-black/80 transition-colors cursor-pointer"
+                >
+                  Back to Products
+                </button>
+              </div>
+              <ProductComparisonTable
+                productIds={comparisonProductIds.length > 0 ? comparisonProductIds : ['1', '2']}
+                onClose={() => {
+                  setAppState(AppState.RANK);
+                  window.history.pushState(null, '', '/products');
+                }}
+                onRemoveProduct={(idToRemove) => {
+                  setComparisonProductIds(prev => prev.filter(id => String(id) !== String(idToRemove)));
+                }}
+                onUpdateProduct={(index, newId) => {
+                  setComparisonProductIds(prev => {
+                    const next = [...prev];
+                    next[index] = newId;
+                    return next;
+                  });
+                }}
+                onAddProduct={(newId) => {
+                  if (comparisonProductIds.length < 5 && !comparisonProductIds.includes(String(newId))) {
+                    setComparisonProductIds(prev => [...prev, String(newId)]);
+                  }
+                }}
+              />
+            </motion.div>
           )}
 
           {appState === AppState.FEEDBACK && (
@@ -4607,7 +4686,15 @@ export default function App() {
 
                         if (primaryFilter === 'By Type') {
                           if (subFilter === 'All' || subFilter === 'all') return true;
-                          return cat2 === subFilter.toLowerCase() || pType.includes(subFilter.toLowerCase()) || pName.includes(subFilter.toLowerCase());
+                          const sub = subFilter.toLowerCase();
+                          if (sub === 'cleanser') return pType.includes('clean') || cat2.includes('clean');
+                          if (sub === 'spf') return pType.includes('spf') || pType.includes('sun') || cat2.includes('spf');
+                          if (sub === 'cream') return pType.includes('cream') || cat2.includes('cream');
+                          if (sub === 'serum') return pType.includes('serum') || cat2.includes('serum');
+                          if (sub === 'toner') return pType.includes('toner') || cat2.includes('toner');
+                          if (sub === 'retinol') return pf.c_retinol === true || pType.includes('retinol') || pName.includes('retinol') || pIngs.some(i => i.includes('retinol'));
+                          if (sub === 'moisturizer') return pType.includes('moist') || cat2.includes('moist');
+                          return pType.includes(sub) || cat2.includes(sub);
                         }
                         
                         if (primaryFilter === 'Pregnancy-safe') {
@@ -4692,6 +4779,8 @@ export default function App() {
                                 src={p.photo_url} 
                                 alt={p.name || p.Name || p.ProductName || p['Product Name'] || 'Product'} 
                                 referrerPolicy="no-referrer"
+                                loading="lazy"
+                                decoding="async"
                                 className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-black/10 flex-shrink-0 group-hover:scale-105 transition-transform mx-auto" 
                               />
                             ) : (
@@ -4729,6 +4818,31 @@ export default function App() {
                         );
                       });
                     })()}
+                  </div>
+                )}
+
+                {/* Server-Side Pagination Load More & Progress */}
+                {products.length > 0 && (
+                  <div className="mt-8 flex flex-col items-center justify-center gap-3 w-full pb-8">
+                    <p className="text-[10px] md:text-xs font-black uppercase tracking-wider text-black/60">
+                      Showing {products.length} of {totalProductCount} products
+                    </p>
+                    {products.length < totalProductCount && (
+                      <button
+                        onClick={handleLoadMoreProducts}
+                        disabled={isLoadingMore}
+                        className="px-6 py-3 bg-black text-white hover:bg-venus-accent transition-all rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer disabled:opacity-50 inline-flex items-center gap-2"
+                      >
+                        {isLoadingMore ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Loading...</span>
+                          </>
+                        ) : (
+                          <span>LOAD MORE</span>
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

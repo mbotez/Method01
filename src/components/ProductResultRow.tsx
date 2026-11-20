@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { MatchedProduct } from './photo_search';
-import { ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Shield, ShoppingBag } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Shield, ShoppingBag, HelpCircle } from 'lucide-react';
 import { computeProductKeyBenefits, computeProductPotentialIrritants, getMetricNamesForFlag } from './ProductCard';
 import { getScoreColorConfig } from '../utils/scoreColors';
 
@@ -262,7 +262,16 @@ export const ProductResultRow: React.FC<ProductResultRowProps> = ({ product, use
 
         return (
           <div className="pt-1">
-            <span className="text-[9px] font-black uppercase tracking-wider text-black/40 block mb-1">Potential Irritants</span>
+            <div className="flex items-center gap-1.5 group relative mb-1">
+              <span className="text-[9px] font-black uppercase tracking-wider text-black/40">Potential Irritants</span>
+              <div className="cursor-help text-black/40 hover:text-black/70 transition-colors">
+                <HelpCircle className="w-2.5 h-2.5" />
+              </div>
+              <div className="pointer-events-none absolute left-0 bottom-full mb-1.5 w-64 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-white text-[10px] px-2.5 py-1.5 rounded-lg shadow-xl z-30 whitespace-normal text-left font-normal leading-relaxed">
+                Flagged ingredients don't automatically cause issues. Concentration, the full formula, your routine, and your individual skin all count.
+                <div className="absolute top-full left-4 -ml-1 border-4 border-transparent border-t-slate-800"></div>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-1">
               {compatibility.safetyConcerns.map((concern: string, idx: number) => {
                 const matchedIngs = getIngredientsForFlag(concern);

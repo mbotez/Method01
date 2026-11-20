@@ -28,8 +28,8 @@ export async function generateUniqueUsername(supabaseClient: any): Promise<strin
     finalUsername = `${adj}_${animal}${suffix}`;
 
     // Check if username already exists in database
-    const { data, error } = await supabaseClient
-      .from('users') // change to 'profiles' if your table name is profiles
+    const { data } = await supabaseClient
+      .from('users')
       .select('username')
       .eq('username', finalUsername)
       .maybeSingle();

@@ -251,7 +251,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     try {
       const { data, error } = await supabase
         .from('users')
-        .upsert({ id: user.id, username }, { onConflict: 'id' })
+        .update({ username })
+        .eq('id', user.id)
         .select();
       if (error) throw error;
       setProfile((prev: any) => prev ? { ...prev, username } : { username });

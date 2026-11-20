@@ -40,7 +40,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
         }
 
         // Check if username already exists in database
-        const { data: existingUser, error: checkError } = await supabase
+        const { data: existingUser } = await supabase
           .from('users')
           .select('id')
           .eq('username', trimmedUsername)
@@ -50,6 +50,7 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
           throw new Error('Username is already taken');
         }
 
+        // Pass chosen username in options.data.username so the database trigger handles creation and username assignment
         const { error } = await supabase.auth.signUp({ 
           email, 
           password,
@@ -60,11 +61,6 @@ export const Login: React.FC<LoginProps> = ({ onSuccess, onError, isSignUp, setI
           }
         });
         if (error) throw error;
-        
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await supabase.from('users').upsert({ id: session.user.id, username: trimmedUsername }, { onConflict: 'id' });
-        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;

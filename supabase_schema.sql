@@ -131,7 +131,7 @@ CREATE TABLE public.user_profile (
   makeup text,
   makeup_remove text,
   current_products jsonb DEFAULT '[]'::jsonb,
-  past_problems text,
+  past_problems jsonb,
   redness smallint,
   redness_score integer,
   wrinkles_score integer,
@@ -211,6 +211,7 @@ CREATE TABLE public.products (
   user_id uuid,
   fts_search tsvector DEFAULT to_tsvector('english'::regconfig, ((COALESCE(brand, ''::text) || ' '::text) || COALESCE(name, ''::text))),
   trending boolean DEFAULT false,
+  brand_id smallint,
   CONSTRAINT products_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.product_description (
@@ -320,6 +321,8 @@ CREATE TABLE public.brands (
   selfridges boolean DEFAULT false,
   liberty boolean DEFAULT false,
   harvey boolean DEFAULT false,
+  letter character,
+  score smallint,
   CONSTRAINT brands_pkey PRIMARY KEY (brand_id)
 );
 CREATE TABLE public.products_filter (
@@ -349,6 +352,7 @@ CREATE TABLE public.products_filter (
   c_ceramide boolean DEFAULT false,
   c_peptides boolean DEFAULT false,
   c_ahabha boolean DEFAULT false,
+  popular boolean,
   CONSTRAINT products_filter_pkey PRIMARY KEY (product_id),
   CONSTRAINT products_filter_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
 );
@@ -394,6 +398,10 @@ CREATE TABLE public.articles (
   published_at timestamp with time zone,
   created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  category_label text DEFAULT 'EDITORIAL'::text,
+  trend_tag text,
+  collage_cards jsonb DEFAULT '[]'::jsonb,
+  highlights jsonb DEFAULT '[]'::jsonb,
   CONSTRAINT articles_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.product_comments (
