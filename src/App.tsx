@@ -81,6 +81,7 @@ import { BrandsView } from './views/BrandsView';
 import { FeedbackView } from './views/FeedbackView';
 import { DeleteAccountView } from './views/DeleteAccountView';
 import { ProfileView } from './views/ProfileView';
+import { trackPageView } from './utils/analytics';
 
 // --- Components ---
 
@@ -134,6 +135,27 @@ export default function App() {
     }
     return AppState.LANDING;
   });
+
+  useEffect(() => {
+    let screenName = 'Landing';
+    switch (appState) {
+      case AppState.LANDING: screenName = 'Landing'; break;
+      case AppState.AUTH: screenName = 'Auth'; break;
+      case AppState.ONBOARDING_DETAILS: screenName = 'Onboarding'; break;
+      case AppState.DASHBOARD: screenName = 'Dashboard'; break;
+      case AppState.RANK: screenName = 'Products'; break;
+      case AppState.TRACKER: screenName = 'Tracker'; break;
+      case AppState.SOCIAL: screenName = 'Social'; break;
+      case AppState.PROFILE: screenName = 'Profile'; break;
+      case AppState.ROUTINES: screenName = 'Routines'; break;
+      case AppState.PRIVACY_POLICY: screenName = 'Privacy Policy'; break;
+      case AppState.DELETE_ACCOUNT: screenName = 'Delete Account'; break;
+      case AppState.FEEDBACK: screenName = 'Feedback'; break;
+      case AppState.COMPARISON: screenName = 'Comparison'; break;
+      default: screenName = 'Landing'; break;
+    }
+    trackPageView(screenName);
+  }, [appState]);
 
   const [comparisonProductIds, setComparisonProductIds] = useState<string[]>(['1', '2']);
 

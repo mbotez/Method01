@@ -16,6 +16,7 @@ interface Message {
   timestamp: number;
   showBack?: boolean;
   tooltip?: string;
+  stepIndex?: number;
 }
 
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -222,11 +223,26 @@ export const ChatQuestionnaire = ({
     }
   };
 
+  const handleBackToStep = (targetStepIndex: number, messageIndex: number) => {
+    if (targetStepIndex < 0) return;
+    userHasScrolledUpRef.current = false;
+    setStepIndex(targetStepIndex);
+    setMessages((prev) => prev.slice(0, messageIndex + 1));
+    lastStepIdRef.current = activeSteps[targetStepIndex]?.id || null;
+    setTimeout(() => scrollToBottom(true), 50);
+  };
+
   const handleBack = () => {
     if (stepIndex > 0) {
-      userHasScrolledUpRef.current = false;
-      setStepIndex(stepIndex - 1);
-      setTimeout(() => scrollToBottom(true), 50);
+      const targetStepIdx = stepIndex - 1;
+      const targetMsgIndex = messages.findIndex(m => m.stepIndex === targetStepIdx);
+      if (targetMsgIndex !== -1) {
+        handleBackToStep(targetStepIdx, targetMsgIndex);
+      } else {
+        userHasScrolledUpRef.current = false;
+        setStepIndex(targetStepIdx);
+        setTimeout(() => scrollToBottom(true), 50);
+      }
     }
   };
 
@@ -639,19 +655,21 @@ export const ChatQuestionnaire = ({
         sender: 'bot',
         text: "Hi there, I'm going to ask you a few questions about your skin and lifestyle to get your product compatibility.",
         timestamp: Date.now(),
-        showBack: false
+        showBack: false,
+        stepIndex: -1
       }]);
       // Only add the first step's message if it hasn't been added yet
       lastStepIdRef.current = currentStep.id;
       setTimeout(() => {
-        addBotMessage(currentStep);
+        addBotMessage(currentStep, undefined, stepIndex);
       }, 500);
     } else if (lastStepIdRef.current !== currentStep.id) {
-      addBotMessage(currentStep);
+      addBotMessage(currentStep, undefined, stepIndex);
     }
   }, [currentStep]);
 
-  const addBotMessage = (step: any, scanResults?: any) => {
+  const addBotMessage = (step: any, scanResults?: any, customStepIndex?: number) => {
+    const sIdx = customStepIndex !== undefined ? customStepIndex : stepIndex;
     lastStepIdRef.current = step.id;
     const botMsg: Message = {
       id: generateId(),
@@ -661,8 +679,9 @@ export const ChatQuestionnaire = ({
       options: step.options,
       scanResults: scanResults,
       timestamp: Date.now(),
-      showBack: step.id !== 'feel',
-      tooltip: step.tooltip
+      showBack: sIdx > 0,
+      tooltip: step.tooltip,
+      stepIndex: sIdx
     };
     setMessages((prev) => {
         if (step.id === 'feel' && prev.some(m => m.text.includes("Hi there"))) {
@@ -1337,8 +1356,12 @@ export const ChatQuestionnaire = ({
                       ))}
                     </div>
                   )}
-                  {msg.sender === 'bot' && msg.showBack && (
-                    <button onClick={handleBack} className="block mt-2 text-neutral-400 hover:text-neutral-700 cursor-pointer">
+                  {msg.sender === 'bot' && msg.showBack && msg.stepIndex !== undefined && msg.stepIndex >= 0 && (
+                    <button 
+                      onClick={() => handleBackToStep(msg.stepIndex!, index)} 
+                      className="block mt-2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                      title="Go back and edit this question"
+                    >
                       <ArrowLeft className="w-3.5 h-3.5" />
                     </button>
                   )}
