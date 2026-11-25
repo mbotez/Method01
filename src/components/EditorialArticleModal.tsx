@@ -383,7 +383,7 @@ export const EditorialArticleModal: React.FC<EditorialArticleModalProps> = ({ ar
                                 }}
                                 className="text-[10px] font-black uppercase tracking-wider text-[#B08000] hover:underline w-full text-left"
                               >
-                                {isSelectedWhy ? 'Hide Fit Notes' : 'Why it fits →'}
+                                {isSelectedWhy ? 'Hide' : 'Why it fits →'}
                               </button>
                             </div>
                           )}
@@ -406,9 +406,6 @@ export const EditorialArticleModal: React.FC<EditorialArticleModalProps> = ({ ar
                     >
                       <div className="flex items-center justify-between border-b border-[#E6E0D6]/60 pb-3">
                         <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-[#F3E59A] text-[#141413] font-['JetBrains_Mono',monospace] text-[10px] font-bold uppercase tracking-wider">
-                            Fit Analysis
-                          </span>
                           <h4 className="font-['Plus_Jakarta_Sans',sans-serif] text-sm font-bold text-[#141413]">
                             {selectedBlock.name}
                           </h4>

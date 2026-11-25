@@ -14,7 +14,8 @@ export enum AppState {
   DELETE_ACCOUNT,
   FEEDBACK,
   BRANDS,
-  COMPARISON
+  COMPARISON,
+  COMMUNITY
 }
 
 export interface AvoidedIngredient {

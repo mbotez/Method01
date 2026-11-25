@@ -385,6 +385,7 @@ CREATE TABLE public.guides (
   dos jsonb DEFAULT '[]'::jsonb,
   donts jsonb DEFAULT '[]'::jsonb,
   recommended_formulations jsonb DEFAULT '[]'::jsonb,
+  guide_url text,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT guides_pkey PRIMARY KEY (id)
 );

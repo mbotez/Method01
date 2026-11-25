@@ -528,8 +528,11 @@ async function getRecommendedAddition(concernNum: number, userProfile: UserProfi
 export async function checkRoutine(
   userProfile: UserProfile,
   routineProductIds: string[],
-  routineTiming?: Record<string, 'AM' | 'PM' | 'both'>
+  routineTiming?: Record<string, 'AM' | 'PM' | 'both'>,
+  routineTime?: string
 ): Promise<RoutineCheckResult> {
+
+  const isPmRoutine = routineTime && (routineTime.toUpperCase() === 'PM' || routineTime.toLowerCase().includes('evening') || routineTime.toLowerCase().includes('night'));
 
   const warnings: string[] = [];
   const missing: { type: string; severity: 'high' | 'medium' | 'low'; message: string }[] = [];
@@ -793,7 +796,7 @@ export async function checkRoutine(
     });
   }
 
-  if (!hasSPF) {
+  if (!hasSPF && !isPmRoutine) {
 
     missing.push({
       type: 'missing_spf',
@@ -898,8 +901,12 @@ export async function checkRoutine(
   scoredActives.sort((a, b) => a.irritationScore - b.irritationScore);
 
   if (activeRecords.length > activeBudget) {
+    const activeProdsList = activeRecords.map(r => {
+      const p = routineProducts.find(prod => String(prod.product_id) === r.product_id);
+      return p ? `    • ${getDisplayName(p)}` : null;
+    }).filter(Boolean);
     shortfallNotes.push(
-      `You're using ${activeRecords.length} products containing actives, which is too many and may irritate your skin. Ideally don't include more than ${activeBudget} and reduce if you notice any discomfort.`
+      `You're using ${activeRecords.length} products containing actives, which is too many and may irritate your skin. Ideally don't include more than ${activeBudget} and reduce if you notice any discomfort.\n${activeProdsList.join('\n')}`
     );
   }
 
@@ -907,9 +914,10 @@ export async function checkRoutine(
   for (let idx = 0; idx < scoredActives.length; idx++) {
     const { record, prod } = scoredActives[idx];
     if (idx >= activeBudget) {
+      const pName = prod ? getDisplayName(prod) : `Product #${record.product_id}`;
       detrimental.push({
         product_id: record.product_id,
-        reason: `Pushes you over your active-ingredient limit for your barrier sensitivity.`,
+        reason: `Pushes you over your active-ingredient limit for your barrier sensitivity.\n    • ${pName}`,
         severity: 'medium'
       });
     }
@@ -1075,9 +1083,10 @@ export async function checkRoutine(
         return scores && isTrueVal(scores.Yeast_Trigger);
       });
       if (isProdYeastTrigger || hasYeastTriggerIng) {
+        const pName = getDisplayName(product);
         detrimental.push({
           product_id: prodIdStr,
-          reason: `Contains ingredients that can feed malassezia/ yeast.`,
+          reason: `Contains ingredients that can feed malassezia/ yeast.\n    • ${pName}`,
           severity: 'high'
         });
         addNote(prodIdStr, `Can feed malassezia/ yeast — worth swapping out given your concern.`);
@@ -1087,9 +1096,10 @@ export async function checkRoutine(
     // Fatty Acid Mismatch Check
     if (['oily', 'combination'].includes(userProfile.skin_type)) {
       if (isTrueVal(product.fatty_acid_mismatch)) {
+        const pName = getDisplayName(product);
         detrimental.push({
           product_id: prodIdStr,
-          reason: `Rich in fatty acids that tend to clog oily or combination skin.`,
+          reason: `Rich in fatty acids that tend to clog oily or combination skin.\n    • ${pName}`,
           severity: 'high'
         });
         addNote(prodIdStr, `Its fatty acid profile tends to clog oilier skin.`);
@@ -1135,16 +1145,17 @@ export async function checkRoutine(
   if (skinTypeMaxScore < 2 || individualProductFailed) {
     let message = `Overall, these formulas aren't doing much for your ${st} skin (best score: ${skinTypeMaxScore}).`;
     if (individualProductFailed) {
-      message = `Your routine contains products (like ${joinNaturally(failingProductNames, 'some items')}) that are highly unsuitable or stripping for your ${st} skin.`;
+      const failingBullets = failingProductNames.map(name => `    • ${name}`).join('\n');
+      message = `Your routine contains products that are highly unsuitable or stripping for your ${st} skin.\n${failingBullets}`;
+      shortfallNotes.push(`Your routine contains products that could be particularly harsh on your ${st} skin. Use with care.\n${failingBullets}`);
+    } else {
+      shortfallNotes.push(`Overall, these formulas aren't really working with your ${st} skin.`);
     }
     missing.push({
       type: 'poorly_optimized_for_skin_type',
       severity: 'medium',
       message
     });
-    shortfallNotes.push(individualProductFailed
-      ? `Your routine contains products that actively work against your ${st} skin.`
-      : `Overall, these formulas aren't really working with your ${st} skin.`);
   }
 
   // ------------------------------------------
@@ -1186,7 +1197,7 @@ export async function checkRoutine(
     const hasYeastTriggers = detrimental.some(d => d.reason.toLowerCase().includes('yeast-related breakouts'));
     mainScore = hasYeastTriggers ? 0 : 5;
   } else if (isNotSureConcern(userProfile.main_concern)) {
-    const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || m.type === 'missing_spf');
+    const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || (!isPmRoutine && m.type === 'missing_spf'));
     mainScore = corePillarsPass ? 5 : 0;
   }
 
@@ -1195,7 +1206,7 @@ export async function checkRoutine(
     const hasYeastTriggers = detrimental.some(d => d.reason.toLowerCase().includes('yeast-related breakouts'));
     scndScore = hasYeastTriggers ? 0 : 5;
   } else if (isNotSureConcern(userProfile.scnd_concern)) {
-    const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || m.type === 'missing_spf');
+    const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || (!isPmRoutine && m.type === 'missing_spf'));
     scndScore = corePillarsPass ? 5 : 0;
   }
 

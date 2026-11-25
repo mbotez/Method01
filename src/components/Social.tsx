@@ -22,6 +22,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { useProductCard } from '../context/ProductCardContext';
 import { EditorialArticleModal } from './EditorialArticleModal';
+import { TikTokPlayer } from './TikTokPlayer';
 
 interface Product {
   id: string;
@@ -48,17 +49,40 @@ interface VideoItem {
 
 export interface SkincareGuide {
   id: string;
-  category: 'Layering' | 'Actives' | 'Barrier' | 'Acne' | 'Sun Care' | 'Sensitive';
+  category: 'Layering' | 'Actives' | 'Barrier' | 'Acne' | 'Sun Care' | 'Sensitive' | string;
   title: string;
   readTime: string;
   subtitle: string;
   summary: string;
-  keyRule: string;
+  keyRule?: string;
   steps: { title: string; desc: string }[];
-  dos: string[];
-  donts: string[];
-  recommendedActives: string[];
+  dos?: string[];
+  donts?: string[];
+  recommendedActives?: string[];
   imageUrl: string;
+  type?: 'A' | 'B' | string;
+  created_at?: string;
+  typeBContent?: {
+    introduction?: string;
+    overview_section?: {
+      heading: string;
+      summary: string;
+      key_points?: string[];
+    };
+    process_section?: {
+      heading: string;
+      steps: string[];
+      outcomes?: { label: string; description: string }[];
+    };
+    profiles?: {
+      name: string;
+      summary: string;
+      recommended?: string[] | Record<string, string[]>;
+      caution?: string[];
+      tips?: string[];
+    }[];
+    conclusion?: string;
+  };
 }
 
 export const SKINCARE_GUIDES: SkincareGuide[] = [
@@ -89,7 +113,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Do not apply pure essential oils onto dry or compromised barriers'
     ],
     recommendedActives: ['Hyaluronic Acid', 'Ceramides NP/AP', 'Niacinamide', 'Squalane'],
-    imageUrl: '/assets/g1.jpg'
+    imageUrl: '/assets/g1.jpg',
+    created_at: new Date(Date.now() - 86400000 * 1).toISOString()
   },
   {
     id: 'actives-compatibility',
@@ -117,7 +142,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Avoid applying direct Vitamin C onto already irritated or peeling patches'
     ],
     recommendedActives: ['Niacinamide', 'Azelaic Acid', 'Tetrahexyldecyl Ascorbate', 'Retinal'],
-    imageUrl: '/assets/g2.jpg'
+    imageUrl: '/assets/g2.jpg',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString()
   },
   {
     id: 'barrier-repair-protocol',
@@ -144,7 +170,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Avoid fragrance, denatured alcohol, and botanical essential oils'
     ],
     recommendedActives: ['Ceramides 1, 3, 6-II', 'Panthenol (B5)', 'Centella Asiatica', 'Colloidal Oat'],
-    imageUrl: '/assets/g3.jpg'
+    imageUrl: '/assets/g3.jpg',
+    created_at: new Date(Date.now() - 86400000 * 3).toISOString()
   },
   {
     id: 'purging-vs-breakouts',
@@ -171,7 +198,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Do not conclude a product has failed before week 6 if symptoms fit a true purge'
     ],
     recommendedActives: ['Salicylic Acid (BHA)', 'Adapalene', 'Zinc PCA', 'Madecassoside'],
-    imageUrl: '/assets/g4.jpg'
+    imageUrl: '/assets/g4.jpg',
+    created_at: new Date(Date.now() - 86400000 * 4).toISOString()
   },
   {
     id: 'sun-protection-mastery',
@@ -198,7 +226,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Do not skip sunscreen on overcast or rainy days—UVA penetrates clouds'
     ],
     recommendedActives: ['Zinc Oxide', 'Tinosorb S/M', 'Ectoin', 'Tocopherol (Vitamin E)'],
-    imageUrl: '/assets/g5.jpg'
+    imageUrl: '/assets/g5.jpg',
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString()
   },
   {
     id: 'sensitive-skin-rosacea',
@@ -225,7 +254,8 @@ export const SKINCARE_GUIDES: SkincareGuide[] = [
       'Avoid high-heat saunas, extreme spice, and sudden hot-cold transitions'
     ],
     recommendedActives: ['Azelaic Acid', 'Centella Asiatica', 'Allantoin', 'Ectoin'],
-    imageUrl: '/assets/g6.jpg'
+    imageUrl: '/assets/g6.jpg',
+    created_at: new Date(Date.now() - 86400000 * 6).toISOString()
   }
 ];
 
@@ -313,6 +343,7 @@ export const Social = ({
   const [expandedVideoProducts, setExpandedVideoProducts] = useState<Record<string, boolean>>({});
   const [likedVideos, setLikedVideos] = useState<Record<string, boolean>>({});
   const [savedVideos, setSavedVideos] = useState<Record<string, boolean>>({});
+  const [activeTikTokId, setActiveTikTokId] = useState<string | null>(null);
   const [videoLikesCount, setVideoLikesCount] = useState<Record<string, number>>({
     "nabwuTwtlnM": 1420,
     "C6xZDLw6vwM": 852,
@@ -326,6 +357,12 @@ export const Social = ({
   const [guideCategoryFilter, setGuideCategoryFilter] = useState<string>('All');
   const [isGuideCategoryDropdownOpen, setIsGuideCategoryDropdownOpen] = useState(false);
   const [selectedGuide, setSelectedGuide] = useState<SkincareGuide | null>(null);
+  const [activeProfileIdx, setActiveProfileIdx] = useState(0);
+
+  useEffect(() => {
+    setActiveProfileIdx(0);
+  }, [selectedGuide]);
+
   const [selectedArticle, setSelectedArticle] = useState<any | null>(initialSelectedArticle || null);
 
   useEffect(() => {
@@ -335,7 +372,9 @@ export const Social = ({
   }, [initialSelectedArticle]);
   const [articleProductPhotos, setArticleProductPhotos] = useState<Record<string, string>>({});
   const [savedGuideIds, setSavedGuideIds] = useState<string[]>([]);
-  const [guides, setGuides] = useState<SkincareGuide[]>(SKINCARE_GUIDES);
+  const [guides, setGuides] = useState<SkincareGuide[]>(
+    [...SKINCARE_GUIDES].sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+  );
 
   useEffect(() => {
     if (!selectedArticle || !selectedArticle.content || !Array.isArray(selectedArticle.content)) {
@@ -468,7 +507,8 @@ export const Social = ({
 
       let guidesQuery = supabase
         .from('guides')
-        .select('*');
+        .select('*')
+        .order('created_at', { ascending: false });
       if (signal) guidesQuery = guidesQuery.abortSignal(signal);
       const { data: guideData } = await guidesQuery;
 
@@ -481,13 +521,16 @@ export const Social = ({
           readTime: g.read_time || '4 min read',
           subtitle: g.subtitle,
           summary: g.description,
+          type: g.type || 'A',
+          typeBContent: g.type === 'B' ? (g.roadmap || {}) : undefined,
           keyRule: g.rule,
-          steps: g.roadmap || [],
+          steps: g.type === 'B' ? [] : (g.roadmap || []),
           dos: g.dos || [],
           donts: g.donts || [],
           recommendedActives: g.recommended_formulations || [],
-          imageUrl: g.image_url || `/assets/g${(idx % 6) + 1}.jpg`
-        }));
+          imageUrl: g.guide_url || g.image_url || `/assets/g${(idx % 6) + 1}.jpg`,
+          created_at: g.created_at || new Date().toISOString()
+        })).sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
         setGuides(mappedGuides);
       }
 
@@ -736,16 +779,14 @@ export const Social = ({
                             allowFullScreen
                           />
                         ) : (
-                          <div className="w-full h-full overflow-hidden relative">
-                            <iframe
-                              src={`https://www.tiktok.com/embed/v2/${video.video_id}`}
-                              title={video.title}
-                              className="w-full h-full border-0 transform scale-[0.98] origin-top"
-                              scrolling="no"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                          </div>
+                          <TikTokPlayer
+                            videoId={video.video_id}
+                            videoUrl={video.url}
+                            title={video.title}
+                            isActive={activeTikTokId === video.id}
+                            onPlay={() => setActiveTikTokId(video.id)}
+                            containerClassName="w-full h-full relative"
+                          />
                         )}
                       </div>
 
@@ -921,7 +962,7 @@ export const Social = ({
                     >
                       <div className="space-y-2">
                         {guide.imageUrl && (
-                          <div className="w-full h-32 rounded-xl overflow-hidden mb-3 border border-black/5 bg-black/5">
+                          <div className="w-full aspect-[16/9] rounded-xl overflow-hidden mb-3 border border-black/5 bg-black/5">
                             <img src={guide.imageUrl} alt={guide.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                           </div>
                         )}
@@ -957,7 +998,11 @@ export const Social = ({
                           Read
                           <ChevronRight className="w-3 h-3" />
                         </span>
-                        <span className="text-[9px] font-bold text-black/40 uppercase tracking-widest">{guide.steps.length} Steps</span>
+                        <span className="text-[9px] font-bold text-black/40 uppercase tracking-widest">
+                          {guide.type === 'B' 
+                            ? (guide.readTime || (guide.typeBContent?.profiles?.length ? `${guide.typeBContent.profiles.length} Profiles` : 'Deep Dive'))
+                            : `${guide.steps.length} Steps`}
+                        </span>
                       </div>
                     </div>
                   );
@@ -1011,88 +1056,265 @@ export const Social = ({
 
               {/* Summary */}
               {selectedGuide.imageUrl && (
-                <div className="w-full h-64 rounded-2xl overflow-hidden border border-black/5">
+                <div className="w-full aspect-[16/9] rounded-2xl overflow-hidden border border-black/5">
                   <img src={selectedGuide.imageUrl} alt={selectedGuide.title} className="w-full h-full object-cover" />
                 </div>
               )}
 
-              <p className="text-xs md:text-sm text-black/80 leading-relaxed font-medium">
-                {selectedGuide.summary}
-              </p>
-
-               {/* Core Routine Rule */}
-              <div className="p-4 rounded-2xl bg-venus-accent/[0.06] border border-black/5 text-left space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-black/50 block">Skin Science Governing Rule</span>
-                <p className="text-xs md:text-sm font-bold text-black leading-snug">
-                  {selectedGuide.keyRule}
+              {selectedGuide.type !== 'B' && (
+                <p className="text-xs md:text-sm text-black/80 leading-relaxed font-medium">
+                  {selectedGuide.summary}
                 </p>
-              </div>
+              )}
 
-              {/* Step by Step Breakdown */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-black flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-venus-accent" />
-                  Routine Application Roadmap
-                </h4>
-                <div className="space-y-2.5">
-                  {selectedGuide.steps.map((st, sIdx) => (
-                    <div key={sIdx} className="p-3.5 rounded-xl border border-black/5 bg-black/[0.01] flex items-start gap-3">
-                      <span className="w-5 h-5 rounded-full bg-black text-white text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
-                        {sIdx + 1}
-                      </span>
-                      <div className="space-y-0.5">
-                        <h5 className="text-xs font-black text-black uppercase tracking-tight">{st.title}</h5>
-                        <p className="text-[11px] text-black/70 leading-relaxed font-medium">{st.desc}</p>
+              {selectedGuide.type === 'B' ? (
+                <div className="space-y-6">
+                  {selectedGuide.typeBContent?.introduction && (
+                    <p className="text-xs md:text-sm text-black/70 leading-relaxed font-medium italic">
+                      {selectedGuide.typeBContent.introduction}
+                    </p>
+                  )}
+
+                  {selectedGuide.typeBContent?.overview_section && (
+                    <div className="p-4 rounded-2xl bg-venus-accent/[0.06] border border-black/5 space-y-2">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black">
+                        {selectedGuide.typeBContent.overview_section.heading}
+                      </h4>
+                      <p className="text-xs md:text-sm text-black/80 font-medium leading-relaxed">
+                        {selectedGuide.typeBContent.overview_section.summary}
+                      </p>
+                      {selectedGuide.typeBContent.overview_section.key_points && selectedGuide.typeBContent.overview_section.key_points.length > 0 && (
+                        <ul className="space-y-1.5 pt-1">
+                          {selectedGuide.typeBContent.overview_section.key_points.map((pt, pIdx) => (
+                            <li key={pIdx} className="text-[11px] text-black/75 font-medium flex items-start gap-1.5">
+                              <span className="text-venus-accent font-black">•</span>
+                              <span>{pt}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedGuide.typeBContent?.process_section && (
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-venus-accent" />
+                        {selectedGuide.typeBContent.process_section.heading || 'Process & Steps'}
+                      </h4>
+                      {selectedGuide.typeBContent.process_section.steps && selectedGuide.typeBContent.process_section.steps.length > 0 && (
+                        <div className="space-y-2.5">
+                          {selectedGuide.typeBContent.process_section.steps.map((stepText, sIdx) => (
+                            <div key={sIdx} className="p-3.5 rounded-xl border border-black/5 bg-black/[0.01] flex items-start gap-3">
+                              <span className="w-5 h-5 rounded-full bg-black text-white text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                                {sIdx + 1}
+                              </span>
+                              <div className="space-y-0.5">
+                                <p className="text-[11px] text-black/70 leading-relaxed font-medium">{stepText}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {selectedGuide.typeBContent.process_section.outcomes && selectedGuide.typeBContent.process_section.outcomes.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
+                          {selectedGuide.typeBContent.process_section.outcomes.map((outcome, oIdx) => (
+                            <div key={oIdx} className="p-3 rounded-xl border border-black/5 bg-black/[0.02] space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-tight text-black block">
+                                {outcome.label}
+                              </span>
+                              <p className="text-[10px] text-black/70 leading-snug font-medium">
+                                {outcome.description}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedGuide.typeBContent?.profiles && selectedGuide.typeBContent.profiles.length > 0 && (
+                    <div className="space-y-4 pt-2 border-t border-black/5">
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                        {selectedGuide.typeBContent.profiles.map((profile, pIdx) => (
+                          <button
+                            key={pIdx}
+                            onClick={() => setActiveProfileIdx(pIdx)}
+                            className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all whitespace-nowrap cursor-pointer ${
+                              activeProfileIdx === pIdx
+                                ? 'bg-black text-white shadow-sm'
+                                : 'bg-black/5 text-black/60 hover:bg-black/10 hover:text-black'
+                            }`}
+                          >
+                            {profile.name}
+                          </button>
+                        ))}
+                      </div>
+
+                      {(() => {
+                        const activeProf = selectedGuide.typeBContent.profiles[activeProfileIdx] || selectedGuide.typeBContent.profiles[0];
+                        if (!activeProf) return null;
+                        return (
+                          <div className="space-y-4 p-4 rounded-2xl bg-black/[0.01] border border-black/5">
+                            <p className="text-xs md:text-sm text-black/80 font-medium leading-relaxed">
+                              {activeProf.summary}
+                            </p>
+
+                            {activeProf.recommended && (
+                              <div className="space-y-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-black/40 block">Recommended</span>
+                                {Array.isArray(activeProf.recommended) ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {activeProf.recommended.map((item, idx) => (
+                                      <span key={idx} className="text-xs font-bold uppercase px-3 py-1 bg-black text-white rounded-xl shadow-xs">
+                                        {item}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {Object.entries(activeProf.recommended).map(([groupKey, items]) => (
+                                      <div key={groupKey} className="space-y-1">
+                                        <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block">
+                                          {groupKey.replace(/_/g, ' ').toUpperCase()}
+                                        </span>
+                                        <div className="flex flex-wrap gap-2">
+                                          {(items as string[]).map((item, idx) => (
+                                            <span key={idx} className="text-xs font-bold uppercase px-3 py-1 bg-black text-white rounded-xl shadow-xs">
+                                              {item}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {activeProf.caution && activeProf.caution.length > 0 && (
+                              <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/50 space-y-2">
+                                <h5 className="text-xs font-black uppercase tracking-wider text-rose-800 flex items-center gap-1.5">
+                                  <AlertCircle className="w-4 h-4 text-rose-600" />
+                                  Caution / Avoid
+                                </h5>
+                                <ul className="space-y-1.5">
+                                  {activeProf.caution.map((item, cIdx) => (
+                                    <li key={cIdx} className="text-[11px] text-rose-900/90 font-medium flex items-start gap-1.5">
+                                      <span className="text-rose-600 font-black">✕</span>
+                                      <span>{item}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                            {activeProf.tips && activeProf.tips.length > 0 && (
+                              <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/50 space-y-2">
+                                <h5 className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                  Actionable Tips
+                                </h5>
+                                <ul className="space-y-1.5">
+                                  {activeProf.tips.map((item, tIdx) => (
+                                    <li key={tIdx} className="text-[11px] text-emerald-900/90 font-medium flex items-start gap-1.5">
+                                      <span className="text-emerald-600 font-black">✓</span>
+                                      <span>{item}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {selectedGuide.typeBContent?.conclusion && (
+                    <div className="p-4 rounded-2xl border border-black/10 bg-black/[0.02]">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-black/50 block mb-1">Key Takeaway</span>
+                      <p className="text-xs md:text-sm font-bold text-black leading-relaxed">
+                        {selectedGuide.typeBContent.conclusion}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="p-4 rounded-2xl bg-venus-accent/[0.06] border border-black/5 text-left space-y-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-black/50 block">Skin Science Governing Rule</span>
+                    <p className="text-xs md:text-sm font-bold text-black leading-snug">
+                      {selectedGuide.keyRule}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-black flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-venus-accent" />
+                      Routine Application Roadmap
+                    </h4>
+                    <div className="space-y-2.5">
+                      {selectedGuide.steps.map((st, sIdx) => (
+                        <div key={sIdx} className="p-3.5 rounded-xl border border-black/5 bg-black/[0.01] flex items-start gap-3">
+                          <span className="w-5 h-5 rounded-full bg-black text-white text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                            {sIdx + 1}
+                          </span>
+                          <div className="space-y-0.5">
+                            <h5 className="text-xs font-black text-black uppercase tracking-tight">{st.title}</h5>
+                            <p className="text-[11px] text-black/70 leading-relaxed font-medium">{st.desc}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/50 space-y-2">
+                      <h5 className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Expert Dos
+                      </h5>
+                      <ul className="space-y-1.5">
+                        {selectedGuide.dos?.map((item, dIdx) => (
+                          <li key={dIdx} className="text-[11px] text-emerald-900/90 font-medium flex items-start gap-1.5">
+                            <span className="text-emerald-600 font-black">✓</span>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/50 space-y-2">
+                      <h5 className="text-xs font-black uppercase tracking-wider text-rose-800 flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 text-rose-600" />
+                        Day-to-Day Don'ts
+                      </h5>
+                      <ul className="space-y-1.5">
+                        {selectedGuide.donts?.map((item, dIdx) => (
+                          <li key={dIdx} className="text-[11px] text-rose-900/90 font-medium flex items-start gap-1.5">
+                            <span className="text-rose-600 font-black">✕</span>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {selectedGuide.recommendedActives && selectedGuide.recommendedActives.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-black/5">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-black/40 block">Key Recommended Formulations</span>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedGuide.recommendedActives.map((act) => (
+                          <span key={act} className="text-xs font-bold uppercase px-3 py-1 bg-black text-white rounded-xl shadow-xs">
+                            {act}
+                          </span>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Dos & Don'ts */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/50 space-y-2">
-                  <h5 className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    Expert Dos
-                  </h5>
-                  <ul className="space-y-1.5">
-                    {selectedGuide.dos.map((item, dIdx) => (
-                      <li key={dIdx} className="text-[11px] text-emerald-900/90 font-medium flex items-start gap-1.5">
-                        <span className="text-emerald-600 font-black">✓</span>
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200/50 space-y-2">
-                  <h5 className="text-xs font-black uppercase tracking-wider text-rose-800 flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4 text-rose-600" />
-                    Day-to-Day Don'ts
-                  </h5>
-                  <ul className="space-y-1.5">
-                    {selectedGuide.donts.map((item, dIdx) => (
-                      <li key={dIdx} className="text-[11px] text-rose-900/90 font-medium flex items-start gap-1.5">
-                        <span className="text-rose-600 font-black">✕</span>
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Recommended Actives */}
-              <div className="space-y-2 pt-2 border-t border-black/5">
-                <span className="text-[10px] font-black uppercase tracking-widest text-black/40 block">Key Recommended Formulations</span>
-                <div className="flex flex-wrap gap-2">
-                  {selectedGuide.recommendedActives.map((act) => (
-                    <span key={act} className="text-xs font-bold uppercase px-3 py-1 bg-black text-white rounded-xl shadow-xs">
-                      {act}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                  )}
+                </>
+              )}
 
               {/* Close Button */}
               <div className="pt-2">

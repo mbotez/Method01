@@ -18,6 +18,7 @@ import {
   CheckSquare,
   User as UserIcon,
   LogOut,
+  ExternalLink,
   ShoppingBag,
   Award,
   Pencil,
@@ -56,6 +57,7 @@ import { AiProductComparisonModal } from './components/AiProductComparisonModal'
 import { ProductComparisonTable } from './components/ProductComparisonTable';
 import { TrackerNewProductModal } from './components/TrackerNewProductModal';
 import { Social, SKINCARE_GUIDES } from './components/Social';
+import { TikTokPlayer } from './components/TikTokPlayer';
 import { ChatQuestionnaire } from './components/ChatQuestionnaire';
 import { INVENTORY, Product } from './constants';
 import { InlineTrackerControls } from './components/InlineTrackerControls';
@@ -65,7 +67,7 @@ import { searchProducts } from "./utils/TextSearch";
 import { TrackerSpreadsheetRow } from './components/TrackerSpreadsheetRow';
 import { checkRoutine, RoutineCheckResult, UserProfile, getActivesBudgetExplanation } from './utils/RoutineCheck';
 import { getScoreColorConfig } from './utils/scoreColors';
-import { fetchRoutinesWithLiveProducts } from './utils/routineFetcher';
+import { fetchRoutinesWithLiveProducts, hydrateRoutineProducts } from './utils/routineFetcher';
 import { BREAKOUT_PHOTO_OPTIONS, getBreakoutTitle, breakoutTypeStringToId } from './data/breakoutOptions';
 import { setupCapacitorDeepLinkAuth, handleWebAuthCallback, isNativePlatform } from './utils/auth';
 import { Browser } from '@capacitor/browser';
@@ -81,7 +83,19 @@ import { BrandsView } from './views/BrandsView';
 import { FeedbackView } from './views/FeedbackView';
 import { DeleteAccountView } from './views/DeleteAccountView';
 import { ProfileView } from './views/ProfileView';
+import { CommunityView } from './views/CommunityView';
 import { trackPageView } from './utils/analytics';
+
+function getYouTubeEmbedUrl(url: string): string {
+  if (!url) return '';
+  if (url.includes('/embed/')) return url;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  if (match && match[2].length === 11) {
+    return `https://www.youtube.com/embed/${match[2]}`;
+  }
+  return url;
+}
 
 // --- Components ---
 
@@ -124,6 +138,7 @@ export default function App() {
       if (path.startsWith('/delete-account')) return AppState.DELETE_ACCOUNT;
       if (path.startsWith('/feedback')) return AppState.FEEDBACK;
       if (path.startsWith('/comparison')) return AppState.COMPARISON;
+      if (path.startsWith('/community')) return AppState.COMMUNITY;
       if (path.startsWith('/dashboard') || path.startsWith('/auth/callback') || hasHash) return AppState.DASHBOARD;
       if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
       if (path.startsWith('/tracker')) return AppState.TRACKER;
@@ -152,10 +167,17 @@ export default function App() {
       case AppState.DELETE_ACCOUNT: screenName = 'Delete Account'; break;
       case AppState.FEEDBACK: screenName = 'Feedback'; break;
       case AppState.COMPARISON: screenName = 'Comparison'; break;
+      case AppState.COMMUNITY: screenName = 'Community'; break;
       default: screenName = 'Landing'; break;
     }
     trackPageView(screenName);
   }, [appState]);
+
+  useEffect(() => {
+    if (appState === AppState.COMMUNITY && profile !== null && Number(profile?.type) !== 1) {
+      setAppState(user ? AppState.DASHBOARD : AppState.LANDING);
+    }
+  }, [appState, profile, user]);
 
   const [comparisonProductIds, setComparisonProductIds] = useState<string[]>(['1', '2']);
 
@@ -189,6 +211,7 @@ export default function App() {
         case AppState.DELETE_ACCOUNT: urlPath = '/delete-account'; break;
         case AppState.FEEDBACK: urlPath = '/feedback'; break;
         case AppState.COMPARISON: urlPath = '/comparison'; break;
+        case AppState.COMMUNITY: urlPath = '/community'; break;
       }
       if (path) urlPath = path;
       window.history.pushState(null, '', urlPath);
@@ -207,6 +230,8 @@ export default function App() {
           setAppState(AppState.FEEDBACK);
         } else if (path.startsWith('/comparison')) {
           setAppState(AppState.COMPARISON);
+        } else if (path.startsWith('/community')) {
+          setAppState(AppState.COMMUNITY);
         } else if (path.startsWith('/dashboard') || path.startsWith('/auth/callback')) {
           setAppState(AppState.DASHBOARD);
         } else if (path.startsWith('/products') || path.startsWith('/rank')) {
@@ -240,6 +265,7 @@ export default function App() {
         const { data, error } = await supabase
           .from('guides')
           .select('*')
+          .order('created_at', { ascending: false })
           .limit(1);
         if (error) {
           console.error('Guides query error:', { message: error.message, code: error.code, details: error.details });
@@ -252,12 +278,14 @@ export default function App() {
             readTime: g.read_time || '4 min read',
             subtitle: g.subtitle,
             summary: g.description,
+            type: g.type || 'A',
+            typeBContent: g.type === 'B' ? (g.roadmap || {}) : undefined,
             keyRule: g.rule,
-            steps: g.roadmap || [],
+            steps: g.type === 'B' ? [] : (g.roadmap || []),
             dos: g.dos || [],
             donts: g.donts || [],
             recommendedActives: g.recommended_formulations || [],
-            imageUrl: g.image_url || '/assets/g1.jpg'
+            imageUrl: g.guide_url || g.image_url || '/assets/g1.jpg'
           });
         }
       } catch (err: any) {
@@ -289,6 +317,12 @@ export default function App() {
   const [userProducts, setUserProducts] = useState<any[]>([]);
   const [selectedProductForPage, setSelectedProductForPage] = useState<any | null>(null);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<any | null>(null);
+  const [selectedCommunityRoutine, setSelectedCommunityRoutine] = useState<any | null>(null);
+  const [isModalTikTokActive, setIsModalTikTokActive] = useState(false);
+  const handleOpenCommunityRoutine = (rt: any) => {
+    setIsModalTikTokActive(false);
+    setSelectedCommunityRoutine(rt);
+  };
   const [selectedProductForUPP, setSelectedProductForUPP] = useState<any | null>(null);
   const [uppCategories, setUppCategories] = useState<string[]>([]);
   const [uppImpression, setUppImpression] = useState<'Loved it' | 'Was OK' | 'Not for me'>('Loved it');
@@ -909,6 +943,7 @@ export default function App() {
   const [socialActiveMainTab, setSocialActiveMainTab] = useState<'videos' | 'articles' | 'guides' | 'community'>('videos');
   const [selectedArticle, setSelectedArticle] = useState<any>(null);
   const [latestVideos, setLatestVideos] = useState<any[]>([]);
+  const [activeAppTikTokId, setActiveAppTikTokId] = useState<string | null>(null);
   const [lastPost, setLastPost] = useState<any>(null);
   const [loadingLatestVideos, setLoadingLatestVideos] = useState(true);
   const [loadingLastPost, setLoadingLastPost] = useState(true);
@@ -1586,6 +1621,46 @@ export default function App() {
   const [newProduct, setNewProduct] = useState({ brand: '', name: '', type: '' });
   const [routineName, setRoutineName] = useState('');
   const [routineNotes, setRoutineNotes] = useState('');
+  const [routinePublic, setRoutinePublic] = useState(false);
+  const [routineUrl, setRoutineUrl] = useState('');
+  const [publicRoutines, setPublicRoutines] = useState<any[]>([]);
+
+  const fetchPublicRoutines = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('routines')
+        .select('*')
+        .eq('public', true)
+        .order('votes_count', { ascending: false });
+      if (!error && data) {
+        const hydrated = await hydrateRoutineProducts(data);
+        setPublicRoutines(hydrated);
+      }
+    } catch (e) {
+      console.error('Error fetching public routines:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchPublicRoutines();
+  }, []);
+
+  const handleVoteRoutine = async (routineId: string) => {
+    try {
+      const target = publicRoutines.find(r => r.id === routineId);
+      if (!target) return;
+      const newVotes = (target.votes_count || 0) + 1;
+      const { error } = await supabase
+        .from('routines')
+        .update({ votes_count: newVotes })
+        .eq('id', routineId);
+      if (!error) {
+        fetchPublicRoutines();
+      }
+    } catch (e) {
+      console.error('Error voting routine:', e);
+    }
+  };
   
   const [editingRoutine, setEditingRoutine] = useState<any>(null);
   const [reminderRoutine, setReminderRoutine] = useState<any>(null);
@@ -1769,9 +1844,11 @@ export default function App() {
   const handleAddRoutine = () => {
     setRoutineName('');
     setRoutineNotes('');
+    setRoutineUrl('');
     setRoutineTime('AM');
     setRoutineDays([]);
     setRoutineSelectedProducts([]);
+    setRoutinePublic(false);
     setModalMode('new');
     setRoutineFormError(null);
     setIsSavingRoutineForm(false);
@@ -1782,9 +1859,11 @@ export default function App() {
     setEditingRoutine(rt);
     setRoutineName(rt.routine_name || '');
     setRoutineNotes(rt.notes || '');
+    setRoutineUrl(rt.url || '');
     setRoutineTime(rt.time);
     setRoutineDays(rt.days || []);
     setRoutineSelectedProducts(rt.products || []);
+    setRoutinePublic(Boolean(rt.public));
     setModalMode('edit');
     setRoutineFormError(null);
     setIsSavingRoutineForm(false);
@@ -2366,7 +2445,7 @@ export default function App() {
         });
 
         try {
-          const checkResult = await checkRoutine(mappedProfile, prodIds, timing);
+          const checkResult = await checkRoutine(mappedProfile, prodIds, timing, rt.time);
           if (active) {
             newChecks[key] = checkResult;
           }
@@ -2844,6 +2923,19 @@ export default function App() {
       setIsSavingRoutineForm(false);
       return;
     }
+
+    const trimmedUrl = routineUrl.trim();
+    if (modalMode !== 'reminder' && trimmedUrl) {
+      const lower = trimmedUrl.toLowerCase();
+      const isTikTok = lower.includes('tiktok.com');
+      const isInstagram = lower.includes('instagram.com') || lower.includes('instagr.am');
+      const isYouTube = lower.includes('youtube.com') || lower.includes('youtu.be');
+      if (!isTikTok && !isInstagram && !isYouTube) {
+        setRoutineFormError('Please enter a valid TikTok, Instagram, or YouTube link.');
+        setIsSavingRoutineForm(false);
+        return;
+      }
+    }
     
     try {
       let processedProducts: any[] = [];
@@ -2927,13 +3019,18 @@ export default function App() {
             return productData;
           }));
 
+          const currentUsername = profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'Anonymous';
           const payload = {
             user_id: user.id,
             time: routineTime,
             days: routineDays,
             routine_name: routineName,
             notes: routineNotes,
-            products: processedProducts
+            url: trimmedUrl || null,
+            products: processedProducts,
+            public: routinePublic,
+            username: currentUsername,
+            votes_count: modalMode === 'edit' && editingRoutine ? (editingRoutine.votes_count || 0) : 0
           };
           if (modalMode === 'edit') {
             const { error } = await supabase.from('routines').update(payload).eq('id', editingRoutine.id);
@@ -2951,6 +3048,7 @@ export default function App() {
         setRoutines(updatedRoutines);
         setRoutinesVersion(v => v + 1);
       }
+      fetchPublicRoutines();
 
       // Check products against UPP table
       for (const product of processedProducts) {
@@ -3139,15 +3237,6 @@ export default function App() {
           </h3>
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => refreshRoutines()}
-              disabled={isRefreshingRoutines}
-              className="text-[11px] tracking-[0.1em] uppercase text-[#73716C] hover:text-[#171717] transition-colors flex items-center gap-1.5 cursor-pointer px-2.5 py-1 rounded-lg border border-[#EAE9E5] bg-white"
-              title="Re-evaluate live product attributes from database"
-            >
-              <RefreshCw className={`w-3 h-3 ${isRefreshingRoutines ? 'animate-spin text-[#7A6332]' : ''}`} />
-              <span className="hidden sm:inline">{isRefreshingRoutines ? 'Syncing...' : 'Sync'}</span>
-            </button>
-            <button 
               onClick={handleAddRoutine}
               className="text-[11px] tracking-[0.1em] uppercase text-[#73716C] hover:text-[#171717] transition-colors flex items-center gap-1.5 cursor-pointer px-2.5 py-1 rounded-lg border border-[#EAE9E5] bg-white"
             >
@@ -3297,11 +3386,39 @@ export default function App() {
                         {check.recommendations && check.recommendations.length > 0 && (
                           <div className="space-y-2 pt-1">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-[#73716C] block">Analysis & Insights</span>
-                            {check.recommendations.map((rec: string, rIndex: number) => (
-                              <div key={rIndex} className="text-xs text-[#171717] bg-white border border-[#EAE9E5] p-2.5 rounded-lg whitespace-pre-line leading-relaxed">
-                                {rec}
-                              </div>
-                            ))}
+                            {check.recommendations.map((rec: string, rIndex: number) => {
+                              const lines = rec.split('\n').map(l => l.trimEnd()).filter(Boolean);
+                              const header = lines[0];
+                              const items = lines.slice(1);
+
+                              return (
+                                <div key={rIndex} className="text-xs text-[#171717] bg-white border border-[#EAE9E5] p-2.5 rounded-lg leading-relaxed space-y-1.5">
+                                  <div className="font-semibold text-black">{header}</div>
+                                  {items.length > 0 && (
+                                    <div className="space-y-1">
+                                      {items.map((item, iIdx) => {
+                                        const isSub = item.startsWith('    ') || item.startsWith('  ');
+                                        const cleaned = item.replace(/^[•\s]+/, '');
+                                        if (isSub) {
+                                          return (
+                                            <div key={iIdx} className="pl-5 text-black/70 flex items-start gap-1.5 font-medium">
+                                              <span className="text-venus-accent font-bold select-none">◦</span>
+                                              <span>{cleaned}</span>
+                                            </div>
+                                          );
+                                        }
+                                        return (
+                                          <div key={iIdx} className="flex items-start gap-1.5 text-black/90">
+                                            <span className="text-black font-bold select-none">•</span>
+                                            <span>{cleaned}</span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
 
@@ -3344,6 +3461,98 @@ export default function App() {
           })
         )}
       </div>
+
+      {/* Inspo Section below My Routines */}
+      <div className="mt-12 pt-8 border-t border-black/10 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-black uppercase tracking-tight text-black">
+              Inspo — Community Routines
+            </h3>
+            <p className="text-xs text-black/50 font-medium">
+              Explore the latest routines shared by others like you.
+            </p>
+          </div>
+        </div>
+
+        {publicRoutines.length === 0 ? (
+          <div className="p-6 bg-white border border-black/10 rounded-2xl text-center text-xs text-black/50 font-medium uppercase tracking-wider">
+            No public routines shared yet. Create and set a routine to public to feature it here!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[...publicRoutines]
+              .sort((a, b) => new Date(b.created_at || b.updated_at || 0).getTime() - new Date(a.created_at || a.updated_at || 0).getTime())
+              .slice(0, 3)
+              .map(rt => (
+                <div 
+                  key={rt.id} 
+                  onClick={() => handleOpenCommunityRoutine(rt)}
+                  className="clean-card bg-white border border-black/10 p-4 rounded-2xl space-y-3 flex flex-col justify-between cursor-pointer hover:border-black/30 transition-all"
+                  title="Click to view routine details"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded bg-black/5 text-[10px] font-black uppercase tracking-wider text-venus-accent">
+                        {rt.time || 'AM'} Routine
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setShareRoutine(rt); setIsSharingOpen(true); }}
+                          className="p-1.5 rounded-full bg-black/5 hover:bg-black/10 text-black transition-colors cursor-pointer"
+                          title="Share routine"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleVoteRoutine(rt.id); }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/5 hover:bg-black/10 text-black text-[11px] font-black transition-colors cursor-pointer"
+                          title="Upvote routine"
+                        >
+                          <Heart className="w-3.5 h-3.5 text-venus-accent fill-venus-accent/20" />
+                          <span>{rt.votes_count || 0}</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-tight text-black">
+                        {rt.routine_name || 'Community Routine'}
+                      </h4>
+                      <div className="text-[11px] font-semibold text-black/50 mt-0.5">
+                        By @{rt.username || 'Anonymous'}
+                      </div>
+                    </div>
+                    {rt.notes && (
+                      <p className="text-xs text-black/60 font-medium line-clamp-2">
+                        {rt.notes}
+                      </p>
+                    )}
+                    <div className="space-y-1 pt-2">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-black/40">Products ({Array.isArray(rt.products) ? rt.products.length : 0})</div>
+                      <div className="space-y-1">
+                        {Array.isArray(rt.products) && rt.products.slice(0, 1).map((p: any, pIdx: number) => (
+                          <div 
+                            key={pIdx} 
+                            onClick={(e) => { e.stopPropagation(); openProductCard(String(p.id || p.product_id)); }}
+                            className="text-xs font-semibold text-black/80 truncate flex items-center gap-1.5 hover:text-venus-accent transition-colors cursor-pointer"
+                            title="Click to view product"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-venus-accent shrink-0" />
+                            <span className="truncate underline">{p.brand} {p.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-3 border-t border-black/5 flex items-center justify-between text-[11px] text-black/50">
+                    <span>{Array.isArray(rt.days) && rt.days.length > 0 ? rt.days.join(', ') : 'Daily'}</span>
+                    <span className="text-venus-accent font-black uppercase text-[10px]">View →</span>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -3373,6 +3582,118 @@ export default function App() {
             product={selectedProductForDetail} 
             onClose={() => setSelectedProductForDetail(null)} 
           />
+        )}
+
+        {/* Community Routine Detail Modal */}
+        {selectedCommunityRoutine && (
+          <div className="fixed inset-0 bg-black/60 z-[99999] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 space-y-6 shadow-2xl relative border border-black/10">
+              <button 
+                onClick={() => setSelectedCommunityRoutine(null)}
+                className="absolute top-5 right-5 p-2 rounded-full bg-black/5 hover:bg-black/10 text-black transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+
+              <div className="space-y-2">
+                {selectedCommunityRoutine.url && (
+                  <div className="w-full flex justify-center mb-4">
+                    {selectedCommunityRoutine.url.includes('youtube.com') || selectedCommunityRoutine.url.includes('youtu.be') ? (
+                      <div className="w-full aspect-video rounded-2xl overflow-hidden border border-[#E5E4E0] bg-[#F4F3F0]">
+                        <iframe
+                          src={getYouTubeEmbedUrl(selectedCommunityRoutine.url)}
+                          className="w-full h-full border-0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
+                    ) : selectedCommunityRoutine.url.includes('tiktok.com') ? (
+                      <div className="w-full max-w-[240px] aspect-[9/16] rounded-2xl overflow-hidden bg-[#F4F3F0] border border-[#E5E4E0] relative shadow-md">
+                        <TikTokPlayer
+                          videoId=""
+                          videoUrl={selectedCommunityRoutine.url}
+                          title={selectedCommunityRoutine.routine_name}
+                          isActive={isModalTikTokActive}
+                          onPlay={() => setIsModalTikTokActive(true)}
+                          containerClassName="w-full h-full relative overflow-hidden bg-black"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full p-4 rounded-xl bg-black/5 text-center">
+                        <a href={selectedCommunityRoutine.url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold underline">View Video Link</a>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded bg-black/5 text-[10px] font-black uppercase tracking-wider text-venus-accent">
+                    {selectedCommunityRoutine.time || 'AM'} Routine
+                  </span>
+                  <span className="text-xs text-black/50 font-semibold">
+                    Posted by @{selectedCommunityRoutine.username || 'Anonymous'}
+                  </span>
+                </div>
+                <h3 className="text-xl font-black uppercase tracking-tight text-black">
+                  {selectedCommunityRoutine.routine_name || 'Community Routine'}
+                </h3>
+                {selectedCommunityRoutine.notes && (
+                  <p className="text-xs text-black/70 font-medium bg-[#FAF9F6] p-3 rounded-xl border border-black/5">
+                    {selectedCommunityRoutine.notes}
+                  </p>
+                )}
+               </div>
+
+               <div className="space-y-3">
+                 <h4 className="text-xs font-black uppercase tracking-widest text-black/40">
+                   Routine Products ({Array.isArray(selectedCommunityRoutine.products) ? selectedCommunityRoutine.products.length : 0})
+                 </h4>
+                 <div className="space-y-2">
+                   {Array.isArray(selectedCommunityRoutine.products) && selectedCommunityRoutine.products.map((p: any, idx: number) => (
+                     <div 
+                       key={idx}
+                       onClick={() => openProductCard(String(p.id || p.product_id))}
+                       className="p-3 bg-[#FAF9F6] border border-black/5 rounded-2xl flex items-center justify-between hover:border-black/25 transition-all cursor-pointer group"
+                       title="Click to view product details"
+                     >
+                       <div className="flex items-center gap-3">
+                         {p.photo_url ? (
+                           <img src={p.photo_url} alt={p.name} className="w-10 h-10 object-cover rounded-xl bg-white border border-black/5" />
+                         ) : (
+                           <div className="w-10 h-10 rounded-xl bg-black/5 flex items-center justify-center text-xs font-black">
+                             {p.brand?.[0] || 'P'}
+                           </div>
+                         )}
+                         <div>
+                           <div className="text-[10px] font-black uppercase tracking-wider text-black/40">{p.brand}</div>
+                           <div className="text-xs font-bold text-black group-hover:text-venus-accent transition-colors">{p.name}</div>
+                           <div className="text-[10px] text-black/50 font-medium">{p.cat2 || p.type || 'Product'}</div>
+                         </div>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+
+              <div className="pt-4 border-t border-black/10 flex items-center justify-between text-xs text-black/60 font-semibold">
+                <span>Schedule: {Array.isArray(selectedCommunityRoutine.days) && selectedCommunityRoutine.days.length > 0 ? selectedCommunityRoutine.days.join(', ') : 'Daily'}</span>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => { setShareRoutine(selectedCommunityRoutine); setIsSharingOpen(true); }}
+                    className="px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black font-black text-xs uppercase tracking-wider transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Share</span>
+                  </button>
+                  <button 
+                    onClick={() => setSelectedCommunityRoutine(null)}
+                    className="px-5 py-2 rounded-xl bg-black text-white font-black text-xs uppercase tracking-wider hover:bg-black/80 transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       {/* Left Side Panel */}
       <AnimatePresence>
@@ -3475,20 +3796,32 @@ export default function App() {
                     <span className="text-xs uppercase tracking-widest font-black">Brands</span>
                   </button>
 
-                  <button 
-                    onClick={() => { 
-                      if (!user) {
-                        setAuthPromptModalOpen(true);
-                      } else {
-                        setIsAiCompareModalOpen(true);
-                      }
-                      setIsMobileNavOpen(false); 
-                    }} 
-                    className="flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent text-black/60 hover:text-black font-semibold group"
-                  >
-                    <Sliders className="w-5 h-5 shrink-0 text-black/40 group-hover:text-black" />
-                    <span className="text-xs uppercase tracking-widest font-black">AI Compare</span>
-                  </button>
+                  {Number(profile?.type) === 1 && (
+                    <button 
+                      onClick={() => { 
+                        if (!user) {
+                          setAuthPromptModalOpen(true);
+                        } else {
+                          setIsAiCompareModalOpen(true);
+                        }
+                        setIsMobileNavOpen(false); 
+                      }} 
+                      className="flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent text-black/60 hover:text-black font-semibold group"
+                    >
+                      <Sliders className="w-5 h-5 shrink-0 text-black/40 group-hover:text-black" />
+                      <span className="text-xs uppercase tracking-widest font-black">AI Compare</span>
+                    </button>
+                  )}
+
+                  {Number(profile?.type) === 1 && (
+                    <button 
+                      onClick={() => { resetHeaderSearchState(); setAppState(AppState.COMMUNITY); setIsMobileNavOpen(false); }} 
+                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.COMMUNITY ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+                    >
+                      <Users className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.COMMUNITY ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+                      <span className="text-xs uppercase tracking-widest font-black">Community</span>
+                    </button>
+                  )}
 
                   <button 
                     onClick={() => { resetHeaderSearchState(); setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setSocialActiveMainTab('articles'); setIsMobileNavOpen(false); }} 
@@ -3875,6 +4208,18 @@ export default function App() {
             </motion.div>
           )}
 
+          {appState === AppState.COMMUNITY && Number(profile?.type) === 1 && (
+            <CommunityView
+              publicRoutines={publicRoutines}
+              onVoteRoutine={handleVoteRoutine}
+              onShareRoutine={(rt) => { setShareRoutine(rt); setIsSharingOpen(true); }}
+              openProductCard={openProductCard}
+              setAppState={setAppState}
+              user={user}
+              profile={profile}
+            />
+          )}
+
           {appState === AppState.PRODUCT_PAGE && selectedProductForPage && (
             <motion.div 
               key="product_page"
@@ -3912,6 +4257,10 @@ export default function App() {
               isWeb={isWeb}
               isNativePlatform={isNativePlatform}
               setSelectedArticle={setSelectedArticle}
+              publicRoutines={publicRoutines}
+              onVoteRoutine={handleVoteRoutine}
+              setSelectedProductForDetail={setSelectedProductForDetail}
+              onShareRoutine={(rt) => { setShareRoutine(rt); setIsSharingOpen(true); }}
             />
           )}
 
@@ -4317,25 +4666,22 @@ export default function App() {
                               {isYoutube ? (
                                 <div className="w-full aspect-video relative rounded-xl overflow-hidden border border-[#E5E4E0] bg-[#F4F3F0]">
                                   <iframe
-                                    src={video.video_url}
-                                    className="absolute inset-0 w-full h-full"
+                                    src={getYouTubeEmbedUrl(video.video_url)}
+                                    className="absolute inset-0 w-full h-full border-0"
                                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                     allowFullScreen
-                                    onError={(e: any) => {
-                                      e.currentTarget.style.display = 'none';
-                                    }}
                                   />
                                 </div>
                               ) : (
                                 <div className="flex justify-center w-full">
                                   <div className="w-full max-w-[180px] aspect-[9/16] relative rounded-xl overflow-hidden bg-[#F4F3F0] border border-[#E5E4E0]">
-                                    <iframe
-                                      src={video.video_url}
-                                      className="absolute inset-0 w-full h-full"
-                                      allow="fullscreen"
-                                      onError={(e: any) => {
-                                        e.currentTarget.style.display = 'none';
-                                      }}
+                                    <TikTokPlayer
+                                      videoId={video.video_id}
+                                      videoUrl={video.video_url}
+                                      title={video.title}
+                                      isActive={activeAppTikTokId === video.id}
+                                      onPlay={() => setActiveAppTikTokId(video.id)}
+                                      containerClassName="w-full h-full relative overflow-hidden bg-black"
                                     />
                                   </div>
                                 </div>
@@ -4391,7 +4737,7 @@ export default function App() {
                         className="rounded-2xl bg-white border border-[#EAE9E5] hover:border-[#CFCBC2] transition-all overflow-hidden cursor-pointer group flex flex-col md:flex-row shadow-none"
                       >
                         {landingGuide.imageUrl && (
-                          <div className="w-full md:w-1/2 h-56 md:h-auto min-h-[220px] bg-[#F4F3F0] relative overflow-hidden">
+                          <div className="w-full md:w-1/2 aspect-[16/9] md:aspect-auto md:h-full bg-[#F4F3F0] relative overflow-hidden">
                             <img 
                               src={landingGuide.imageUrl} 
                               alt={landingGuide.title} 
@@ -4496,15 +4842,6 @@ export default function App() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                  <button 
-                    onClick={() => refreshRoutines()}
-                    disabled={isRefreshingRoutines}
-                    className="bg-black/5 hover:bg-black/10 text-black px-3.5 py-2.5 rounded-xl text-xs uppercase tracking-widest font-black transition-colors flex items-center gap-2 cursor-pointer"
-                    title="Re-evaluate live product attributes from database"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingRoutines ? 'animate-spin text-venus-accent' : ''}`} />
-                    <span>{isRefreshingRoutines ? 'Syncing...' : 'Live Sync'}</span>
-                  </button>
                   <button 
                     onClick={handleAddRoutine}
                     className="bg-black text-white px-4 py-2.5 rounded-xl text-xs uppercase tracking-widest font-black hover:bg-venus-accent transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
@@ -5566,6 +5903,20 @@ export default function App() {
                        </div>
                     </div>
 
+                    {/* Public Checkbox */}
+                    <div className="mb-6 flex items-center gap-3 bg-black/5 p-4 rounded-xl border border-black/5">
+                      <input 
+                        type="checkbox" 
+                        id="routinePublicCheckbox"
+                        checked={routinePublic}
+                        onChange={e => setRoutinePublic(e.target.checked)}
+                        className="w-4 h-4 rounded border-black/20 text-black focus:ring-black cursor-pointer"
+                      />
+                      <label htmlFor="routinePublicCheckbox" className="text-xs font-black uppercase tracking-widest text-black cursor-pointer select-none">
+                        Public (Share routine in Spotlights & Community Inspo)
+                      </label>
+                    </div>
+
                     {/* Notes */}
                     <div className="mb-6">
                        <h3 className="text-[9px] font-black uppercase tracking-widest text-black/40 mb-3">Notes</h3>
@@ -5575,6 +5926,19 @@ export default function App() {
                          value={routineNotes}
                          onChange={e => setRoutineNotes(e.target.value)}
                        />
+                    </div>
+
+                    {/* Routine Video Link */}
+                    <div className="mb-6">
+                       <h3 className="text-[9px] font-black uppercase tracking-widest text-black/40 mb-3">Routine Video Link (TikTok, Instagram, or YouTube)</h3>
+                       <input 
+                         type="url" 
+                         placeholder="e.g. https://www.tiktok.com/... or https://youtube.com/..." 
+                         className="w-full bg-black/5 border-2 border-black/5 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-black transition-all"
+                         value={routineUrl}
+                         onChange={e => setRoutineUrl(e.target.value)}
+                       />
+                       <p className="text-[10px] text-black/40 mt-1 font-medium">Optional. Only TikTok, Instagram, and YouTube links are accepted and will be shown when opened from community routines.</p>
                     </div>
                   </>
                 )}
@@ -5662,7 +6026,7 @@ export default function App() {
       )}
 
       {/* Bottom Nav Hint */}
-      {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL || appState === AppState.BRANDS) && (
+      {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL || appState === AppState.BRANDS || appState === AppState.COMMUNITY) && (
         <div className="fixed bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none px-4">
           <div className="pointer-events-auto bg-white/90 backdrop-blur-md border border-[#E5E4E0] shadow-sm rounded-full px-6 py-2.5 flex items-center gap-6 md:gap-8">
             {user && (
@@ -5712,6 +6076,19 @@ export default function App() {
                 <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#171717] rounded-full" />
               )}
             </button>
+
+            {Number(profile?.type) === 1 && (
+              <button 
+                onClick={() => setAppState(AppState.COMMUNITY)}
+                className={`p-1.5 transition-colors cursor-pointer relative ${appState === AppState.COMMUNITY ? 'text-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
+                title="Community"
+              >
+                <Users className="w-5 h-5 stroke-[1.5]" />
+                {appState === AppState.COMMUNITY && (
+                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#171717] rounded-full" />
+                )}
+              </button>
+            )}
 
             <button 
               onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); }}
@@ -5779,25 +6156,105 @@ export default function App() {
       />
       {isSharingOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
-          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white p-6 rounded-3xl w-full max-w-sm">
-            <h3 className="text-lg font-black uppercase tracking-tighter mb-4">Share Routine</h3>
-            <div className="space-y-4">
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white p-6 rounded-3xl w-full max-w-md space-y-4 shadow-2xl border border-black/10">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black uppercase tracking-tighter text-black">Share Routine</h3>
+              <button onClick={() => { setIsSharingOpen(false); setShareRoutine(null); setUsernameSearch(''); }} className="p-2 rounded-full bg-black/5 hover:bg-black/10 text-black transition-colors cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-black/60 font-medium">
+              Share "{shareRoutine?.routine_name || 'Routine'}" to social apps or friends:
+            </p>
+
+            {/* Social Share Buttons */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                onClick={() => {
+                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: https://www.canonic.co.uk`;
+                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                }}
+                className="p-3 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#075E54] rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border border-[#25D366]/20"
+              >
+                <span className="w-6 h-6 rounded-full bg-[#25D366] text-white flex items-center justify-center text-xs font-bold">W</span>
+                <span>WhatsApp</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: ${window.location.href}`;
+                  navigator.clipboard.writeText(text);
+                  window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`, '_blank');
+                }}
+                className="p-3 bg-[#0084FF]/10 hover:bg-[#0084FF]/20 text-[#0063CC] rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border border-[#0084FF]/20"
+              >
+                <span className="w-6 h-6 rounded-full bg-[#0084FF] text-white flex items-center justify-center text-xs font-bold">M</span>
+                <span>Messenger</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: ${window.location.href}`;
+                  navigator.clipboard.writeText(text);
+                  alert('Routine copied to clipboard! Paste it into your Instagram Story, caption, or post.');
+                }}
+                className="p-3 bg-[#E1306C]/10 hover:bg-[#E1306C]/20 text-[#C13584] rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border border-[#E1306C]/20"
+              >
+                <span className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#FD1D1D] to-[#833AB4] text-white flex items-center justify-center text-xs font-bold">IG</span>
+                <span>Instagram</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: ${window.location.href}`;
+                  navigator.clipboard.writeText(text);
+                  alert('Routine copied to clipboard! Paste it into your TikTok video description.');
+                }}
+                className="p-3 bg-black/5 hover:bg-black/10 text-black rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border border-black/10"
+              >
+                <span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold">TT</span>
+                <span>TikTok</span>
+              </button>
+            </div>
+
+            <div className="pt-1">
+              <button
+                onClick={() => {
+                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: ${window.location.href}`;
+                  navigator.clipboard.writeText(text);
+                  setSuccessMessage('Routine copied to clipboard!');
+                  setTimeout(() => setSuccessMessage(null), 2500);
+                }}
+                className="w-full py-3 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Copy Routine & Link</span>
+              </button>
+              {successMessage && (
+                <p className="text-[11px] text-green-600 font-bold text-center mt-1.5">{successMessage}</p>
+              )}
+            </div>
+
+            {/* Internal User Sharing */}
+            <div className="space-y-2 pt-2 border-t border-black/10">
+              <span className="text-[10px] font-black uppercase tracking-widest text-black/50">Share with Canonic Users</span>
               <input 
                 type="text" 
                 placeholder="Search usernames..." 
                 value={usernameSearch} 
                 onChange={(e) => setUsernameSearch(e.target.value)}
-                className="w-full text-xs p-3 bg-black/5 rounded-xl"
+                className="w-full text-xs p-3 bg-black/5 rounded-xl border border-black/10 focus:outline-none focus:ring-2 focus:ring-black"
               />
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div className="space-y-1 max-h-32 overflow-y-auto">
                 {userResults.map(u => (
-                  <button key={u.id} onClick={() => handleShareRoutine(u.id)} className="w-full text-left p-3 hover:bg-black/5 rounded-xl text-xs font-black uppercase">
-                    {u.username}
+                  <button key={u.id} onClick={() => handleShareRoutine(u.id)} className="w-full text-left p-2.5 hover:bg-black/5 rounded-xl text-xs font-black uppercase text-black transition-colors">
+                    @{u.username}
                   </button>
                 ))}
               </div>
             </div>
-            <button onClick={() => { setIsSharingOpen(false); setUsernameSearch(''); }} className="w-full py-2 text-[10px] font-black uppercase text-black/50 mt-4">Cancel</button>
+
+            <button onClick={() => { setIsSharingOpen(false); setShareRoutine(null); setUsernameSearch(''); }} className="w-full py-2 text-[10px] font-black uppercase tracking-wider text-black/50 hover:text-black cursor-pointer">Cancel</button>
           </motion.div>
         </div>
       )}
