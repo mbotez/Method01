@@ -32,6 +32,7 @@ export interface LandingViewProps {
   onVoteRoutine: (id: string) => void;
   setSelectedProductForDetail?: (p: any) => void;
   onShareRoutine?: (rt: any) => void;
+  onOpenRoutine?: (rt: any) => void;
 }
 
 export const LandingView: React.FC<LandingViewProps> = ({
@@ -58,6 +59,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
   onVoteRoutine,
   setSelectedProductForDetail,
   onShareRoutine,
+  onOpenRoutine,
 }) => {
   const [landingArticles, setLandingArticles] = useState<any[]>(DEFAULT_LANDING_ARTICLES);
   const landingFileInputRef = useRef<HTMLInputElement>(null);
@@ -361,87 +363,92 @@ export const LandingView: React.FC<LandingViewProps> = ({
             </div>
             </section>
 
-            {/* SECTION: ROUTINE SPOTLIGHTS (BELOW THE EDIT) */}
-            <section className="space-y-6 w-full pt-4">
+            {/* SECTION: COMMUNITY ROUTINES */}
+            <section className="space-y-4 w-full pt-4">
               <div className="flex items-center justify-between pb-3 border-b border-black/10">
                 <div className="flex items-baseline gap-3">
                   <h2 
                     className="text-xl md:text-2xl font-black uppercase tracking-tight text-black" 
                     style={{ fontFamily: '"fuzzy-bubbles", sans-serif' }}
                   >
-                    Routine spotlights
+                    Community Routines
                   </h2>
-                  <span className="text-xs text-black/40 font-medium hidden sm:inline">Top routines from the community</span>
+                  <span className="text-xs text-black/40 font-medium hidden sm:inline">Explore the latest routines shared by others like you</span>
                 </div>
               </div>
 
               {!publicRoutines || publicRoutines.length === 0 ? (
-                <div className="p-8 bg-white border border-black/10 rounded-2xl text-center text-xs text-black/50 font-medium uppercase tracking-wider">
-                  No public routine spotlights available yet. Create a public routine and share it with the community!
+                <div className="p-6 bg-white border border-black/10 rounded-2xl text-center text-xs text-black/50 font-medium uppercase tracking-wider">
+                  No public routines shared yet. Create and set a routine to public to feature it here!
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {[...publicRoutines]
-                    .sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0))
+                    .sort((a, b) => new Date(b.created_at || b.updated_at || 0).getTime() - new Date(a.created_at || a.updated_at || 0).getTime())
                     .slice(0, 3)
-                    .map((rt, idx) => (
+                    .map(rt => (
                       <div 
-                        key={rt.id || idx}
-                        className="clean-card bg-white border border-black/10 hover:border-black p-5 rounded-2xl transition-all duration-300 hover:shadow-lg flex flex-col justify-between group h-full"
+                        key={rt.id} 
+                        onClick={() => onOpenRoutine?.(rt)}
+                        className="clean-card bg-white border border-black/10 p-4 rounded-2xl space-y-3 flex flex-col justify-between cursor-pointer hover:border-black/30 transition-all"
+                        title="Click to view routine details"
                       >
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="px-2.5 py-1 rounded bg-[#F3E59A]/40 text-[#141413] font-['JetBrains_Mono',monospace] text-[10px] font-bold uppercase tracking-wider">
-                              {rt.time || 'AM'} Spotlight #{idx + 1}
+                            <span className="px-2 py-0.5 rounded bg-black/5 text-[10px] font-black uppercase tracking-wider text-venus-accent">
+                              {rt.time || 'AM'} Routine
                             </span>
                             <div className="flex items-center gap-1.5">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); onShareRoutine?.(rt); }}
-                                className="p-1.5 rounded-full bg-black/5 hover:bg-black/15 text-black transition-colors cursor-pointer"
+                                className="p-1.5 rounded-full bg-black/5 hover:bg-black/10 text-black transition-colors cursor-pointer"
                                 title="Share routine"
                               >
                                 <Share2 className="w-3.5 h-3.5" />
                               </button>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); onVoteRoutine?.(rt.id); }}
-                                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/5 hover:bg-black/15 text-black text-xs font-black transition-colors cursor-pointer"
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/5 hover:bg-black/10 text-black text-[11px] font-black transition-colors cursor-pointer"
                                 title="Upvote routine"
                               >
-                                <Heart className="w-4 h-4 text-venus-accent fill-venus-accent/20" />
-                                <span>{rt.votes_count || 0} Votes</span>
+                                <Heart className="w-3.5 h-3.5 text-venus-accent fill-venus-accent/20" />
+                                <span>{rt.votes_count || 0}</span>
                               </button>
                             </div>
                           </div>
-
-                          <h3 className="text-sm md:text-base font-black uppercase tracking-tight text-black group-hover:text-venus-accent transition-colors line-clamp-2 leading-snug">
-                            {rt.routine_name || 'Community Routine'}
-                          </h3>
-
+                          <div>
+                            <h4 className="text-sm font-black uppercase tracking-tight text-black">
+                              {rt.routine_name || 'Community Routine'}
+                            </h4>
+                            <div className="text-[11px] font-semibold text-black/50 mt-0.5">
+                              By @{rt.username || 'Anonymous'}
+                            </div>
+                          </div>
                           {rt.notes && (
-                            <p className="text-xs text-black/70 font-medium leading-relaxed line-clamp-3">
+                            <p className="text-xs text-black/60 font-medium line-clamp-2">
                               {rt.notes}
                             </p>
                           )}
-                          <div className="space-y-1.5 pt-2">
-                            <div className="text-[10px] font-black uppercase tracking-widest text-black/40">Included Products ({Array.isArray(rt.products) ? rt.products.length : 0})</div>
+                          <div className="space-y-1 pt-2">
+                            <div className="text-[10px] font-black uppercase tracking-widest text-black/40">Products ({Array.isArray(rt.products) ? rt.products.length : 0})</div>
                             <div className="space-y-1">
-                              {Array.isArray(rt.products) && rt.products.map((p: any, pIdx: number) => (
+                              {Array.isArray(rt.products) && rt.products.slice(0, 1).map((p: any, pIdx: number) => (
                                 <div 
                                   key={pIdx} 
                                   onClick={(e) => { e.stopPropagation(); openProductCard(String(p.id || p.product_id)); }}
-                                  className="text-xs font-semibold text-black/90 truncate flex items-center gap-2 cursor-pointer hover:text-venus-accent transition-colors"
-                                  title="Click to view product details"
+                                  className="text-xs font-semibold text-black/80 truncate flex items-center gap-1.5 hover:text-venus-accent transition-colors cursor-pointer"
+                                  title="Click to view product"
                                 >
-                                  <span className="w-2 h-2 rounded-full bg-venus-accent shrink-0" />
-                                  <span className="truncate underline">{p.brand} — {p.name}</span>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-venus-accent shrink-0" />
+                                  <span className="truncate underline">{p.brand} {p.name}</span>
                                 </div>
                               ))}
                             </div>
                           </div>
                         </div>
-
-                        <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-between text-xs font-black uppercase tracking-wider text-black/60">
+                        <div className="pt-3 border-t border-black/5 flex items-center justify-between text-[11px] text-black/50">
                           <span>{Array.isArray(rt.days) && rt.days.length > 0 ? rt.days.join(', ') : 'Daily'}</span>
+                          <span className="text-venus-accent font-black uppercase text-[10px]">View →</span>
                         </div>
                       </div>
                     ))}

@@ -139,6 +139,7 @@ export default function App() {
       if (path.startsWith('/feedback')) return AppState.FEEDBACK;
       if (path.startsWith('/comparison')) return AppState.COMPARISON;
       if (path.startsWith('/community')) return AppState.COMMUNITY;
+      if (path.startsWith('/brands')) return AppState.BRANDS;
       if (path.startsWith('/dashboard') || path.startsWith('/auth/callback') || hasHash) return AppState.DASHBOARD;
       if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
       if (path.startsWith('/tracker')) return AppState.TRACKER;
@@ -168,6 +169,7 @@ export default function App() {
       case AppState.FEEDBACK: screenName = 'Feedback'; break;
       case AppState.COMPARISON: screenName = 'Comparison'; break;
       case AppState.COMMUNITY: screenName = 'Community'; break;
+      case AppState.BRANDS: screenName = 'Brands'; break;
       default: screenName = 'Landing'; break;
     }
     trackPageView(screenName);
@@ -212,6 +214,7 @@ export default function App() {
         case AppState.FEEDBACK: urlPath = '/feedback'; break;
         case AppState.COMPARISON: urlPath = '/comparison'; break;
         case AppState.COMMUNITY: urlPath = '/community'; break;
+        case AppState.BRANDS: urlPath = '/brands'; break;
       }
       if (path) urlPath = path;
       window.history.pushState(null, '', urlPath);
@@ -232,6 +235,8 @@ export default function App() {
           setAppState(AppState.COMPARISON);
         } else if (path.startsWith('/community')) {
           setAppState(AppState.COMMUNITY);
+        } else if (path.startsWith('/brands')) {
+          setAppState(AppState.BRANDS);
         } else if (path.startsWith('/dashboard') || path.startsWith('/auth/callback')) {
           setAppState(AppState.DASHBOARD);
         } else if (path.startsWith('/products') || path.startsWith('/rank')) {
@@ -2159,7 +2164,10 @@ export default function App() {
         AppState.SOCIAL,
         AppState.PRODUCT_PAGE,
         AppState.DELETE_ACCOUNT,
-        AppState.PRIVACY_POLICY
+        AppState.PRIVACY_POLICY,
+        AppState.BRANDS,
+        AppState.COMPARISON,
+        AppState.FEEDBACK
       ];
       if (!allowedStates.includes(appState)) {
         setAppState(AppState.LANDING);
@@ -3754,20 +3762,12 @@ export default function App() {
                       <span className="text-xs uppercase tracking-widest font-black">Home</span>
                     </button>
                   )}
-                  {user ? (
+                  {user && (
                     <button 
                       onClick={() => { resetHeaderSearchState(); setAppState(AppState.ROUTINES); setIsMobileNavOpen(false); }} 
                       className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.ROUTINES ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                     >
                       <Sun className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.ROUTINES ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                      <span className="text-xs uppercase tracking-widest font-black">My Routines</span>
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => { setAuthPromptModalOpen(true); setIsMobileNavOpen(false); }} 
-                      className="flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent text-black/60 hover:text-black font-semibold group"
-                    >
-                      <Sun className="w-5 h-5 shrink-0 text-black/40 group-hover:text-black" />
                       <span className="text-xs uppercase tracking-widest font-black">My Routines</span>
                     </button>
                   )}
@@ -3789,7 +3789,7 @@ export default function App() {
                   </button>
 
                   <button 
-                    onClick={() => { resetHeaderSearchState(); setAppState(AppState.BRANDS); setSelectedBrandItem(null); setSelectedBrandsLetter(null); setIsMobileNavOpen(false); }} 
+                    onClick={() => { resetHeaderSearchState(); navigateTo(AppState.BRANDS, '/brands'); setSelectedBrandItem(null); setSelectedBrandsLetter(null); setIsMobileNavOpen(false); }} 
                     className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.BRANDS ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
                   >
                     <Award className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.BRANDS ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
@@ -4261,6 +4261,7 @@ export default function App() {
               onVoteRoutine={handleVoteRoutine}
               setSelectedProductForDetail={setSelectedProductForDetail}
               onShareRoutine={(rt) => { setShareRoutine(rt); setIsSharingOpen(true); }}
+              onOpenRoutine={handleOpenCommunityRoutine}
             />
           )}
 
