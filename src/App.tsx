@@ -43,7 +43,8 @@ import {
   Sliders,
   Check,
   MessageSquare,
-  HelpCircle
+  HelpCircle,
+  Send
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { supabase, recoverSupabaseSession } from './lib/supabase';
@@ -70,6 +71,8 @@ import { getScoreColorConfig } from './utils/scoreColors';
 import { fetchRoutinesWithLiveProducts, hydrateRoutineProducts } from './utils/routineFetcher';
 import { BREAKOUT_PHOTO_OPTIONS, getBreakoutTitle, breakoutTypeStringToId } from './data/breakoutOptions';
 import { setupCapacitorDeepLinkAuth, handleWebAuthCallback, isNativePlatform } from './utils/auth';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { LandingView } from './views/LandingView';
@@ -133,6 +136,8 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
+      const searchParams = new URLSearchParams(window.location.search);
+      const routineIdFromUrl = searchParams.get('routineId') || searchParams.get('routine') || searchParams.get('id');
       const hasHash = window.location.hash.includes('access_token=') || window.location.hash.includes('code=');
       if (path.startsWith('/privacy')) return AppState.PRIVACY_POLICY;
       if (path.startsWith('/delete-account')) return AppState.DELETE_ACCOUNT;
@@ -140,12 +145,12 @@ export default function App() {
       if (path.startsWith('/comparison')) return AppState.COMPARISON;
       if (path.startsWith('/community')) return AppState.COMMUNITY;
       if (path.startsWith('/brands')) return AppState.BRANDS;
+      if (path.startsWith('/routines') || routineIdFromUrl) return AppState.ROUTINES;
       if (path.startsWith('/dashboard') || path.startsWith('/auth/callback') || hasHash) return AppState.DASHBOARD;
       if (path.startsWith('/products') || path.startsWith('/rank')) return AppState.RANK;
       if (path.startsWith('/tracker')) return AppState.TRACKER;
       if (path.startsWith('/social')) return AppState.SOCIAL;
       if (path.startsWith('/profile')) return AppState.PROFILE;
-      if (path.startsWith('/routines')) return AppState.ROUTINES;
       if (path.startsWith('/onboarding')) return AppState.ONBOARDING_DETAILS;
       if (path.startsWith('/auth')) return AppState.AUTH;
     }
@@ -175,11 +180,6 @@ export default function App() {
     trackPageView(screenName);
   }, [appState]);
 
-  useEffect(() => {
-    if (appState === AppState.COMMUNITY && profile !== null && Number(profile?.type) !== 1) {
-      setAppState(user ? AppState.DASHBOARD : AppState.LANDING);
-    }
-  }, [appState, profile, user]);
 
   const [comparisonProductIds, setComparisonProductIds] = useState<string[]>(['1', '2']);
 
@@ -225,6 +225,13 @@ export default function App() {
     const handlePopState = () => {
       if (typeof window !== 'undefined') {
         const path = window.location.pathname;
+        const searchParams = new URLSearchParams(window.location.search);
+        const routineIdFromUrl = searchParams.get('routineId') || searchParams.get('routine') || searchParams.get('id');
+        if (routineIdFromUrl) {
+          setAppState(AppState.ROUTINES);
+          setUrlRoutineId(routineIdFromUrl);
+          return;
+        }
         if (path.startsWith('/privacy')) {
           setAppState(AppState.PRIVACY_POLICY);
         } else if (path.startsWith('/delete-account')) {
@@ -480,6 +487,18 @@ export default function App() {
   const [shareRoutine, setShareRoutine] = useState<any>(null);
   const [usernameSearch, setUsernameSearch] = useState('');
   const [userResults, setUserResults] = useState<any[]>([]);
+  const [urlRoutineId, setUrlRoutineId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('routineId') || params.get('routine') || params.get('id');
+    }
+    return null;
+  });
+  const [sharedRoutineFromUrl, setSharedRoutineFromUrl] = useState<any | null>(null);
+  const [isLoadingSharedRoutine, setIsLoadingSharedRoutine] = useState(false);
+  const [activeSocialPlatform, setActiveSocialPlatform] = useState<'instagram' | 'tiktok' | null>(null);
+  const [socialTargetUsername, setSocialTargetUsername] = useState('');
+  const [socialShareFeedback, setSocialShareFeedback] = useState<{ platform: string; message: string } | null>(null);
   const [newProductForComparison, setNewProductForComparison] = useState<any | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<any | null>(null);
   const [isFollowsOpen, setIsFollowsOpen] = useState(false);
@@ -1650,6 +1669,317 @@ export default function App() {
     fetchPublicRoutines();
   }, []);
 
+  const ensureRoutinePublic = async (rt: any) => {
+    if (!rt || !rt.id) return;
+    try {
+      if (!rt.public) {
+        await supabase.from('routines').update({ public: true }).eq('id', rt.id);
+        rt.public = true;
+        fetchPublicRoutines();
+      }
+    } catch (err) {
+      console.warn('Could not set routine to public:', err);
+    }
+  };
+
+  const handleCloseShareModal = () => {
+    setIsSharingOpen(false);
+    setShareRoutine(null);
+    setUsernameSearch('');
+    setActiveSocialPlatform(null);
+    setSocialTargetUsername('');
+    setSocialShareFeedback(null);
+  };
+
+  const getRoutineShareUrl = (rt: any) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.canonic.co.uk';
+    const id = rt?.id || rt?.routine_id || '';
+    return `${origin}/routines?routineId=${encodeURIComponent(id)}`;
+  };
+
+  const getRoutineShareText = (rt: any) => {
+    const name = rt?.routine_name || 'Skincare Routine';
+    const url = getRoutineShareUrl(rt);
+    return `Check out this routine "${name}" on Canonic!\n\n${url}`;
+  };
+
+  const copyShareTextToClipboard = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) {
+      console.warn('Clipboard writeText failed, using fallback:', e);
+    }
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return successful;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const handleInstagramMessageShare = async (specificUsername?: string) => {
+    if (!shareRoutine) return;
+    ensureRoutinePublic(shareRoutine);
+    const text = getRoutineShareText(shareRoutine);
+    await copyShareTextToClipboard(text);
+
+    const cleanUser = specificUsername?.trim().replace(/^@/, '');
+    const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    setSocialShareFeedback({
+      platform: 'Instagram',
+      message: cleanUser 
+        ? `Routine link copied! Opening direct chat with @${cleanUser}...`
+        : 'Routine link copied to clipboard! Opening Instagram Messages so you can paste and send.'
+    });
+
+    if (cleanUser) {
+      window.open(`https://ig.me/m/${encodeURIComponent(cleanUser)}`, '_blank');
+    } else {
+      if (isMobile) {
+        window.location.href = 'instagram://direct-inbox';
+        setTimeout(() => {
+          window.open('https://www.instagram.com/direct/inbox/', '_blank');
+        }, 500);
+      } else {
+        window.open('https://www.instagram.com/direct/inbox/', '_blank');
+      }
+    }
+  };
+
+  const handleTikTokMessageShare = async (specificUsername?: string) => {
+    if (!shareRoutine) return;
+    ensureRoutinePublic(shareRoutine);
+    const text = getRoutineShareText(shareRoutine);
+    await copyShareTextToClipboard(text);
+
+    const cleanUser = specificUsername?.trim().replace(/^@/, '');
+    const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    setSocialShareFeedback({
+      platform: 'TikTok',
+      message: cleanUser 
+        ? `Routine link copied! Opening @${cleanUser}'s TikTok to send message...`
+        : 'Routine link copied to clipboard! Opening TikTok Messages so you can paste and send.'
+    });
+
+    if (cleanUser) {
+      window.open(`https://www.tiktok.com/@${encodeURIComponent(cleanUser)}`, '_blank');
+    } else {
+      if (isMobile) {
+        window.location.href = 'snssdk1233://inbox';
+        setTimeout(() => {
+          window.open('https://www.tiktok.com/messages', '_blank');
+        }, 500);
+      } else {
+        window.open('https://www.tiktok.com/messages', '_blank');
+      }
+    }
+  };
+
+  const handleNativeShare = async () => {
+    if (!shareRoutine) return;
+    ensureRoutinePublic(shareRoutine);
+    const text = getRoutineShareText(shareRoutine);
+    const url = getRoutineShareUrl(shareRoutine);
+    if (navigator?.share) {
+      try {
+        await navigator.share({
+          title: shareRoutine.routine_name || 'Skincare Routine',
+          text: `Check out this routine "${shareRoutine.routine_name || 'Skincare Routine'}" on Canonic!`,
+          url: url
+        });
+        setSocialShareFeedback({
+          platform: 'Share',
+          message: 'Shared successfully!'
+        });
+      } catch (e: any) {
+        if (e?.name !== 'AbortError') {
+          await copyShareTextToClipboard(text);
+          setSocialShareFeedback({
+            platform: 'Share',
+            message: 'Routine link copied to clipboard!'
+          });
+        }
+      }
+    } else {
+      await copyShareTextToClipboard(text);
+      setSocialShareFeedback({
+        platform: 'Share',
+        message: 'Routine link copied to clipboard!'
+      });
+    }
+  };
+
+  const handleWhatsAppShare = async () => {
+    if (!shareRoutine) return;
+    ensureRoutinePublic(shareRoutine);
+    const text = getRoutineShareText(shareRoutine);
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const handleMessengerShare = async () => {
+    if (!shareRoutine) return;
+    ensureRoutinePublic(shareRoutine);
+    const url = getRoutineShareUrl(shareRoutine);
+    const text = getRoutineShareText(shareRoutine);
+    await copyShareTextToClipboard(text);
+    const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      window.location.href = `fb-messenger://share?link=${encodeURIComponent(url)}`;
+      setTimeout(() => {
+        window.open(`https://www.facebook.com/dialog/send?link=${encodeURIComponent(url)}&app_id=291494419107518&redirect_uri=${encodeURIComponent(url)}`, '_blank');
+      }, 500);
+    } else {
+      window.open(`https://www.facebook.com/dialog/send?link=${encodeURIComponent(url)}&app_id=291494419107518&redirect_uri=${encodeURIComponent(url)}`, '_blank');
+    }
+  };
+
+  const handleCopyRoutineLink = async () => {
+    if (!shareRoutine) return;
+    ensureRoutinePublic(shareRoutine);
+    const text = getRoutineShareText(shareRoutine);
+    await copyShareTextToClipboard(text);
+    setSocialShareFeedback({
+      platform: 'Copy',
+      message: 'Routine link & details copied to clipboard!'
+    });
+    setSuccessMessage('Routine copied to clipboard!');
+    setTimeout(() => {
+      setSuccessMessage(null);
+      setSocialShareFeedback(null);
+    }, 3000);
+  };
+
+  const handleSaveSharedRoutineToMyAccount = async (routineToSave: any) => {
+    if (!user) {
+      setIsSignUp(false);
+      setAppState(AppState.AUTH);
+      return;
+    }
+    try {
+      const currentUsername = profile?.username || user?.user_metadata?.username || user?.email?.split('@')[0] || 'Anonymous';
+      const payload = {
+        user_id: user.id,
+        time: routineToSave.time || 'AM',
+        days: Array.isArray(routineToSave.days) ? routineToSave.days : ['Daily'],
+        routine_name: `${routineToSave.routine_name || 'Shared Routine'} (Saved)`,
+        notes: routineToSave.notes || '',
+        url: routineToSave.url || null,
+        products: routineToSave.products || [],
+        public: false,
+        username: currentUsername,
+        votes_count: 0
+      };
+      const { data: newRt, error } = await supabase.from('routines').insert(payload).select().single();
+      if (error) throw error;
+      setSuccessMessage(`"${routineToSave.routine_name}" saved to your routines!`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+      const updated = await fetchRoutinesWithLiveProducts(user.id);
+      if (updated) {
+        setRoutines(updated);
+        setRoutinesVersion(v => v + 1);
+        const newIdx = updated.findIndex((r: any) => r.id === newRt.id);
+        if (newIdx !== -1) {
+          setExpandedRoutines(prev => [...prev, newIdx]);
+        }
+      }
+    } catch (err: any) {
+      setError('Failed to save routine: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  // Deep link handler for external routine URLs: automatically navigates to routines page and opens that routine
+  useEffect(() => {
+    if (!urlRoutineId) return;
+
+    let isMounted = true;
+    setIsLoadingSharedRoutine(true);
+    setAppState(AppState.ROUTINES);
+
+    const fetchAndOpen = async () => {
+      try {
+        // 1. Check if already in user's loaded routines
+        const myIdx = routines.findIndex((r: any) => String(r.id) === String(urlRoutineId));
+        if (myIdx !== -1) {
+          if (isMounted) {
+            setExpandedRoutines(prev => prev.includes(myIdx) ? prev : [...prev, myIdx]);
+            setSelectedCommunityRoutine(routines[myIdx]);
+            setSharedRoutineFromUrl(routines[myIdx]);
+            setIsLoadingSharedRoutine(false);
+            setTimeout(() => {
+              document.getElementById(`user-routine-${urlRoutineId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+          }
+          return;
+        }
+
+        // 2. Check if already in publicRoutines
+        const pub = publicRoutines.find((r: any) => String(r.id) === String(urlRoutineId));
+        if (pub) {
+          if (isMounted) {
+            setSelectedCommunityRoutine(pub);
+            setSharedRoutineFromUrl(pub);
+            setIsLoadingSharedRoutine(false);
+          }
+          return;
+        }
+
+        // 3. Query Supabase routines table directly by ID
+        const { data, error } = await supabase
+          .from('routines')
+          .select('*')
+          .eq('id', urlRoutineId)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (error) {
+          console.error('Error fetching shared routine by ID:', error);
+          setIsLoadingSharedRoutine(false);
+          return;
+        }
+
+        if (data) {
+          const hydrated = await hydrateRoutineProducts([data]);
+          const targetRoutine = hydrated[0] || data;
+
+          if (isMounted) {
+            setSharedRoutineFromUrl(targetRoutine);
+            setSelectedCommunityRoutine(targetRoutine);
+            setIsLoadingSharedRoutine(false);
+
+            if (user && data.user_id === user.id) {
+              refreshRoutines();
+            }
+          }
+        } else {
+          if (isMounted) setIsLoadingSharedRoutine(false);
+        }
+      } catch (err) {
+        console.error('Exception loading shared routine:', err);
+        if (isMounted) setIsLoadingSharedRoutine(false);
+      }
+    };
+
+    fetchAndOpen();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [urlRoutineId, routines, publicRoutines, user, refreshRoutines]);
+
   const handleVoteRoutine = async (routineId: string) => {
     try {
       const target = publicRoutines.find(r => r.id === routineId);
@@ -1979,8 +2309,26 @@ export default function App() {
       }
     );
 
+    let removeAppUrlOpen: (() => void) | null = null;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('appUrlOpen', (event) => {
+        if (!event?.url) return;
+        try {
+          const parsed = new URL(event.url);
+          const rId = parsed.searchParams.get('routineId') || parsed.searchParams.get('routine') || parsed.searchParams.get('id');
+          if (rId || parsed.pathname.includes('/routines')) {
+            setAppState(AppState.ROUTINES);
+            if (rId) setUrlRoutineId(rId);
+          }
+        } catch (e) {}
+      }).then(handle => {
+        removeAppUrlOpen = () => handle.remove();
+      }).catch(() => {});
+    }
+
     return () => {
       cleanupDeepLink();
+      removeAppUrlOpen?.();
     };
   }, []);
 
@@ -3308,10 +3656,17 @@ export default function App() {
             const scoreConfig = getScoreColorConfig(score);
             const isExpanded = expandedRoutines.includes(rIdx);
 
+            const isTargetedByUrl = Boolean(urlRoutineId && String(rt.id) === String(urlRoutineId));
+
             return (
               <div 
                 key={rIdx} 
-                className="rounded-xl bg-white border border-[#EAE9E5] hover:border-[#CFCBC2] transition-all px-5 py-3.5 flex flex-col gap-2 shadow-none"
+                id={`user-routine-${rt.id}`}
+                className={`rounded-xl bg-white transition-all px-5 py-3.5 flex flex-col gap-2 shadow-none ${
+                  isTargetedByUrl 
+                    ? 'border-2 border-black ring-2 ring-black/10 shadow-md' 
+                    : 'border border-[#EAE9E5] hover:border-[#CFCBC2]'
+                }`}
               >
                 <div 
                   className="flex items-center justify-between cursor-pointer gap-4" 
@@ -3579,6 +3934,181 @@ export default function App() {
     </div>
   );
 
+  const renderNavContent = (isDesktop: boolean = false) => (
+    <>
+      <div className="flex flex-col gap-6">
+        <div className="flex justify-between items-center pb-2 border-b border-black/5">
+          <div className="flex flex-col">
+            <span 
+              className="font-bubble text-3xl text-black font-medium cursor-pointer" 
+              onClick={() => { 
+                if (user) {
+                  setAppState(AppState.DASHBOARD);
+                } else {
+                  setAppState(AppState.LANDING);
+                }
+                if (!isDesktop) setIsMobileNavOpen(false); 
+              }}
+            >
+              Canonic
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-venus-accent">Beauty, Smarter</span>
+          </div>
+          {!isDesktop && (
+            <button 
+              onClick={() => setIsMobileNavOpen(false)}
+              className="p-1.5 rounded-full transition-colors cursor-pointer text-black/60 hover:text-black outline-none focus:outline-none focus:bg-transparent active:bg-transparent lg:hidden"
+              aria-label="Close menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {/* List of Pages */}
+        <div className="flex flex-col gap-2">
+          {user && (
+            <button 
+              onClick={() => { resetHeaderSearchState(); setAppState(AppState.DASHBOARD); if (!isDesktop) setIsMobileNavOpen(false); }} 
+              className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.DASHBOARD ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+            >
+              <FlaskConical className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.DASHBOARD ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+              <span className="text-xs uppercase tracking-widest font-black">Home</span>
+            </button>
+          )}
+          {user && (
+            <button 
+              onClick={() => { resetHeaderSearchState(); setAppState(AppState.ROUTINES); if (!isDesktop) setIsMobileNavOpen(false); }} 
+              className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.ROUTINES ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+            >
+              <Sun className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.ROUTINES ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+              <span className="text-xs uppercase tracking-widest font-black">My Routines</span>
+            </button>
+          )}
+          {user && (
+            <button 
+              onClick={() => { resetHeaderSearchState(); setAppState(AppState.TRACKER); if (!isDesktop) setIsMobileNavOpen(false); }} 
+              className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.TRACKER ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+            >
+              <CheckSquare className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.TRACKER ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+              <span className="text-xs uppercase tracking-widest font-black">Tracker</span>
+            </button>
+          )}
+          <button 
+            onClick={() => { resetHeaderSearchState(); setAppState(AppState.RANK); if (!isDesktop) setIsMobileNavOpen(false); }} 
+            className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.RANK ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+          >
+            <ShoppingBag className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.RANK ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+            <span className="text-xs uppercase tracking-widest font-black">Products</span>
+          </button>
+
+          <button 
+            onClick={() => { resetHeaderSearchState(); navigateTo(AppState.BRANDS, '/brands'); setSelectedBrandItem(null); setSelectedBrandsLetter(null); if (!isDesktop) setIsMobileNavOpen(false); }} 
+            className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.BRANDS ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+          >
+            <Award className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.BRANDS ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+            <span className="text-xs uppercase tracking-widest font-black">Brands</span>
+          </button>
+
+          {Number(profile?.type) === 1 && (
+            <button 
+              onClick={() => { 
+                if (!user) {
+                  setAuthPromptModalOpen(true);
+                } else {
+                  setIsAiCompareModalOpen(true);
+                }
+                if (!isDesktop) setIsMobileNavOpen(false); 
+              }} 
+              className="flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent text-black/60 hover:text-black font-semibold group"
+            >
+              <Sliders className="w-5 h-5 shrink-0 text-black/40 group-hover:text-black" />
+              <span className="text-xs uppercase tracking-widest font-black">AI Compare</span>
+            </button>
+          )}
+
+          <button 
+            onClick={() => { resetHeaderSearchState(); setAppState(AppState.COMMUNITY); if (!isDesktop) setIsMobileNavOpen(false); }} 
+            className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.COMMUNITY ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+          >
+            <Users className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.COMMUNITY ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+            <span className="text-xs uppercase tracking-widest font-black">Community</span>
+          </button>
+
+          <button 
+            onClick={() => { resetHeaderSearchState(); setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setSocialActiveMainTab('articles'); if (!isDesktop) setIsMobileNavOpen(false); }} 
+            className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.SOCIAL ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+          >
+            <Heart className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.SOCIAL ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+            <span className="text-xs uppercase tracking-widest font-black">The Edit</span>
+          </button>
+          {user && (
+            <>
+              <button 
+                onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); if (!isDesktop) setIsMobileNavOpen(false); }} 
+                className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.PROFILE ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+              >
+                <UserIcon className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.PROFILE ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+                <span className="text-xs uppercase tracking-widest font-black">Profile</span>
+              </button>
+              <button 
+                onClick={() => { resetHeaderSearchState(); setAppState(AppState.FEEDBACK); if (!isDesktop) setIsMobileNavOpen(false); }} 
+                className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.FEEDBACK ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
+              >
+                <MessageSquare className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.FEEDBACK ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
+                <span className="text-xs uppercase tracking-widest font-black">Feedback</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom: User Info, Log Out & Privacy Policy */}
+      <div className="pt-4 border-t border-black/10 mt-6 flex flex-col gap-3">
+        {user && (
+          <>
+            <div className="flex items-center gap-3 px-2 py-1 text-xs text-black/60">
+              <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center font-black uppercase text-black text-xs shrink-0">
+                {user.email ? user.email.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <div className="truncate">
+                <p className="font-bold text-black truncate">{profile?.username || user.email?.split('@')[0] || 'User'}</p>
+                <p className="text-[10px] text-black/40 truncate">{user.email}</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => { handleSignOut(); if (!isDesktop) setIsMobileNavOpen(false); }}
+              className="flex items-center gap-3 px-3 py-2.5 text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer text-xs font-black uppercase tracking-wider"
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span>Log Out</span>
+            </button>
+          </>
+        )}
+        <div className="pt-2 px-1 flex items-center justify-between text-[11px] text-black/50">
+          <a 
+            href="https://www.canonic.co.uk/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              if (isNativePlatform()) {
+                e.preventDefault();
+                Browser.open({ url: 'https://www.canonic.co.uk/privacy' });
+                if (!isDesktop) setIsMobileNavOpen(false);
+              } else {
+                if (!isDesktop) setIsMobileNavOpen(false);
+              }
+            }}
+            className="hover:text-black underline cursor-pointer transition-colors font-semibold"
+          >
+            Privacy Policy
+          </a>
+          <span>© Canonic</span>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
       <ProductCard />
@@ -3682,9 +4212,18 @@ export default function App() {
                  </div>
                </div>
 
-              <div className="pt-4 border-t border-black/10 flex items-center justify-between text-xs text-black/60 font-semibold">
+              <div className="pt-4 border-t border-black/10 flex items-center justify-between text-xs text-black/60 font-semibold flex-wrap gap-2">
                 <span>Schedule: {Array.isArray(selectedCommunityRoutine.days) && selectedCommunityRoutine.days.length > 0 ? selectedCommunityRoutine.days.join(', ') : 'Daily'}</span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(!user || selectedCommunityRoutine.user_id !== user?.id) && (
+                    <button
+                      onClick={() => handleSaveSharedRoutineToMyAccount(selectedCommunityRoutine)}
+                      className="px-3.5 py-2 rounded-xl bg-black text-white hover:bg-venus-accent font-black text-xs uppercase tracking-wider transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Save to My Routines</span>
+                    </button>
+                  )}
                   <button 
                     onClick={() => { setShareRoutine(selectedCommunityRoutine); setIsSharingOpen(true); }}
                     className="px-4 py-2 rounded-xl bg-black/5 hover:bg-black/10 text-black font-black text-xs uppercase tracking-wider transition-colors cursor-pointer inline-flex items-center gap-1.5"
@@ -3694,7 +4233,7 @@ export default function App() {
                   </button>
                   <button 
                     onClick={() => setSelectedCommunityRoutine(null)}
-                    className="px-5 py-2 rounded-xl bg-black text-white font-black text-xs uppercase tracking-wider hover:bg-black/80 transition-colors cursor-pointer"
+                    className="px-5 py-2 rounded-xl bg-black/10 hover:bg-black/20 text-black font-black text-xs uppercase tracking-wider transition-colors cursor-pointer"
                   >
                     Close
                   </button>
@@ -3703,7 +4242,12 @@ export default function App() {
             </div>
           </div>
         )}
-      {/* Left Side Panel */}
+      {/* Desktop Persistent Left Sidebar (>= 1024px) */}
+      <aside className="hidden lg:flex fixed inset-y-0 left-0 w-64 h-screen bg-white z-40 border-r border-[#EAE9E5] p-6 flex-col justify-between overflow-y-auto">
+        {renderNavContent(true)}
+      </aside>
+
+      {/* Mobile / Tablet Drawer (< 1024px) */}
       <AnimatePresence>
         {isMobileNavOpen && (
           <>
@@ -3714,7 +4258,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsMobileNavOpen(false)}
-              className="fixed inset-0 bg-black/40 backdrop-blur-xs z-[55] cursor-pointer"
+              className="lg:hidden fixed inset-0 bg-black/40 backdrop-blur-xs z-[55] cursor-pointer"
             />
             <motion.div 
               key="nav-panel"
@@ -3722,191 +4266,22 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed inset-y-0 left-0 w-64 bg-white z-[60] shadow-2xl p-6 flex flex-col justify-between overflow-y-auto"
+              className="lg:hidden fixed inset-y-0 left-0 w-64 bg-white z-[60] shadow-2xl p-6 flex flex-col justify-between overflow-y-auto"
             >
-              <div className="flex flex-col gap-6">
-                <div className="flex justify-between items-center pb-2 border-b border-black/5">
-                  <div className="flex flex-col">
-                    <span 
-                      className="font-bubble text-3xl text-black font-medium cursor-pointer" 
-                      onClick={() => { 
-                        if (user) {
-                          setAppState(AppState.DASHBOARD);
-                        } else {
-                          setAppState(AppState.LANDING);
-                        }
-                        setIsMobileNavOpen(false); 
-                      }}
-                    >
-                      Canonic
-                    </span>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-venus-accent">Beauty, Smarter</span>
-                  </div>
-                  <button 
-                    onClick={() => setIsMobileNavOpen(false)}
-                    className="p-1.5 rounded-full transition-colors cursor-pointer text-black/60 hover:text-black outline-none focus:outline-none focus:bg-transparent active:bg-transparent"
-                    aria-label="Close menu"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                {/* List of Pages */}
-                <div className="flex flex-col gap-2">
-                  {user && (
-                    <button 
-                      onClick={() => { resetHeaderSearchState(); setAppState(AppState.DASHBOARD); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.DASHBOARD ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                    >
-                      <FlaskConical className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.DASHBOARD ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                      <span className="text-xs uppercase tracking-widest font-black">Home</span>
-                    </button>
-                  )}
-                  {user && (
-                    <button 
-                      onClick={() => { resetHeaderSearchState(); setAppState(AppState.ROUTINES); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.ROUTINES ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                    >
-                      <Sun className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.ROUTINES ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                      <span className="text-xs uppercase tracking-widest font-black">My Routines</span>
-                    </button>
-                  )}
-                  {user && (
-                    <button 
-                      onClick={() => { resetHeaderSearchState(); setAppState(AppState.TRACKER); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.TRACKER ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                    >
-                      <CheckSquare className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.TRACKER ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                      <span className="text-xs uppercase tracking-widest font-black">Tracker</span>
-                    </button>
-                  )}
-                  <button 
-                    onClick={() => { resetHeaderSearchState(); setAppState(AppState.RANK); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.RANK ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                  >
-                    <ShoppingBag className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.RANK ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                    <span className="text-xs uppercase tracking-widest font-black">Products</span>
-                  </button>
-
-                  <button 
-                    onClick={() => { resetHeaderSearchState(); navigateTo(AppState.BRANDS, '/brands'); setSelectedBrandItem(null); setSelectedBrandsLetter(null); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.BRANDS ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                  >
-                    <Award className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.BRANDS ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                    <span className="text-xs uppercase tracking-widest font-black">Brands</span>
-                  </button>
-
-                  {Number(profile?.type) === 1 && (
-                    <button 
-                      onClick={() => { 
-                        if (!user) {
-                          setAuthPromptModalOpen(true);
-                        } else {
-                          setIsAiCompareModalOpen(true);
-                        }
-                        setIsMobileNavOpen(false); 
-                      }} 
-                      className="flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent text-black/60 hover:text-black font-semibold group"
-                    >
-                      <Sliders className="w-5 h-5 shrink-0 text-black/40 group-hover:text-black" />
-                      <span className="text-xs uppercase tracking-widest font-black">AI Compare</span>
-                    </button>
-                  )}
-
-                  {Number(profile?.type) === 1 && (
-                    <button 
-                      onClick={() => { resetHeaderSearchState(); setAppState(AppState.COMMUNITY); setIsMobileNavOpen(false); }} 
-                      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.COMMUNITY ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                    >
-                      <Users className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.COMMUNITY ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                      <span className="text-xs uppercase tracking-widest font-black">Community</span>
-                    </button>
-                  )}
-
-                  <button 
-                    onClick={() => { resetHeaderSearchState(); setAppState(AppState.SOCIAL); setIsFollowsOpen(false); setSocialActiveMainTab('articles'); setIsMobileNavOpen(false); }} 
-                    className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.SOCIAL ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                  >
-                    <Heart className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.SOCIAL ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                    <span className="text-xs uppercase tracking-widest font-black">The Edit</span>
-                  </button>
-                  {user && (
-                    <>
-                      <button 
-                        onClick={() => { resetHeaderSearchState(); setAppState(AppState.PROFILE); setIsMobileNavOpen(false); }} 
-                        className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.PROFILE ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                      >
-                        <UserIcon className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.PROFILE ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                        <span className="text-xs uppercase tracking-widest font-black">Profile</span>
-                      </button>
-                      <button 
-                        onClick={() => { resetHeaderSearchState(); setAppState(AppState.FEEDBACK); setIsMobileNavOpen(false); }} 
-                        className={`flex items-center gap-4 px-3 py-2.5 rounded-xl transition-colors cursor-pointer select-none outline-none focus:outline-none focus:bg-transparent active:bg-transparent group ${appState === AppState.FEEDBACK ? 'text-black font-black' : 'text-black/60 hover:text-black font-semibold'}`}
-                      >
-                        <MessageSquare className={`w-5 h-5 shrink-0 transition-colors ${appState === AppState.FEEDBACK ? 'text-venus-accent' : 'text-black/40 group-hover:text-black'}`} />
-                        <span className="text-xs uppercase tracking-widest font-black">Feedback</span>
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom: User Info, Log Out & Privacy Policy */}
-              <div className="pt-4 border-t border-black/10 mt-6 flex flex-col gap-3">
-                {user && (
-                  <>
-                    <div className="flex items-center gap-3 px-2 py-1 text-xs text-black/60">
-                      <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center font-black uppercase text-black text-xs shrink-0">
-                        {user.email ? user.email.charAt(0).toUpperCase() : 'U'}
-                      </div>
-                      <div className="truncate">
-                        <p className="font-bold text-black truncate">{profile?.username || user.email?.split('@')[0] || 'User'}</p>
-                        <p className="text-[10px] text-black/40 truncate">{user.email}</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => { handleSignOut(); setIsMobileNavOpen(false); }}
-                      className="flex items-center gap-3 px-3 py-2.5 text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer text-xs font-black uppercase tracking-wider"
-                    >
-                      <LogOut className="w-4 h-4 shrink-0" />
-                      <span>Log Out</span>
-                    </button>
-                  </>
-                )}
-                <div className="pt-2 px-1 flex items-center justify-between text-[11px] text-black/50">
-                  <a 
-                    href="https://www.canonic.co.uk/privacy"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (isNativePlatform()) {
-                        e.preventDefault();
-                        Browser.open({ url: 'https://www.canonic.co.uk/privacy' });
-                        setIsMobileNavOpen(false);
-                      } else {
-                        setIsMobileNavOpen(false);
-                      }
-                    }}
-                    className="hover:text-black underline cursor-pointer transition-colors font-semibold"
-                  >
-                    Privacy Policy
-                  </a>
-                  <span>© Canonic</span>
-                </div>
-              </div>
+              {renderNavContent(false)}
             </motion.div>
           </>
         )}
       </AnimatePresence>
       
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#EAE9E5]">
+      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-[#EAE9E5] lg:pl-64">
         <div className="flex justify-between items-center px-3 sm:px-4 md:px-6 h-14 sm:h-16 gap-1.5 sm:gap-4 max-w-7xl mx-auto">
-          {/* Top Left: Canonic brand and Nav Links */}
-          <div className="flex items-center gap-1.5 sm:gap-4 md:gap-6 shrink-0">
+          {/* Top Left: Canonic brand and Nav Links - hidden on desktop since sidebar is permanent */}
+          <div className="flex items-center gap-1.5 sm:gap-4 md:gap-6 shrink-0 lg:hidden">
             <button 
               onClick={() => setIsMobileNavOpen(!isMobileNavOpen)} 
-              className={`p-1.5 -ml-1 text-[#171717] hover:bg-[#F4F3F0] rounded-lg cursor-pointer transition-colors shrink-0 whitespace-nowrap ${user ? 'block' : 'block md:hidden'}`}
+              className={`p-1.5 -ml-1 text-[#171717] hover:bg-[#F4F3F0] rounded-lg cursor-pointer transition-colors shrink-0 whitespace-nowrap lg:hidden ${user ? 'block' : 'block md:hidden'}`}
               aria-label="Toggle navigation menu"
               title="Navigation menu"
             >
@@ -3914,11 +4289,11 @@ export default function App() {
             </button>
             <button 
               onClick={() => { resetHeaderSearchState(); setAppState(user ? AppState.DASHBOARD : AppState.LANDING); }} 
-              className="font-bubble text-xl sm:text-2xl md:text-3xl text-[#171717] cursor-pointer tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap shrink-0"
+              className="font-bubble text-xl sm:text-2xl md:text-3xl text-[#171717] cursor-pointer tracking-tight hover:opacity-80 transition-opacity whitespace-nowrap shrink-0 lg:hidden"
             >
               Canonic
             </button>
-            <nav className="hidden md:flex items-center gap-6">
+            <nav className="hidden md:flex lg:hidden items-center gap-6">
               <button 
                 onClick={() => { resetHeaderSearchState(); setAppState(AppState.RANK); }}
                 className={`text-xs font-semibold uppercase tracking-[0.14em] cursor-pointer transition-colors whitespace-nowrap ${appState === AppState.RANK ? 'text-[#171717] underline underline-offset-8 decoration-2 decoration-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
@@ -3991,7 +4366,7 @@ export default function App() {
 
         {/* Full-width Search Results Dropdown */}
         {isHeaderSearchDropdownOpen && headerSearchQuery.trim() && (
-          <div ref={headerSearchDropdownRef} className="absolute top-full left-0 right-0 w-full bg-white/95 backdrop-blur-md border-b border-black/10 shadow-2xl overflow-hidden z-[100] max-h-[70vh] overflow-y-auto">
+          <div ref={headerSearchDropdownRef} className="absolute top-full left-0 right-0 lg:left-64 bg-white/95 backdrop-blur-md border-b border-black/10 shadow-2xl overflow-hidden z-[100] max-h-[70vh] overflow-y-auto">
             <div className="max-w-4xl mx-auto px-4 py-3">
               {isHeaderSearching ? (
                 <div className="p-6 text-center text-xs text-black/50 uppercase tracking-widest font-black flex items-center justify-center gap-2">
@@ -4060,7 +4435,7 @@ export default function App() {
         const showQuizBanner = user && !hasCompletedQuiz && !isQuizBannerDismissed && appState !== AppState.ONBOARDING_DETAILS;
         if (!showQuizBanner) return null;
         return (
-          <div className="bg-white border-b border-black/10 shadow-xs py-3 px-4 md:px-6 relative z-40">
+          <div className="bg-white border-b border-black/10 shadow-xs py-3 px-4 md:px-6 relative z-30 lg:pl-64">
             <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
               <button
                 onClick={() => {
@@ -4086,8 +4461,8 @@ export default function App() {
       
       <main className={
         appState === AppState.LANDING 
-          ? 'p-0 m-0 w-full min-h-screen' 
-          : `pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')}`
+          ? 'p-0 m-0 w-full min-h-screen lg:pl-64' 
+          : `pt-4 md:pt-6 ${appState === AppState.ONBOARDING_DETAILS ? 'pb-4 h-[calc(100dvh-5rem)] md:h-auto bg-transparent' : 'pb-24'} px-4 md:px-6 mx-auto ${(appState === AppState.TRACKER || appState === AppState.SOCIAL) ? 'max-w-none' : (appState === AppState.RANK ? 'max-w-6xl' : 'max-w-4xl')} lg:pl-64`
       }>
         {successMessage && (
           <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-2xl mb-4 text-xs font-bold flex items-center justify-between shadow-sm">
@@ -4208,15 +4583,15 @@ export default function App() {
             </motion.div>
           )}
 
-          {appState === AppState.COMMUNITY && Number(profile?.type) === 1 && (
+          {appState === AppState.COMMUNITY && (
             <CommunityView
+              user={user}
+              profile={profile}
+              setAppState={setAppState}
+              openProductCard={openProductCard}
               publicRoutines={publicRoutines}
               onVoteRoutine={handleVoteRoutine}
               onShareRoutine={(rt) => { setShareRoutine(rt); setIsSharingOpen(true); }}
-              openProductCard={openProductCard}
-              setAppState={setAppState}
-              user={user}
-              profile={profile}
             />
           )}
 
@@ -4860,6 +5235,92 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* Loading shared routine banner */}
+              {isLoadingSharedRoutine && (
+                <div className="p-4 bg-white border border-black/10 rounded-2xl flex items-center justify-center gap-2.5 text-xs font-bold text-black/60 shadow-xs">
+                  <Loader2 className="w-4 h-4 animate-spin text-venus-accent" />
+                  <span>Loading shared routine...</span>
+                </div>
+              )}
+
+              {/* Shared Routine Highlight Banner (when opened externally) */}
+              {sharedRoutineFromUrl && (!user || sharedRoutineFromUrl.user_id !== user.id) && (
+                <div className="bg-[#FAF8F5] border-2 border-black/10 rounded-3xl p-5 md:p-6 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-3 py-1 bg-black text-white text-[10px] font-black uppercase tracking-widest rounded-full">
+                        Shared Routine
+                      </span>
+                      <span className="text-xs font-semibold text-black/60">
+                        Shared by @{sharedRoutineFromUrl.username || 'Anonymous'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSelectedCommunityRoutine(sharedRoutineFromUrl)}
+                        className="px-3.5 py-1.5 bg-white border border-black/10 hover:border-black text-black rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer shadow-xs"
+                      >
+                        View Full Routine
+                      </button>
+                      <button
+                        onClick={() => handleSaveSharedRoutineToMyAccount(sharedRoutineFromUrl)}
+                        className="px-3.5 py-1.5 bg-black hover:bg-venus-accent text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Save to My Routines</span>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-black/5 text-[10px] font-black uppercase tracking-wider text-venus-accent">
+                        {sharedRoutineFromUrl.time || 'AM'} Routine
+                      </span>
+                      <span className="text-[11px] text-black/50 font-semibold">
+                        Schedule: {Array.isArray(sharedRoutineFromUrl.days) && sharedRoutineFromUrl.days.length > 0 ? sharedRoutineFromUrl.days.join(', ') : 'Daily'}
+                      </span>
+                    </div>
+                    <h3 className="text-lg md:text-xl font-black text-black uppercase tracking-tight mt-1">
+                      {sharedRoutineFromUrl.routine_name || 'Shared Routine'}
+                    </h3>
+                    {sharedRoutineFromUrl.notes && (
+                      <p className="text-xs text-black/70 font-medium mt-1">
+                        {sharedRoutineFromUrl.notes}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Routine Products List */}
+                  <div className="space-y-2 pt-2 border-t border-black/10">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-black/50 block">
+                      Routine Products ({Array.isArray(sharedRoutineFromUrl.products) ? sharedRoutineFromUrl.products.length : 0})
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                      {Array.isArray(sharedRoutineFromUrl.products) && sharedRoutineFromUrl.products.map((p: any, idx: number) => (
+                        <div 
+                          key={idx}
+                          onClick={() => openProductCard(String(p.id || p.product_id))}
+                          className="p-2.5 bg-white border border-black/10 rounded-2xl flex items-center gap-2.5 hover:border-black/30 transition-all cursor-pointer"
+                        >
+                          {p.photo_url ? (
+                            <img src={p.photo_url} alt={p.name} className="w-9 h-9 object-cover rounded-lg bg-white border border-black/5 shrink-0" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-lg bg-black/5 flex items-center justify-center text-xs font-black shrink-0">
+                              {p.brand?.[0] || 'P'}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[9px] font-black uppercase tracking-wider text-black/40 truncate">{p.brand}</div>
+                            <div className="text-xs font-bold text-black truncate">{p.name}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {renderMyRoutinesSection(true)}
             </motion.div>
@@ -6028,7 +6489,7 @@ export default function App() {
 
       {/* Bottom Nav Hint */}
       {(appState === AppState.ROUTINES || appState === AppState.PROFILE || appState === AppState.DASHBOARD || appState === AppState.RANK || appState === AppState.TRACKER || appState === AppState.SOCIAL || appState === AppState.BRANDS || appState === AppState.COMMUNITY) && (
-        <div className="fixed bottom-6 left-0 right-0 flex justify-center z-40 pointer-events-none px-4">
+        <div className="fixed bottom-6 left-0 right-0 lg:left-64 flex justify-center z-40 pointer-events-none px-4">
           <div className="pointer-events-auto bg-white/90 backdrop-blur-md border border-[#E5E4E0] shadow-sm rounded-full px-6 py-2.5 flex items-center gap-6 md:gap-8">
             {user && (
               <button 
@@ -6078,18 +6539,16 @@ export default function App() {
               )}
             </button>
 
-            {Number(profile?.type) === 1 && (
-              <button 
-                onClick={() => setAppState(AppState.COMMUNITY)}
-                className={`p-1.5 transition-colors cursor-pointer relative ${appState === AppState.COMMUNITY ? 'text-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
-                title="Community"
-              >
-                <Users className="w-5 h-5 stroke-[1.5]" />
-                {appState === AppState.COMMUNITY && (
-                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#171717] rounded-full" />
-                )}
-              </button>
-            )}
+            <button 
+              onClick={() => setAppState(AppState.COMMUNITY)}
+              className={`p-1.5 transition-colors cursor-pointer relative ${appState === AppState.COMMUNITY ? 'text-[#171717]' : 'text-[#73716C] hover:text-[#171717]'}`}
+              title="Community"
+            >
+              <Users className="w-5 h-5 stroke-[1.5]" />
+              {appState === AppState.COMMUNITY && (
+                <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-[#171717] rounded-full" />
+              )}
+            </button>
 
             <button 
               onClick={() => { setAppState(AppState.SOCIAL); setIsFollowsOpen(false); }}
@@ -6160,7 +6619,7 @@ export default function App() {
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white p-6 rounded-3xl w-full max-w-md space-y-4 shadow-2xl border border-black/10">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black uppercase tracking-tighter text-black">Share Routine</h3>
-              <button onClick={() => { setIsSharingOpen(false); setShareRoutine(null); setUsernameSearch(''); }} className="p-2 rounded-full bg-black/5 hover:bg-black/10 text-black transition-colors cursor-pointer">
+              <button onClick={handleCloseShareModal} className="p-2 rounded-full bg-black/5 hover:bg-black/10 text-black transition-colors cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -6169,70 +6628,217 @@ export default function App() {
               Share "{shareRoutine?.routine_name || 'Routine'}" to social apps or friends:
             </p>
 
+            {/* Social Share Feedback Banner */}
+            {socialShareFeedback && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in">
+                <span>{socialShareFeedback.message}</span>
+                <button 
+                  onClick={() => setSocialShareFeedback(null)} 
+                  className="p-1 text-emerald-600 hover:text-emerald-900 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Social Share Buttons */}
             <div className="grid grid-cols-2 gap-2.5">
               <button
-                onClick={() => {
-                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: https://www.canonic.co.uk`;
-                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
-                }}
+                onClick={handleWhatsAppShare}
                 className="p-3 bg-[#25D366]/10 hover:bg-[#25D366]/20 text-[#075E54] rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border border-[#25D366]/20"
               >
-                <span className="w-6 h-6 rounded-full bg-[#25D366] text-white flex items-center justify-center text-xs font-bold">W</span>
+                <span className="w-6 h-6 rounded-full bg-[#25D366] text-white flex items-center justify-center text-xs font-bold shrink-0">W</span>
                 <span>WhatsApp</span>
               </button>
 
               <button
-                onClick={() => {
-                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: ${window.location.href}`;
-                  navigator.clipboard.writeText(text);
-                  window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`, '_blank');
-                }}
+                onClick={handleMessengerShare}
                 className="p-3 bg-[#0084FF]/10 hover:bg-[#0084FF]/20 text-[#0063CC] rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border border-[#0084FF]/20"
               >
-                <span className="w-6 h-6 rounded-full bg-[#0084FF] text-white flex items-center justify-center text-xs font-bold">M</span>
+                <span className="w-6 h-6 rounded-full bg-[#0084FF] text-white flex items-center justify-center text-xs font-bold shrink-0">M</span>
                 <span>Messenger</span>
               </button>
 
               <button
                 onClick={() => {
-                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: ${window.location.href}`;
-                  navigator.clipboard.writeText(text);
-                  alert('Routine copied to clipboard! Paste it into your Instagram Story, caption, or post.');
+                  setActiveSocialPlatform('instagram');
+                  handleInstagramMessageShare();
                 }}
-                className="p-3 bg-[#E1306C]/10 hover:bg-[#E1306C]/20 text-[#C13584] rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border border-[#E1306C]/20"
+                className={`p-3 rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border ${
+                  activeSocialPlatform === 'instagram'
+                    ? 'bg-[#E1306C]/25 text-[#961247] border-[#E1306C] ring-2 ring-[#E1306C]/20'
+                    : 'bg-[#E1306C]/10 hover:bg-[#E1306C]/20 text-[#C13584] border-[#E1306C]/20'
+                }`}
               >
-                <span className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#FD1D1D] to-[#833AB4] text-white flex items-center justify-center text-xs font-bold">IG</span>
-                <span>Instagram</span>
+                <span className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#FD1D1D] to-[#833AB4] text-white flex items-center justify-center text-xs font-bold shrink-0">IG</span>
+                <div className="flex flex-col items-start leading-tight">
+                  <span>Instagram</span>
+                  <span className="text-[9px] font-bold text-[#E1306C] lowercase tracking-normal">messages</span>
+                </div>
               </button>
 
               <button
                 onClick={() => {
-                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: ${window.location.href}`;
-                  navigator.clipboard.writeText(text);
-                  alert('Routine copied to clipboard! Paste it into your TikTok video description.');
+                  setActiveSocialPlatform('tiktok');
+                  handleTikTokMessageShare();
                 }}
-                className="p-3 bg-black/5 hover:bg-black/10 text-black rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border border-black/10"
+                className={`p-3 rounded-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer border ${
+                  activeSocialPlatform === 'tiktok'
+                    ? 'bg-black text-white border-black ring-2 ring-black/20'
+                    : 'bg-black/5 hover:bg-black/10 text-black border-black/10'
+                }`}
               >
-                <span className="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold">TT</span>
-                <span>TikTok</span>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${activeSocialPlatform === 'tiktok' ? 'bg-white text-black' : 'bg-black text-white'}`}>TT</span>
+                <div className="flex flex-col items-start leading-tight">
+                  <span>TikTok</span>
+                  <span className={`text-[9px] font-bold lowercase tracking-normal ${activeSocialPlatform === 'tiktok' ? 'text-white/80' : 'text-black/60'}`}>messages</span>
+                </div>
               </button>
             </div>
 
-            <div className="pt-1">
+            {/* Expanded Instagram Direct Message Options */}
+            {activeSocialPlatform === 'instagram' && (
+              <div className="p-3.5 bg-gradient-to-r from-pink-50/80 to-purple-50/80 border border-pink-200/80 rounded-2xl space-y-2.5 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-gradient-to-tr from-[#FD1D1D] to-[#833AB4] text-white flex items-center justify-center text-[10px] font-bold">IG</span>
+                    <span className="text-xs font-black uppercase tracking-wider text-black">Instagram Messages</span>
+                  </div>
+                  <button 
+                    onClick={() => setActiveSocialPlatform(null)}
+                    className="text-[10px] text-black/50 hover:text-black font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    Hide
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-black/70 font-medium leading-relaxed">
+                  Routine link is copied to your clipboard. Tap below to launch Instagram Messages and paste into your chat:
+                </p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleInstagramMessageShare()}
+                    className="flex-1 py-2 px-3 bg-gradient-to-r from-[#FD1D1D] to-[#833AB4] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Open Instagram DMs</span>
+                  </button>
+                  {typeof navigator !== 'undefined' && !!navigator.share && (
+                    <button
+                      onClick={handleNativeShare}
+                      className="py-2 px-3 bg-white border border-black/15 text-black rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/5 transition-colors cursor-pointer"
+                      title="Open device share sheet"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-pink-200/60">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block mb-1.5">Or message specific username:</span>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="e.g. friend_username"
+                      value={socialTargetUsername}
+                      onChange={(e) => setSocialTargetUsername(e.target.value)}
+                      className="flex-1 text-xs px-3 py-2 bg-white rounded-xl border border-black/15 focus:outline-none focus:ring-1 focus:ring-black"
+                    />
+                    <button
+                      onClick={() => handleInstagramMessageShare(socialTargetUsername)}
+                      disabled={!socialTargetUsername.trim()}
+                      className="px-3 py-2 bg-black text-white text-xs font-black uppercase tracking-wider rounded-xl hover:bg-venus-accent transition-colors disabled:opacity-40 cursor-pointer"
+                    >
+                      Send DM
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Expanded TikTok Direct Message Options */}
+            {activeSocialPlatform === 'tiktok' && (
+              <div className="p-3.5 bg-black/5 border border-black/10 rounded-2xl space-y-2.5 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-black text-white flex items-center justify-center text-[10px] font-bold">TT</span>
+                    <span className="text-xs font-black uppercase tracking-wider text-black">TikTok Messages</span>
+                  </div>
+                  <button 
+                    onClick={() => setActiveSocialPlatform(null)}
+                    className="text-[10px] text-black/50 hover:text-black font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    Hide
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-black/70 font-medium leading-relaxed">
+                  Routine link is copied to your clipboard. Tap below to launch TikTok Messages and paste into your chat:
+                </p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleTikTokMessageShare()}
+                    className="flex-1 py-2 px-3 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Open TikTok Messages</span>
+                  </button>
+                  {typeof navigator !== 'undefined' && !!navigator.share && (
+                    <button
+                      onClick={handleNativeShare}
+                      className="py-2 px-3 bg-white border border-black/15 text-black rounded-xl text-xs font-black uppercase tracking-wider hover:bg-black/5 transition-colors cursor-pointer"
+                      title="Open device share sheet"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-black/10">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-black/50 block mb-1.5">Or message specific username:</span>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="e.g. friend_username"
+                      value={socialTargetUsername}
+                      onChange={(e) => setSocialTargetUsername(e.target.value)}
+                      className="flex-1 text-xs px-3 py-2 bg-white rounded-xl border border-black/15 focus:outline-none focus:ring-1 focus:ring-black"
+                    />
+                    <button
+                      onClick={() => handleTikTokMessageShare(socialTargetUsername)}
+                      disabled={!socialTargetUsername.trim()}
+                      className="px-3 py-2 bg-black text-white text-xs font-black uppercase tracking-wider rounded-xl hover:bg-venus-accent transition-colors disabled:opacity-40 cursor-pointer"
+                    >
+                      Chat
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-1 flex flex-col gap-2">
               <button
-                onClick={() => {
-                  const text = `Check out this routine "${shareRoutine?.routine_name || 'Skincare Routine'}" on Canonic!\n\nExplore Canonic: ${window.location.href}`;
-                  navigator.clipboard.writeText(text);
-                  setSuccessMessage('Routine copied to clipboard!');
-                  setTimeout(() => setSuccessMessage(null), 2500);
-                }}
-                className="w-full py-3 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors cursor-pointer flex items-center justify-center gap-2"
+                onClick={handleCopyRoutineLink}
+                className="w-full py-3 bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-venus-accent transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs"
               >
-                <span>Copy Routine & Link</span>
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>Copy Routine & Direct Link</span>
               </button>
+
+              {typeof navigator !== 'undefined' && !!navigator.share && (
+                <button
+                  onClick={handleNativeShare}
+                  className="w-full py-2.5 bg-black/5 hover:bg-black/10 text-black rounded-xl text-xs font-black uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>More Sharing Options (System Sheet)</span>
+                </button>
+              )}
+
               {successMessage && (
-                <p className="text-[11px] text-green-600 font-bold text-center mt-1.5">{successMessage}</p>
+                <p className="text-[11px] text-green-600 font-bold text-center mt-1">{successMessage}</p>
               )}
             </div>
 
@@ -6255,7 +6861,7 @@ export default function App() {
               </div>
             </div>
 
-            <button onClick={() => { setIsSharingOpen(false); setShareRoutine(null); setUsernameSearch(''); }} className="w-full py-2 text-[10px] font-black uppercase tracking-wider text-black/50 hover:text-black cursor-pointer">Cancel</button>
+            <button onClick={handleCloseShareModal} className="w-full py-2 text-[10px] font-black uppercase tracking-wider text-black/50 hover:text-black cursor-pointer">Cancel</button>
           </motion.div>
         </div>
       )}

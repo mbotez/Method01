@@ -782,18 +782,27 @@ export async function checkRoutine(
   // ------------------------------------------
   // STEP 2 — Core Pillar Completeness Check
   // ------------------------------------------
+  const effectiveRiskTier = computeIrritationThreshold(userProfile);
+  const isHighBarrierRisk = effectiveRiskTier === 'high' || getNum(userProfile.barrier_status) >= 7;
 
   const hasCleanser = routineProducts.some(p => p.cat2 === 'Cleanser');
   const hasSPF = routineProducts.some(p => p.cat2 === 'SPF');
   const hasMoisturiser = routineProducts.some(p => p.cat2 === 'Moisturiser');
   
   if (!hasCleanser) {
-
-    missing.push({
-      type: 'missing_cleanser',
-      severity: 'high',
-      message: "No cleanser yet — it's the base step for clearing away oil and daily buildup."
-    });
+    if (isHighBarrierRisk) {
+      missing.push({
+        type: 'missing_cleanser',
+        severity: 'low',
+        message: "Your routine is missing a cleanser, but if that's too harsh for your barrier right now then leave it out and continue using just water"
+      });
+    } else {
+      missing.push({
+        type: 'missing_cleanser',
+        severity: 'high',
+        message: "No cleanser yet — it's the base step for clearing away oil and daily buildup."
+      });
+    }
   }
 
   if (!hasSPF && !isPmRoutine) {
@@ -831,7 +840,6 @@ export async function checkRoutine(
   // ------------------------------------------
   // STEP 3 — User_Irritation_Threshold and Active Budget
   // ------------------------------------------
-  const effectiveRiskTier = computeIrritationThreshold(userProfile);
 
   // Active Classification & Budgeting
   interface ActiveProductRecord {
@@ -1197,7 +1205,7 @@ export async function checkRoutine(
     const hasYeastTriggers = detrimental.some(d => d.reason.toLowerCase().includes('yeast-related breakouts'));
     mainScore = hasYeastTriggers ? 0 : 5;
   } else if (isNotSureConcern(userProfile.main_concern)) {
-    const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || (!isPmRoutine && m.type === 'missing_spf'));
+    const corePillarsPass = !missing.some(m => (m.type === 'missing_cleanser' && m.severity === 'high') || (!isPmRoutine && m.type === 'missing_spf'));
     mainScore = corePillarsPass ? 5 : 0;
   }
 
@@ -1206,7 +1214,7 @@ export async function checkRoutine(
     const hasYeastTriggers = detrimental.some(d => d.reason.toLowerCase().includes('yeast-related breakouts'));
     scndScore = hasYeastTriggers ? 0 : 5;
   } else if (isNotSureConcern(userProfile.scnd_concern)) {
-    const corePillarsPass = !missing.some(m => m.type === 'missing_cleanser' || (!isPmRoutine && m.type === 'missing_spf'));
+    const corePillarsPass = !missing.some(m => (m.type === 'missing_cleanser' && m.severity === 'high') || (!isPmRoutine && m.type === 'missing_spf'));
     scndScore = corePillarsPass ? 5 : 0;
   }
 

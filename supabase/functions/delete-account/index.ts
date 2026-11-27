@@ -53,8 +53,13 @@ serve(async (req) => {
     });
 
     // 3. Delete user rows in exact order (children first, parents last) with strict error checking
-    const { error: e1 } = await supabaseAdmin.from('comments').delete().eq('user_id', userId);
-    if (e1) throw new Error(`Failed to delete comments: ${e1.message}`);
+    const { error: e1 } = await supabaseAdmin.from('comments_products').delete().eq('user_id', userId);
+    if (e1 && !e1.message?.includes('does not exist')) {
+      const { error: e1Fallback } = await supabaseAdmin.from('comments').delete().eq('user_id', userId);
+      if (e1Fallback && !e1Fallback.message?.includes('does not exist')) {
+        console.warn(`Failed to delete comments_products: ${e1.message}`);
+      }
+    }
 
     const { error: e2 } = await supabaseAdmin.from('messages').delete().or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
     if (e2) throw new Error(`Failed to delete messages: ${e2.message}`);

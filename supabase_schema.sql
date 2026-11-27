@@ -88,25 +88,29 @@ CREATE TABLE public.follows (
 CREATE TABLE public.posts (
   post_id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
+  username text,
   title text,
   content text NOT NULL,
   post_media text,
   timestamp timestamp with time zone DEFAULT now(),
+  created_at timestamp with time zone DEFAULT now(),
   is_article boolean DEFAULT false,
-  tags ARRAY DEFAULT '{}'::text[],
+  tags text[] DEFAULT '{}'::text[],
   CONSTRAINT posts_pkey PRIMARY KEY (post_id),
   CONSTRAINT posts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
-CREATE TABLE public.comments (
+CREATE TABLE public.comments_products (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  post_id uuid NOT NULL,
+  product_id text,
+  post_id uuid,
   user_id uuid NOT NULL,
-  content text NOT NULL,
+  content text,
+  comment text,
   timestamp timestamp with time zone DEFAULT now(),
-  CONSTRAINT comments_pkey PRIMARY KEY (id),
-  CONSTRAINT comments_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(post_id),
-  CONSTRAINT comments_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT fk_comments_users FOREIGN KEY (user_id) REFERENCES public.users(id)
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT comments_products_pkey PRIMARY KEY (id),
+  CONSTRAINT comments_products_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT fk_comments_products_users FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
 CREATE TABLE public.user_contacts (
   user_id uuid NOT NULL,

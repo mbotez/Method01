@@ -751,8 +751,9 @@ export const ProductCardContent = ({
 
     setIsSubmittingComment(true);
     try {
-      const { data, error } = await supabase
-        .from('product_comments')
+      // First attempt insert into comments_products table
+      let { data, error } = await supabase
+        .from('comments_products')
         .insert({
           product_id: productId,
           user_id: session.user.id,
@@ -760,6 +761,36 @@ export const ProductCardContent = ({
           created_at: new Date().toISOString()
         })
         .select();
+
+      // If column is 'content' or 'timestamp' instead of 'comment'/'created_at'
+      if (error && (error.message?.includes('comment') || error.message?.includes('created_at'))) {
+        const retry = await supabase
+          .from('comments_products')
+          .insert({
+            product_id: productId,
+            user_id: session.user.id,
+            content: newCommentText.trim(),
+            timestamp: new Date().toISOString()
+          })
+          .select();
+        data = retry.data;
+        error = retry.error;
+      }
+
+      // Fallback to product_comments if comments_products does not exist
+      if (error && error.message?.includes('does not exist')) {
+        const fallback = await supabase
+          .from('product_comments')
+          .insert({
+            product_id: productId,
+            user_id: session.user.id,
+            comment: newCommentText.trim(),
+            created_at: new Date().toISOString()
+          })
+          .select();
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) {
         alert(`Failed to save comment: ${error.message}`);
@@ -1170,9 +1201,28 @@ export const ProductCardContent = ({
           setGlobalRatingsSummary({ avg: 0, dwis: 0, price_value: 0, feel: 0, layer: 0, count: 0 });
         }
 
-        // Fetch comments for product
+        // Fetch comments for product from comments_products
         const commentsRes = await (async () => {
           try {
+            let res = await supabase
+              .from('comments_products')
+              .select('*')
+              .eq('product_id', effectiveProductId)
+              .order('created_at', { ascending: false })
+              .abortSignal(signal);
+
+            if (res.error && res.error.message?.includes('created_at')) {
+              res = await supabase
+                .from('comments_products')
+                .select('*')
+                .eq('product_id', effectiveProductId)
+                .order('timestamp', { ascending: false })
+                .abortSignal(signal);
+            }
+
+            if (!res.error && res.data) return res;
+
+            // Fallback to legacy product_comments table if comments_products not found
             return await supabase
               .from('product_comments')
               .select('*')
@@ -2089,10 +2139,10 @@ export const ProductCardContent = ({
               <div key={comm.id || idx} className="p-2.5 bg-gray-50 rounded-xl border border-gray-100 text-xs space-y-1">
                 <div className="flex items-center justify-between text-[10px] text-black/40 font-mono">
                   <span>User {comm.user_id ? `${comm.user_id.slice(0, 6)}...` : 'Anonymous'}</span>
-                  <span>{comm.created_at ? new Date(comm.created_at).toLocaleDateString() : 'Just now'}</span>
+                  <span>{comm.created_at || comm.timestamp ? new Date(comm.created_at || comm.timestamp).toLocaleDateString() : 'Just now'}</span>
                 </div>
                 <p className="text-black/80 font-medium whitespace-pre-line break-words">
-                  {comm.comment}
+                  {comm.comment || comm.content}
                 </p>
               </div>
             ))
